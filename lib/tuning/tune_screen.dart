@@ -112,10 +112,14 @@ class _TuneScreenState extends State<TuneScreen> {
   @override
   void initState() {
     super.initState();
-    loadBackup();
-    loadLogs();
-    loadRequests();
-    loadDraft();
+    unawaited(_loadWorkspace());
+  }
+
+  Future<void> _loadWorkspace() async {
+    await loadBackup();
+    await loadLogs();
+    await loadRequests();
+    await loadDraft();
   }
 
   Future<void> loadRequests() async {
@@ -138,9 +142,16 @@ class _TuneScreenState extends State<TuneScreen> {
     if (!mounted || draft == null) return;
     modificationsController.text = draft.modifications;
     selectedProduct = findTuneProduct(draft.productId) ?? selectedProduct;
+    final draftLogNames = draft.logFiles.toSet();
     selectedLogs
       ..clear()
-      ..addAll(draft.logFiles);
+      ..addAll(
+        availableLogs
+            .where(
+              (log) => draftLogNames.contains(log.uri.pathSegments.last),
+            )
+            .map((log) => log.path),
+      );
     setState(() {});
   }
 
