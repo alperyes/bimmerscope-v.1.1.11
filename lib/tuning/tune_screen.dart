@@ -413,7 +413,7 @@ class _TuneScreenState extends State<TuneScreen> {
       acceptedTypeGroups: const [
         XTypeGroup(
           label: 'Calibration files',
-          extensions: ['bin', 'ori', 'hex'],
+          extensions: ['bin', 'ori', 'hex', 'json'],
         ),
       ],
     );
@@ -635,12 +635,10 @@ class _TuneScreenState extends State<TuneScreen> {
     );
     if (file == null || !mounted) return;
     final selected = File(file.path);
-    final bytes = await selected.readAsBytes();
-    final stats = await selected.stat();
     final inspection = await inspectCalibrationArtifact(selected);
     final metadata = <String, dynamic>{
-      'hash': sha256.convert(bytes).toString(),
-      'size': stats.size,
+      'hash': inspection.sha256,
+      'size': inspection.size,
       'imported': DateTime.now(),
       'inspection': inspection.toJson(),
     };
@@ -2147,12 +2145,52 @@ class _MapSlot extends StatelessWidget {
           '${_formatBytes(metadata!['size'] as int)} · SHA-256 ${('${metadata!['hash']}').substring(0, 12)}…',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+      if (metadata?['inspection'] is Map) ...[
+        const SizedBox(height: 4),
+        _MapInspectionSummary(
+          inspection: Map<String, dynamic>.from(metadata!['inspection'] as Map),
+        ),
+      ],
     ],
   );
 
   String _formatBytes(int bytes) => bytes < 1024 * 1024
       ? '${(bytes / 1024).toStringAsFixed(1)} KB'
       : '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+}
+
+class _MapInspectionSummary extends StatelessWidget {
+  const _MapInspectionSummary({required this.inspection});
+
+  final Map<String, dynamic> inspection;
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = inspection['provider'] as String?;
+    final revision = inspection['revision'] as String?;
+    final isManifest = inspection['kind'] == 'provider_manifest';
+    final color = isManifest ? AppPalette.blue : Colors.orange;
+    final summary = isManifest
+        ? 'Provider manifest · signature ${inspection['signature_status']}'
+        : 'Opaque artifact · professional review only';
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .25)),
+      ),
+      child: Text(
+        [
+          summary,
+          if (provider != null && provider.isNotEmpty) 'Provider: $provider',
+          if (revision != null && revision.isNotEmpty) 'Revision: $revision',
+        ].join('\n'),
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
 }
 
 class _ComparisonSummary extends StatelessWidget {
