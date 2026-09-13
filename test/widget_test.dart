@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('restores saved layout styles and migrates channel presets', (tester) async {
+  testWidgets('restores saved layout styles and migrates channel presets', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({
       'bimmerscope.dashboard_presets_v1': jsonEncode({
         'Track': {
@@ -36,6 +38,21 @@ void main() {
     expect(dashboard.gaugeHeights, isEmpty);
     expect(dashboard.dialSensorIds, isEmpty);
     expect(dashboard.valueColorIds, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('restores only known favorite gauges', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'bimmerscope.dashboard_favorite_sensors_v1': [
+        'engine_rpm',
+        'missing_sensor',
+      ],
+    });
+    await tester.pumpWidget(const BmwEnetApp(previewMode: true));
+    await tester.pumpAndSettle();
+    final dynamic dashboard = tester.state(find.byType(DashboardScreen));
+    expect(dashboard.favoriteSensorIds, {'engine_rpm'});
     await tester.pumpWidget(const SizedBox.shrink());
     SharedPreferences.setMockInitialValues({});
   });

@@ -74,6 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final dialSensorIds = <String>{};
   final customDashboardPresets = <String, Map<String, dynamic>>{};
   final valueColorIds = <String>{};
+  final favoriteSensorIds = <String>{};
   final logger = DataLogger();
   final appDiagnosticsStore = AppDiagnosticsStore();
   IOSink? _diagnosticsSink;
@@ -383,6 +384,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       final storedPresets = preferences.getString(
         'bimmerscope.dashboard_presets_v1',
       );
+      final storedFavorites = preferences.getStringList(
+        'bimmerscope.dashboard_favorite_sensors_v1',
+      );
       setState(() {
         reconnectPolicy =
             preferences.getString('bimmerscope.reconnect_policy') ??
@@ -395,6 +399,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                 .clamp(30, 95);
         _restoreDashboardLayout(storedLayout);
         _restoreCustomPresets(storedPresets);
+        favoriteSensorIds
+          ..clear()
+          ..addAll(
+            (storedFavorites ?? const <String>[]).where(
+              sensorsById.containsKey,
+            ),
+          );
       });
       if (!widget.previewMode) _syncLiveSensorSelection();
     } catch (_) {}
@@ -532,6 +543,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       await preferences.setString(
         'bimmerscope.dashboard_presets_v1',
         jsonEncode(customDashboardPresets),
+      );
+      await preferences.setStringList(
+        'bimmerscope.dashboard_favorite_sensors_v1',
+        favoriteSensorIds.toList()..sort(),
       );
     } catch (_) {}
   }
@@ -4146,68 +4161,123 @@ class _DashboardScreenState extends State<DashboardScreen>
   );
 
   Future<void> chooseGauges() async {
+    var query = '';
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .72,
-            child: Column(
-              children: [
-                const ListTile(
-                  title: Text(
-                    'Choose gauges',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        builder: (context, setSheetState) {
+          final matchingSensors =
+              sensors
+                  .where(
+                    (sensor) =>
+                        query.isEmpty ||
+                        sensor.label.toLowerCase().contains(query) ||
+                        sensor.id.toLowerCase().contains(query) ||
+                        sensor.unit.toLowerCase().contains(query),
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final aFavorite = favoriteSensorIds.contains(a.id);
+                  final bFavorite = favoriteSensorIds.contains(b.id);
+                  if (aFavorite != bFavorite) {
+                    return aFavorite ? -1 : 1;
+                  }
+                  return a.label.compareTo(b.label);
+                });
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .72,
+              child: Column(
+                children: [
+                  ListTile(
+                    title: const Text(
+                      'Choose gauges',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${favoriteSensorIds.length} favorites · ${visibleSensorIds.length}/$maxLiveSensors active',
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView(
-                    children: sensors.map((sensor) {
-                      final selected = visibleSensorIds.contains(sensor.id);
-                      return CheckboxListTile(
-                        value: selected,
-                        title: Text(sensor.label),
-                        subtitle: Text(sensor.unit),
-                        secondary: Icon(
-                          selected
-                              ? Icons.monitor_heart_rounded
-                              : Icons.monitor_heart_outlined,
-                        ),
-                        onChanged: (checked) {
-                          if ((checked ?? false) &&
-                              !selected &&
-                              visibleSensorIds.length >= maxLiveSensors) {
-                            ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Select up to 4 live gauges at a time.',
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: TextField(
+                      autofocus: false,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search_rounded),
+                        hintText: 'Search gauges',
+                      ),
+                      onChanged: (value) {
+                        query = value.trim().toLowerCase();
+                        setSheetState(() {});
+                      },
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      children: matchingSensors.map((sensor) {
+                        final selected = visibleSensorIds.contains(sensor.id);
+                        return CheckboxListTile(
+                          value: selected,
+                          title: Text(sensor.label),
+                          subtitle: Text(sensor.unit),
+                          secondary: IconButton(
+                            tooltip: favoriteSensorIds.contains(sensor.id)
+                                ? 'Remove ${sensor.label} from favorites'
+                                : 'Add ${sensor.label} to favorites',
+                            icon: Icon(
+                              favoriteSensorIds.contains(sensor.id)
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                if (!favoriteSensorIds.add(sensor.id)) {
+                                  favoriteSensorIds.remove(sensor.id);
+                                }
+                                _scheduleLayoutSave();
+                              });
+                              setSheetState(() {});
+                            },
+                          ),
+                          onChanged: (checked) {
+                            if ((checked ?? false) &&
+                                !selected &&
+                                visibleSensorIds.length >= maxLiveSensors) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Select up to 4 live gauges at a time.',
+                                  ),
                                 ),
-                              ),
-                            );
-                            return;
-                          }
-                          setState(() {
-                            if (checked ?? false) {
-                              visibleSensorIds.add(sensor.id);
-                            } else {
-                              visibleSensorIds.remove(sensor.id);
+                              );
+                              return;
                             }
-                            _scheduleLayoutSave();
-                          });
-                          _syncLiveSensorSelection();
-                          setSheetState(() {});
-                        },
-                      );
-                    }).toList(),
+                            setState(() {
+                              if (checked ?? false) {
+                                visibleSensorIds.add(sensor.id);
+                              } else {
+                                visibleSensorIds.remove(sensor.id);
+                              }
+                              _scheduleLayoutSave();
+                            });
+                            _syncLiveSensorSelection();
+                            setSheetState(() {});
+                          },
+                        );
+                      }).toList(),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
