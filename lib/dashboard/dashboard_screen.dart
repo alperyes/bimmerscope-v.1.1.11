@@ -71,7 +71,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final gaugeWidths = <String, double>{};
   final gaugeHeights = <String, double>{};
   final dialSensorIds = <String>{};
-  final customDashboardPresets = <String, List<String>>{};
+  final customDashboardPresets = <String, Map<String, dynamic>>{};
   final valueColorIds = <String>{};
   final logger = DataLogger();
   final appDiagnosticsStore = AppDiagnosticsStore();
@@ -396,7 +396,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (decoded is! Map<String, dynamic>) return;
       for (final entry in decoded.entries) {
         final name = entry.key.trim();
-        final ids = entry.value;
+        // Migrate the original channel-only presets without losing them.
+        final layout = entry.value is List
+            ? <String, dynamic>{'visibleSensorIds': entry.value}
+            : entry.value;
+        if (layout is! Map<String, dynamic>) continue;
+        final ids = layout['visibleSensorIds'];
         if (name.isEmpty || ids is! List) continue;
         final valid = ids
             .whereType<String>()
@@ -404,7 +409,9 @@ class _DashboardScreenState extends State<DashboardScreen>
             .toSet()
             .take(maxLiveSensors)
             .toList();
-        if (valid.isNotEmpty) customDashboardPresets[name] = valid;
+        if (valid.isNotEmpty) {
+          customDashboardPresets[name] = {...layout, 'visibleSensorIds': valid};
+        }
       }
     } catch (_) {}
   }
@@ -3860,9 +3867,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     final available = customDashboardPresets[name];
     if (available == null || available.isEmpty) return;
     setState(() {
-      visibleSensorIds
-        ..clear()
-        ..addAll(available);
+      gaugeWidths.clear();
+      gaugeHeights.clear();
+      dialSensorIds.clear();
+      valueColorIds.clear();
+      _restoreDashboardLayout(jsonEncode(available));
       editing = false;
       resizingSensorId = null;
     });
@@ -3899,10 +3908,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     controller.dispose();
     final cleanName = name?.trim() ?? '';
     if (!mounted || cleanName.isEmpty || visibleSensorIds.isEmpty) return;
-    customDashboardPresets[cleanName] = visibleSensorIds
-        .where(sensorsById.containsKey)
-        .take(maxLiveSensors)
-        .toList();
+    customDashboardPresets[cleanName] = {
+      'visibleSensorIds': visibleSensorIds
+          .where(sensorsById.containsKey)
+          .take(maxLiveSensors)
+          .toList(),
+      'gaugeWidths': Map<String, double>.from(gaugeWidths),
+      'gaugeHeights': Map<String, double>.from(gaugeHeights),
+      'dialSensorIds': dialSensorIds.toList(),
+      'valueColorIds': valueColorIds.toList(),
+    };
     _scheduleLayoutSave();
     setState(() {});
   }
