@@ -8,6 +8,7 @@ class LogQualityReport {
     required this.provenanceMatches,
     required this.maxGapMs,
     required this.reasons,
+    this.invalidSampleCount = 0,
   });
 
   final int sampleCount;
@@ -16,11 +17,13 @@ class LogQualityReport {
   final bool provenanceMatches;
   final int maxGapMs;
   final List<String> reasons;
+  final int invalidSampleCount;
 
   bool get suitableForTunerReview => reasons.isEmpty;
 
   Map<String, dynamic> toJson() => {
     'sample_count': sampleCount,
+    'invalid_sample_count': invalidSampleCount,
     'duration_ms': durationMs,
     'channels': channels.toList()..sort(),
     'provenance_matches': provenanceMatches,
@@ -39,6 +42,7 @@ Future<LogQualityReport> inspectLogQuality(
   final header = <String, String>{};
   final channels = <String>{};
   var samples = 0;
+  var invalidSamples = 0;
   var durationMs = 0;
   var maxGapMs = 0;
   final previousElapsedMsByChannel = <String, int>{};
@@ -57,11 +61,22 @@ Future<LogQualityReport> inspectLogQuality(
     }
     final fields = _parseCsvLine(line);
     if (fields.length < 5) {
+      invalidSamples++;
       continue;
     }
-    final elapsedMs = int.tryParse(fields[1]) ?? 0;
-    final channel = fields[2].replaceAll('"', '');
+    final elapsedMs = int.tryParse(fields[1]);
+    final value = double.tryParse(fields[4]);
+    final channel = fields[2].trim();
+    if (elapsedMs == null || elapsedMs < 0 ||
+        value == null || !value.isFinite || channel.isEmpty) {
+      invalidSamples++;
+      continue;
+    }
     final previousElapsedMs = previousElapsedMsByChannel[channel];
+    if (previousElapsedMs != null && elapsedMs < previousElapsedMs) {
+      invalidSamples++;
+      continue;
+    }
     if (previousElapsedMs != null && elapsedMs >= previousElapsedMs) {
       maxGapMs = maxGapMs > elapsedMs - previousElapsedMs
           ? maxGapMs
@@ -76,6 +91,9 @@ Future<LogQualityReport> inspectLogQuality(
       header['vehicle'] == _safeVehicleId(vin) &&
       header['vehicle_profile'] == profileId;
   final reasons = <String>[];
+  if (invalidSamples > 0) {
+    reasons.add('$invalidSamples invalid or out-of-order samples were excluded.');
+  }
   if (!matches) {
     reasons.add('Log provenance does not match the current VIN and profile.');
   }
@@ -93,6 +111,7 @@ Future<LogQualityReport> inspectLogQuality(
   }
   return LogQualityReport(
     sampleCount: samples,
+    invalidSampleCount: invalidSamples,
     durationMs: durationMs,
     channels: channels,
     provenanceMatches: matches,
@@ -125,6 +144,7 @@ List<String> _parseCsvLine(String line) {
       buffer.write(character);
     }
   }
+  if (quoted) return [];
   fields.add(buffer.toString());
   return fields;
 }
