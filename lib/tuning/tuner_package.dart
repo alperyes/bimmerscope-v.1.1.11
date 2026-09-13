@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
@@ -65,7 +66,7 @@ class TunerPackageStore {
         'modifications': modifications,
         'stock_backup': stockEntry ?? {'present': false},
         'data_logs': logEntries,
-        'attachments_directory': 'attachments',
+        'attachments_directory': packageName,
       }),
     );
     return file;
@@ -102,6 +103,32 @@ class TunerPackageStore {
       'size': await target.length(),
       'present': true,
     };
+  }
+
+  /// Reopens a generated package and verifies every declared attachment. This
+  Future<File> createArchive(File manifestFile) async {
+    final validation = await validate(manifestFile);
+    if (!validation.valid) throw StateError(validation.errors.join(' '));
+    final manifestBytes = await manifestFile.readAsBytes();
+    final manifest = jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
+    final name = manifestFile.uri.pathSegments.last;
+    final folder = name.replaceFirst(RegExp(r'\.json$'), '');
+    final archive = Archive()..addFile(ArchiveFile(name, manifestBytes.length, manifestBytes));
+    final entries = <dynamic>[
+      if (manifest['stock_backup']['present'] == true) manifest['stock_backup'],
+      ...manifest['data_logs'],
+    ];
+    for (final entry in entries) {
+      final relative = entry['path'] as String;
+      final bytes = await File('${manifestFile.parent.path}/$folder/$relative').readAsBytes();
+      if (bytes.length != entry['size'] || sha256.convert(bytes).toString() != entry['sha256']) {
+        throw StateError('Attachment changed during export: $relative');
+      }
+      archive.addFile(ArchiveFile('$folder/$relative', bytes.length, bytes));
+    }
+    final target = File('${manifestFile.parent.path}/$folder.zip');
+    await target.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+    return target;
   }
 
   /// Reopens a generated package and verifies every declared attachment. This

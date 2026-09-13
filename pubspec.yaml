@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   crypto: ^3.0.3
+  archive: 4.1.0
   bmw_vehicle_core:
     path: rust_builder
   flutter_rust_bridge: 2.12.0

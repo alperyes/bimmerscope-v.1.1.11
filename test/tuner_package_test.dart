@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:bmw_app/tuning/tuner_package.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -26,6 +27,14 @@ void main() {
     expect(data['data_logs'][0]['path'], isNot(data['data_logs'][1]['path']));
     expect(await store.lastAttachments[0].readAsString(), 'first recording');
     expect(await store.lastAttachments[1].readAsString(), 'second recording');
+    final zip = await store.createArchive(manifest);
+    final decoded = ZipDecoder().decodeBytes(await zip.readAsBytes());
+    expect(decoded.files.length, 3);
+    final packagedManifest = jsonDecode(utf8.decode(decoded.files.first.content));
+    final folder = packagedManifest['attachments_directory'];
+    for (final entry in packagedManifest['data_logs']) {
+      expect(decoded.files.any((f) => f.name == '$folder/${entry['path']}'), isTrue);
+    }
     await expectLater(create(['${root.path}/missing.csv']), throwsA(isA<FileSystemException>()));
   });
 }

@@ -565,6 +565,7 @@ class _TuneScreenState extends State<TuneScreen> {
       packageManifestPath: file.path,
     );
     if (!mounted) return;
+    var shareAsArchive = false;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -585,16 +586,27 @@ class _TuneScreenState extends State<TuneScreen> {
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Share package'),
           ),
+          FilledButton(
+            onPressed: () {
+              shareAsArchive = true;
+              Navigator.pop(context, true);
+            },
+            child: const Text('Share ZIP'),
+          ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
+    final archive = shareAsArchive ? await tunerPackageStore.createArchive(file) : null;
     await tunerRequestStore.save(request);
     await SharePlus.instance.share(
       ShareParams(
         files: [
+          if (archive != null) XFile(archive.path, mimeType: 'application/zip'),
+          if (archive == null) ...[
           XFile(file.path),
           ...tunerPackageStore.lastAttachments.map((f) => XFile(f.path)),
+          ],
         ],
         text: 'BimmerScope tuner package',
       ),
