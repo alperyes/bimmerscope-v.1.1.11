@@ -71,6 +71,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   final gaugeWidths = <String, double>{};
   final gaugeHeights = <String, double>{};
   final dialSensorIds = <String>{};
+  final customDashboardPresets = <String, List<String>>{};
   final valueColorIds = <String>{};
   final logger = DataLogger();
   final appDiagnosticsStore = AppDiagnosticsStore();
@@ -373,14 +374,38 @@ class _DashboardScreenState extends State<DashboardScreen>
       final storedLayout = preferences.getString(
         'bimmerscope.dashboard_layout_v1',
       );
+      final storedPresets = preferences.getString(
+        'bimmerscope.dashboard_presets_v1',
+      );
       setState(() {
         reconnectPolicy =
             preferences.getString('bimmerscope.reconnect_policy') ??
             'automatic';
         useMetric = preferences.getString('bimmerscope.units') != 'imperial';
         _restoreDashboardLayout(storedLayout);
+        _restoreCustomPresets(storedPresets);
       });
       if (!widget.previewMode) _syncLiveSensorSelection();
+    } catch (_) {}
+  }
+
+  void _restoreCustomPresets(String? encoded) {
+    if (encoded == null || encoded.isEmpty) return;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map<String, dynamic>) return;
+      for (final entry in decoded.entries) {
+        final name = entry.key.trim();
+        final ids = entry.value;
+        if (name.isEmpty || ids is! List) continue;
+        final valid = ids
+            .whereType<String>()
+            .where(sensorsById.containsKey)
+            .toSet()
+            .take(maxLiveSensors)
+            .toList();
+        if (valid.isNotEmpty) customDashboardPresets[name] = valid;
+      }
     } catch (_) {}
   }
 
@@ -455,6 +480,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           'dialSensorIds': dialSensorIds.toList(),
           'valueColorIds': valueColorIds.toList(),
         }),
+      );
+      await preferences.setString(
+        'bimmerscope.dashboard_presets_v1',
+        jsonEncode(customDashboardPresets),
       );
     } catch (_) {}
   }
@@ -3827,6 +3856,57 @@ class _DashboardScreenState extends State<DashboardScreen>
     HapticFeedback.selectionClick();
   }
 
+  void applyCustomDashboardPreset(String name) {
+    final available = customDashboardPresets[name];
+    if (available == null || available.isEmpty) return;
+    setState(() {
+      visibleSensorIds
+        ..clear()
+        ..addAll(available);
+      editing = false;
+      resizingSensorId = null;
+    });
+    _scheduleLayoutSave();
+    _syncLiveSensorSelection();
+    HapticFeedback.selectionClick();
+  }
+
+  Future<void> saveCustomDashboardPreset() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save dashboard layout'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 24,
+          decoration: const InputDecoration(hintText: 'e.g. Track day'),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final cleanName = name?.trim() ?? '';
+    if (!mounted || cleanName.isEmpty || visibleSensorIds.isEmpty) return;
+    customDashboardPresets[cleanName] = visibleSensorIds
+        .where(sensorsById.containsKey)
+        .take(maxLiveSensors)
+        .toList();
+    _scheduleLayoutSave();
+    setState(() {});
+  }
+
   void resetGaugeLayout() {
     setState(() {
       visibleSensorIds
@@ -4028,6 +4108,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                         fontSize: 11,
                       ),
                     ),
+                  for (final preset in customDashboardPresets.keys)
+                    ActionChip(
+                      avatar: const Icon(Icons.bookmark_outline_rounded, size: 15),
+                      label: Text(preset),
+                      onPressed: () => applyCustomDashboardPreset(preset),
+                      backgroundColor: Colors.white.withValues(alpha: .12),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: .18),
+                      ),
+                      labelStyle: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -4082,6 +4177,18 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             if (editing) ...[
               const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  onPressed: saveCustomDashboardPreset,
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                  label: const Text('Save current layout'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white.withValues(alpha: .9),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
               Align(
                 alignment: Alignment.center,
                 child: TextButton.icon(
