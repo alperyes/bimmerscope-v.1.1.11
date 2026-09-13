@@ -4,20 +4,18 @@
 
 The version source and APK naming rules are defined in [VERSIONING.md](VERSIONING.md). For this recovered source line, the version is `1.1.0-dev+24`.
 
-Cross-platform Flutter dashboard with a Rust vehicle-protocol core for BMW F-series ENET live data. The first milestone is intentionally read-only and was ported from the `BMWENET3` Python desktop application.
+Cross-platform Flutter dashboard with a Rust vehicle-protocol core for BMW F-series ENET live data. This `1.1.4+1` build is an experimental Tune release built on the previous known-good foundation. It remains intentionally read-only for calibration and is not a BM3 replacement yet.
 
-## v24 recovery status
+## Release status
 
-The Dart application layer and Flutter assets in this folder were recovered
-directly from the known `1.1.0-dev+24` Tune debug APK. The native Rust core is
-reconstructed from the `v1.0.0+18` baseline plus the original pre-v24
-construction-chat patches for the v24 vehicle-event and read-only S55 identity
-bridge; Android project files remain baseline reconstruction. See
-[HANDOVER_SUMMARY.md](HANDOVER_SUMMARY.md) for the evidence and limits.
+The repository contains the v1.1.4 experimental baseline and its follow-up
+work. See [HANDOVER_SUMMARY.md](HANDOVER_SUMMARY.md) and
+[BIMMERSCOPE_PRODUCT_ROADMAP.md](BIMMERSCOPE_PRODUCT_ROADMAP.md) for evidence,
+scope, and limits.
 
 ## Current features
 
-Latest verified Android Tune build: `build/app/outputs/flutter-apk/BimmerScope-v1.0.0+18-tune-debug.apk`. Installed and checked on `emulator-5554`; all four simulator DME states and disconnected/demo isolation passed. See `BIMMERSCOPE_CONTEXT.md` for the artifact hash and verification limits. These checks do not constitute full-app or real-vehicle acceptance.
+Latest verified Android Tune build: `1.1.4+1` (debug). Emulator and simulator checks do not constitute full-app or real-vehicle acceptance. See `BIMMERSCOPE_CONTEXT.md` for verification limits.
 
 Recent Tune and reliability work includes VIN-scoped requests and logs, persistent drafts, immutable hash-traceable stock backups, complete tuner-package attachments, simulator DME-state parsing, session-provenance log metadata, a persistent vehicle garage, and timestamp-aware log charts. Flutter and Rust test suites currently pass; the Windows debug build is available under `build/windows/x64/runner/Debug/bmw_app.exe`.
 

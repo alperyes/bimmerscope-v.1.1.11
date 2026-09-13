@@ -1,4 +1,10 @@
-# BimmerScope `1.1.0-dev+24` recovery handover
+# BimmerScope `1.1.4+1` experimental handover
+
+This workspace is an experimental continuation of the previous BimmerScope
+release. The known-good Git starting point is tagged
+`v1.1.4-experimental-base`; ongoing work belongs on
+`codex/experimental-v1.1.4`. The older v1.1.3 workspace remains a separate
+fallback and is not modified by this repository.
 
 ## What this folder is
 
