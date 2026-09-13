@@ -19,6 +19,29 @@ void main() {
     expect(restored.vin, original.vin);
     expect(restored.status, original.status);
     expect(restored.logFiles, original.logFiles);
+    expect(restored.timeline, hasLength(1));
+    expect(restored.timeline.single.action, 'Request created');
+  });
+
+  test('records a clear local sent transition', () {
+    final request = TunerRequest(
+      id: 'request_2',
+      vin: 'VIN',
+      vehicleLabel: 'BMW F82 M4',
+      modifications: '',
+      stockFileName: null,
+      logFiles: const [],
+      status: TunerRequestStatus.readyToSend,
+      createdAt: DateTime.utc(2026, 9, 1),
+    );
+    final sent = request.markSent(at: DateTime.utc(2026, 9, 2));
+    expect(sent.status, TunerRequestStatus.sent);
+    expect(sent.revision, 2);
+    expect(sent.timeline.map((event) => event.action), [
+      'Request created',
+      'Marked as sent',
+    ]);
+    expect(sent.timeline.last.detail, contains('delivery is not confirmed'));
   });
 
   test('defaults incomplete requests to a safe draft', () {

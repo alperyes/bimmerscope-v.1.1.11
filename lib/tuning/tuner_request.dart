@@ -5,6 +5,33 @@ import 'package:path_provider/path_provider.dart';
 
 enum TunerRequestStatus { draft, readyToSend, sent }
 
+class TunerRequestActivity {
+  const TunerRequestActivity({
+    required this.action,
+    required this.recordedAt,
+    this.detail,
+  });
+
+  final String action;
+  final DateTime recordedAt;
+  final String? detail;
+
+  Map<String, dynamic> toJson() => {
+    'action': action,
+    'recorded_at': recordedAt.toIso8601String(),
+    if (detail != null && detail!.isNotEmpty) 'detail': detail,
+  };
+
+  factory TunerRequestActivity.fromJson(Map<String, dynamic> json) =>
+      TunerRequestActivity(
+        action: json['action'] as String? ?? 'Updated request',
+        recordedAt:
+            DateTime.tryParse(json['recorded_at'] as String? ?? '') ??
+            DateTime.now(),
+        detail: json['detail'] as String?,
+      );
+}
+
 class TunerRequest {
   const TunerRequest({
     required this.id,
@@ -18,6 +45,8 @@ class TunerRequest {
     this.productId,
     this.productLabel,
     this.packageManifestPath,
+    this.revision = 1,
+    this.activity = const [],
   });
 
   final String id;
@@ -31,6 +60,38 @@ class TunerRequest {
   final String? productId;
   final String? productLabel;
   final String? packageManifestPath;
+  final int revision;
+  final List<TunerRequestActivity> activity;
+
+  List<TunerRequestActivity> get timeline => activity.isEmpty
+      ? [TunerRequestActivity(action: 'Request created', recordedAt: createdAt)]
+      : activity;
+
+  TunerRequest markSent({DateTime? at}) {
+    final recordedAt = at ?? DateTime.now();
+    return TunerRequest(
+      id: id,
+      vin: vin,
+      vehicleLabel: vehicleLabel,
+      modifications: modifications,
+      stockFileName: stockFileName,
+      logFiles: logFiles,
+      status: TunerRequestStatus.sent,
+      createdAt: createdAt,
+      productId: productId,
+      productLabel: productLabel,
+      packageManifestPath: packageManifestPath,
+      revision: revision + 1,
+      activity: [
+        ...timeline,
+        TunerRequestActivity(
+          action: 'Marked as sent',
+          recordedAt: recordedAt,
+          detail: 'Marked locally after sharing; delivery is not confirmed.',
+        ),
+      ],
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -45,6 +106,8 @@ class TunerRequest {
     if (productLabel != null) 'product_label': productLabel,
     if (packageManifestPath != null)
       'package_manifest_path': packageManifestPath,
+    'revision': revision,
+    'activity': timeline.map((entry) => entry.toJson()).toList(),
   };
 
   factory TunerRequest.fromJson(Map<String, dynamic> json) => TunerRequest(
@@ -65,6 +128,17 @@ class TunerRequest {
     productId: json['product_id'] as String?,
     productLabel: json['product_label'] as String?,
     packageManifestPath: json['package_manifest_path'] as String?,
+    revision: (json['revision'] as num?)?.toInt().clamp(1, 999999) ?? 1,
+    activity:
+        (json['activity'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map(
+              (entry) => TunerRequestActivity.fromJson(
+                Map<String, dynamic>.from(entry),
+              ),
+            )
+            .toList() ??
+        const [],
   );
 }
 

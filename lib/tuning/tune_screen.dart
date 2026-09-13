@@ -147,9 +147,7 @@ class _TuneScreenState extends State<TuneScreen> {
       ..clear()
       ..addAll(
         availableLogs
-            .where(
-              (log) => draftLogNames.contains(log.uri.pathSegments.last),
-            )
+            .where((log) => draftLogNames.contains(log.uri.pathSegments.last))
             .map((log) => log.path),
       );
     setState(() {});
@@ -428,7 +426,11 @@ class _TuneScreenState extends State<TuneScreen> {
   }
 
   Future<void> readEcuCalibration() async {
-    if (readingEcu || widget.connectionLabel != 'Connected' || widget.simulatorMode) return;
+    if (readingEcu ||
+        widget.connectionLabel != 'Connected' ||
+        widget.simulatorMode) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -437,8 +439,14 @@ class _TuneScreenState extends State<TuneScreen> {
           'This performs a read-only 512 KiB ISTA-pattern read and saves an immutable ECU-read backup. It does not write to the vehicle.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Read ECU')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Read ECU'),
+          ),
         ],
       ),
     );
@@ -478,9 +486,9 @@ class _TuneScreenState extends State<TuneScreen> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ECU read stopped: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ECU read stopped: $error')));
       }
     } finally {
       if (mounted) setState(() => readingEcu = false);
@@ -597,15 +605,17 @@ class _TuneScreenState extends State<TuneScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final archive = shareAsArchive ? await tunerPackageStore.createArchive(file) : null;
+    final archive = shareAsArchive
+        ? await tunerPackageStore.createArchive(file)
+        : null;
     await tunerRequestStore.save(request);
     await SharePlus.instance.share(
       ShareParams(
         files: [
           if (archive != null) XFile(archive.path, mimeType: 'application/zip'),
           if (archive == null) ...[
-          XFile(file.path),
-          ...tunerPackageStore.lastAttachments.map((f) => XFile(f.path)),
+            XFile(file.path),
+            ...tunerPackageStore.lastAttachments.map((f) => XFile(f.path)),
           ],
         ],
         text: 'BimmerScope tuner package',
@@ -675,7 +685,26 @@ class _TuneScreenState extends State<TuneScreen> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.flag_outlined),
                 title: const Text('Status'),
-                subtitle: Text(requestStatusLabel(request.status)),
+                subtitle: Text(
+                  '${requestStatusLabel(request.status)} · Revision ${request.revision}',
+                ),
+              ),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                leading: const Icon(Icons.history_rounded),
+                title: const Text('Request timeline'),
+                subtitle: Text('${request.timeline.length} recorded events'),
+                children: [
+                  for (final event in request.timeline.reversed)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(event.action),
+                      subtitle: Text(
+                        '${event.recordedAt.toLocal()}${event.detail == null ? '' : '\n${event.detail}'}',
+                      ),
+                      isThreeLine: event.detail != null,
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
@@ -704,21 +733,7 @@ class _TuneScreenState extends State<TuneScreen> {
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () async {
-                    await tunerRequestStore.save(
-                      TunerRequest(
-                        id: request.id,
-                        vin: request.vin,
-                        vehicleLabel: request.vehicleLabel,
-                        modifications: request.modifications,
-                        stockFileName: request.stockFileName,
-                        logFiles: request.logFiles,
-                        status: TunerRequestStatus.sent,
-                        createdAt: request.createdAt,
-                        productId: request.productId,
-                        productLabel: request.productLabel,
-                        packageManifestPath: request.packageManifestPath,
-                      ),
-                    );
+                    await tunerRequestStore.save(request.markSent());
                     if (!context.mounted) return;
                     Navigator.pop(context);
                     await loadRequests();
@@ -898,7 +913,8 @@ class _TuneScreenState extends State<TuneScreen> {
                   const _TuneStepLabel(
                     number: '2',
                     title: 'Choose a product',
-                    detail: 'Products become available only for validated vehicles.',
+                    detail:
+                        'Products become available only for validated vehicles.',
                   ),
                   const SizedBox(height: 8),
                   _TuneProductSelector(
@@ -1107,20 +1123,29 @@ class _TuneScreenState extends State<TuneScreen> {
                               ),
                               const SizedBox(height: 8),
                               OutlinedButton.icon(
-                                onPressed: readingEcu ? null : readEcuCalibration,
+                                onPressed: readingEcu
+                                    ? null
+                                    : readEcuCalibration,
                                 icon: readingEcu
                                     ? const SizedBox(
                                         width: 18,
                                         height: 18,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
                                       )
                                     : const Icon(Icons.memory_outlined),
-                                label: Text(readingEcu ? 'Reading ECU…' : 'Read calibration from ECU'),
+                                label: Text(
+                                  readingEcu
+                                      ? 'Reading ECU…'
+                                      : 'Read calibration from ECU',
+                                ),
                               ),
                               if (readingEcu) ...[
                                 const SizedBox(height: 8),
                                 TextButton.icon(
-                                  onPressed: rust_vehicle.cancelIstaS55Calibration,
+                                  onPressed:
+                                      rust_vehicle.cancelIstaS55Calibration,
                                   icon: const Icon(Icons.stop_circle_outlined),
                                   label: const Text('Cancel ECU read'),
                                 ),
@@ -2374,7 +2399,7 @@ class _TuneReadinessPanel extends StatelessWidget {
                 Text(
                   vin == 'Not identified'
                       ? 'Identify a supported vehicle to prepare a package'
-                  : 'Vehicle connected · VIN $vin',
+                      : 'Vehicle connected · VIN $vin',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: muted, fontSize: 12),
