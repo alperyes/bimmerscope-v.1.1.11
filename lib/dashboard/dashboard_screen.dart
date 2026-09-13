@@ -12,6 +12,7 @@ import 'package:bmw_app/diagnostics/flap_control_screen.dart';
 import 'package:bmw_app/diagnostics/app_diagnostics_screen.dart';
 import 'package:bmw_app/diagnostics/app_diagnostics_store.dart';
 import 'package:bmw_app/logging/data_logger.dart';
+import 'package:bmw_app/logging/auto_log_trigger.dart';
 import 'package:bmw_app/logging/logging_screen.dart';
 import 'package:bmw_app/onboarding/connection_guide_screen.dart';
 import 'package:bmw_app/product/product_config.dart';
@@ -145,7 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   double autoLogThreshold = 70;
   bool _autoLogRecording = false;
   bool _autoLogStartInProgress = false;
-  DateTime? _autoLogThrottleReleasedAt;
+  final _autoLogTrigger = AutoLogTrigger();
   bool sessionResumeInProgress = false;
   DateTime? sessionStartedAt;
   String sessionId = '';
@@ -387,9 +388,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             preferences.getString('bimmerscope.reconnect_policy') ??
             'automatic';
         useMetric = preferences.getString('bimmerscope.units') != 'imperial';
-        autoLogEnabled = preferences.getBool('bimmerscope.auto_log_enabled') ?? false;
-        autoLogThreshold = (preferences.getDouble('bimmerscope.auto_log_threshold') ?? 70)
-            .clamp(30, 95);
+        autoLogEnabled =
+            preferences.getBool('bimmerscope.auto_log_enabled') ?? false;
+        autoLogThreshold =
+            (preferences.getDouble('bimmerscope.auto_log_threshold') ?? 70)
+                .clamp(30, 95);
         _restoreDashboardLayout(storedLayout);
         _restoreCustomPresets(storedPresets);
       });
@@ -402,7 +405,11 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (visibleSensorIds.length >= maxLiveSensors) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Free a live gauge slot, then add Throttle Angle to use automatic logging.')),
+            const SnackBar(
+              content: Text(
+                'Free a live gauge slot, then add Throttle Angle to use automatic logging.',
+              ),
+            ),
           );
         }
         return;
@@ -1545,29 +1552,34 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _considerAutoLog(VehicleEvent event) {
-    if (!autoLogEnabled || event.sensorId != 'throttle_angle' || !live ||
-        !monitoringActive || widget.previewMode) {
+    if (event.sensorId != 'throttle_angle') {
       return;
     }
-    if (event.value >= autoLogThreshold) {
-      _autoLogThrottleReleasedAt = null;
-      if (!logger.isRecording && !_autoLogStartInProgress) {
-        _autoLogStartInProgress = true;
-        unawaited(startLogging(automatic: true).whenComplete(() {
-          _autoLogStartInProgress = false;
-        }));
-      }
-      return;
-    }
-    if (!_autoLogRecording || !logger.isRecording ||
-        event.value > autoLogThreshold * .5) {
-      _autoLogThrottleReleasedAt = null;
-      return;
-    }
-    _autoLogThrottleReleasedAt ??= DateTime.now();
-    if (DateTime.now().difference(_autoLogThrottleReleasedAt!) >=
-        const Duration(seconds: 3)) {
-      unawaited(stopLogging(automatic: true));
+    final decision = _autoLogTrigger.observe(
+      enabled: autoLogEnabled && !widget.previewMode,
+      sessionActive: live && monitoringActive,
+      isRecording: logger.isRecording,
+      automaticRecording: _autoLogRecording,
+      throttlePercent: event.value,
+      startThreshold: autoLogThreshold,
+      now: DateTime.now(),
+    );
+    switch (decision) {
+      case AutoLogDecision.start:
+        if (!_autoLogStartInProgress) {
+          _autoLogStartInProgress = true;
+          unawaited(
+            startLogging(automatic: true).whenComplete(() {
+              _autoLogStartInProgress = false;
+            }),
+          );
+        }
+        break;
+      case AutoLogDecision.stop:
+        unawaited(stopLogging(automatic: true));
+        break;
+      case AutoLogDecision.none:
+        break;
     }
   }
 
@@ -1596,7 +1608,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         ecuCalibration: engineEcuCalibration ?? engineEcuCvn,
       );
       _autoLogRecording = automatic;
-      _autoLogThrottleReleasedAt = null;
+      _autoLogTrigger.reset();
       if (automatic) logger.addMarker('Automatic pull log started');
       loggingElapsed = Duration.zero;
       loggingTimer?.cancel();
@@ -1620,7 +1632,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final wasAutomatic = _autoLogRecording || automatic;
     if (wasAutomatic) logger.addMarker('Automatic pull log stopped');
     _autoLogRecording = false;
-    _autoLogThrottleReleasedAt = null;
+    _autoLogTrigger.reset();
     loggingTimer?.cancel();
     loggingTimer = null;
     final file = await logger.stop();
@@ -4011,9 +4023,14 @@ class _DashboardScreenState extends State<DashboardScreen>
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
           children: [
-            Text('Saved layouts', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Saved layouts',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 6),
-            const Text('Select a layout to load it, or remove one you no longer need.'),
+            const Text(
+              'Select a layout to load it, or remove one you no longer need.',
+            ),
             const SizedBox(height: 10),
             if (customDashboardPresets.isEmpty)
               const ListTile(title: Text('No saved layouts yet')),
@@ -4036,7 +4053,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       context: context,
                       builder: (context) => AlertDialog(
                         title: Text('Remove $name?'),
-                        content: const Text('This removes only the saved layout. Your current dashboard will stay unchanged.'),
+                        content: const Text(
+                          'This removes only the saved layout. Your current dashboard will stay unchanged.',
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
@@ -4081,13 +4100,16 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   void _warnIfAutoLogNeedsThrottle() {
-    if (!autoLogEnabled || visibleSensorIds.contains('throttle_angle') ||
+    if (!autoLogEnabled ||
+        visibleSensorIds.contains('throttle_angle') ||
         !mounted) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Automatic logging is on. Add Throttle Angle to this layout before your next pull.'),
+        content: Text(
+          'Automatic logging is on. Add Throttle Angle to this layout before your next pull.',
+        ),
       ),
     );
   }
@@ -4279,7 +4301,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   for (final preset in customDashboardPresets.keys)
                     ActionChip(
-                      avatar: const Icon(Icons.bookmark_outline_rounded, size: 15),
+                      avatar: const Icon(
+                        Icons.bookmark_outline_rounded,
+                        size: 15,
+                      ),
                       label: Text(preset),
                       onPressed: () => applyCustomDashboardPreset(preset),
                       backgroundColor: Colors.white.withValues(alpha: .12),
