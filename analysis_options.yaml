@@ -9,6 +9,13 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Cargokit is a vendored build tool with its own pubspec and dependency graph;
+# it is analyzed separately by its build tooling, not as part of this Flutter
+# application package.
+analyzer:
+  exclude:
+    - rust_builder/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
