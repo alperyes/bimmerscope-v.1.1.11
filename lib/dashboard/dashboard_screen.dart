@@ -3922,6 +3922,67 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() {});
   }
 
+  Future<void> manageCustomDashboardPresets() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          children: [
+            Text('Saved layouts', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text('Select a layout to load it, or remove one you no longer need.'),
+            const SizedBox(height: 10),
+            if (customDashboardPresets.isEmpty)
+              const ListTile(title: Text('No saved layouts yet')),
+            for (final name in customDashboardPresets.keys.toList())
+              ListTile(
+                leading: const Icon(Icons.bookmark_outline_rounded),
+                title: Text(name),
+                subtitle: Text(
+                  '${(customDashboardPresets[name]!['visibleSensorIds'] as List).length} gauges',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  applyCustomDashboardPreset(name);
+                },
+                trailing: IconButton(
+                  tooltip: 'Remove $name',
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  onPressed: () async {
+                    final remove = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text('Remove $name?'),
+                        content: const Text('This removes only the saved layout. Your current dashboard will stay unchanged.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Keep'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Remove'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (remove != true || !mounted) return;
+                    setState(() => customDashboardPresets.remove(name));
+                    _scheduleLayoutSave();
+                    if (context.mounted) Navigator.pop(context);
+                    unawaited(manageCustomDashboardPresets());
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void resetGaugeLayout() {
     setState(() {
       visibleSensorIds
@@ -4203,6 +4264,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ),
               ),
+              if (customDashboardPresets.isNotEmpty)
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton.icon(
+                    onPressed: manageCustomDashboardPresets,
+                    icon: const Icon(Icons.bookmarks_outlined, size: 18),
+                    label: const Text('Manage saved layouts'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white.withValues(alpha: .9),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 2),
               Align(
                 alignment: Alignment.center,
