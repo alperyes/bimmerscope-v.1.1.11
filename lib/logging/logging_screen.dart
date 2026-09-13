@@ -24,6 +24,10 @@ class LoggingScreen extends StatefulWidget {
     required this.elapsed,
     required this.canRecord,
     required this.onToggleRecording,
+    required this.autoLogEnabled,
+    required this.autoLogThreshold,
+    required this.onAutoLogChanged,
+    required this.onAutoLogThresholdChanged,
     this.telemetryDegraded = false,
     this.telemetryGapCount = 0,
     this.maxTelemetryGapMs = 0,
@@ -38,6 +42,10 @@ class LoggingScreen extends StatefulWidget {
   final Duration elapsed;
   final bool canRecord;
   final Future<void> Function() onToggleRecording;
+  final bool autoLogEnabled;
+  final double autoLogThreshold;
+  final Future<void> Function(bool enabled) onAutoLogChanged;
+  final Future<void> Function(double threshold) onAutoLogThresholdChanged;
   final bool telemetryDegraded;
   final int telemetryGapCount;
   final int maxTelemetryGapMs;
@@ -99,6 +107,10 @@ class _LoggingScreenState extends State<LoggingScreen> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(child: recorderPanel()),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            sliver: SliverToBoxAdapter(child: autoLogPanel()),
           ),
           if (!loading && files.isNotEmpty)
             SliverPadding(
@@ -353,6 +365,47 @@ class _LoggingScreenState extends State<LoggingScreen> {
           ),
           child: Text(widget.isRecording ? 'Stop' : 'Record'),
         ),
+      ],
+    ),
+  );
+
+  Widget autoLogPanel() => Container(
+    padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+    decoration: BoxDecoration(
+      color: AppPalette.surface(widget.isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+      border: Border.all(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Automatic pull logging'),
+          subtitle: const Text('Start at throttle threshold; stop 3 seconds after release.'),
+          value: widget.autoLogEnabled,
+          onChanged: widget.canRecord
+              ? (enabled) async => widget.onAutoLogChanged(enabled)
+              : null,
+        ),
+        if (widget.autoLogEnabled) ...[
+          Text(
+            'Start threshold: ${widget.autoLogThreshold.round()}% throttle',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          Slider(
+            value: widget.autoLogThreshold,
+            min: 30,
+            max: 95,
+            divisions: 13,
+            label: '${widget.autoLogThreshold.round()}%',
+            onChanged: widget.canRecord
+                ? (value) => widget.onAutoLogThresholdChanged(value)
+                : null,
+          ),
+        ],
       ],
     ),
   );

@@ -65,6 +65,7 @@ void main() {
     await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
     expect(find.text('Data recorder'), findsOneWidget);
+    expect(find.text('Automatic pull logging'), findsOneWidget);
     expect(find.text('No saved logs yet'), findsOneWidget);
   });
 

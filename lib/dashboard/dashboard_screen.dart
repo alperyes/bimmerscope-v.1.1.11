@@ -141,6 +141,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   DateTime? ignitionOffSince;
   bool ignitionOffDetected = false;
   Duration loggingElapsed = Duration.zero;
+  bool autoLogEnabled = false;
+  double autoLogThreshold = 70;
+  bool _autoLogRecording = false;
+  bool _autoLogStartInProgress = false;
+  DateTime? _autoLogThrottleReleasedAt;
   bool sessionResumeInProgress = false;
   DateTime? sessionStartedAt;
   String sessionId = '';
@@ -382,11 +387,40 @@ class _DashboardScreenState extends State<DashboardScreen>
             preferences.getString('bimmerscope.reconnect_policy') ??
             'automatic';
         useMetric = preferences.getString('bimmerscope.units') != 'imperial';
+        autoLogEnabled = preferences.getBool('bimmerscope.auto_log_enabled') ?? false;
+        autoLogThreshold = (preferences.getDouble('bimmerscope.auto_log_threshold') ?? 70)
+            .clamp(30, 95);
         _restoreDashboardLayout(storedLayout);
         _restoreCustomPresets(storedPresets);
       });
       if (!widget.previewMode) _syncLiveSensorSelection();
     } catch (_) {}
+  }
+
+  Future<void> setAutoLogEnabled(bool enabled) async {
+    if (enabled && !visibleSensorIds.contains('throttle_angle')) {
+      if (visibleSensorIds.length >= maxLiveSensors) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Free a live gauge slot, then add Throttle Angle to use automatic logging.')),
+          );
+        }
+        return;
+      }
+      setState(() => visibleSensorIds.add('throttle_angle'));
+      _scheduleLayoutSave();
+      _syncLiveSensorSelection();
+    }
+    setState(() => autoLogEnabled = enabled);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('bimmerscope.auto_log_enabled', enabled);
+  }
+
+  Future<void> setAutoLogThreshold(double threshold) async {
+    final next = threshold.clamp(30, 95).toDouble();
+    setState(() => autoLogThreshold = next);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setDouble('bimmerscope.auto_log_threshold', next);
   }
 
   void _restoreCustomPresets(String? encoded) {
@@ -1288,6 +1322,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         return;
       }
       if (sensor != null) logger.record(event, sensor);
+      _considerAutoLog(event);
       // Rust and HSFZ identify the DME at address 0x12 (18 decimal).
       if (sensor?.ecu == 0x12) engineEcuDetected = true;
     }
@@ -1509,11 +1544,42 @@ class _DashboardScreenState extends State<DashboardScreen>
     return 'Error ID NET-999';
   }
 
+  void _considerAutoLog(VehicleEvent event) {
+    if (!autoLogEnabled || event.sensorId != 'throttle_angle' || !live ||
+        !monitoringActive || widget.previewMode) {
+      return;
+    }
+    if (event.value >= autoLogThreshold) {
+      _autoLogThrottleReleasedAt = null;
+      if (!logger.isRecording && !_autoLogStartInProgress) {
+        _autoLogStartInProgress = true;
+        unawaited(startLogging(automatic: true).whenComplete(() {
+          _autoLogStartInProgress = false;
+        }));
+      }
+      return;
+    }
+    if (!_autoLogRecording || !logger.isRecording ||
+        event.value > autoLogThreshold * .5) {
+      _autoLogThrottleReleasedAt = null;
+      return;
+    }
+    _autoLogThrottleReleasedAt ??= DateTime.now();
+    if (DateTime.now().difference(_autoLogThrottleReleasedAt!) >=
+        const Duration(seconds: 3)) {
+      unawaited(stopLogging(automatic: true));
+    }
+  }
+
   Future<void> toggleLogging() async {
     if (logger.isRecording) {
       await stopLogging();
       return;
     }
+    await startLogging();
+  }
+
+  Future<void> startLogging({bool automatic = false}) async {
     if (!live || !monitoringActive || widget.previewMode) return;
     try {
       await logger.start(
@@ -1529,6 +1595,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         ecuSoftware: engineEcuSoftware ?? engineEcuSoftwareVersion,
         ecuCalibration: engineEcuCalibration ?? engineEcuCvn,
       );
+      _autoLogRecording = automatic;
+      _autoLogThrottleReleasedAt = null;
+      if (automatic) logger.addMarker('Automatic pull log started');
       loggingElapsed = Duration.zero;
       loggingTimer?.cancel();
       loggingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1547,7 +1616,11 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
-  Future<void> stopLogging() async {
+  Future<void> stopLogging({bool automatic = false}) async {
+    final wasAutomatic = _autoLogRecording || automatic;
+    if (wasAutomatic) logger.addMarker('Automatic pull log stopped');
+    _autoLogRecording = false;
+    _autoLogThrottleReleasedAt = null;
     loggingTimer?.cancel();
     loggingTimer = null;
     final file = await logger.stop();
@@ -1558,7 +1631,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Saved ${logger.sampleCount} samples to CSV.'),
+          content: Text(
+            '${wasAutomatic ? 'Automatic pull log saved' : 'Saved'} ${logger.sampleCount} samples to CSV.',
+          ),
           duration: const Duration(seconds: 2),
           action: SnackBarAction(
             label: 'LOGS',
@@ -1671,6 +1746,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                     elapsed: loggingElapsed,
                     canRecord: live && monitoringActive && !widget.previewMode,
                     onToggleRecording: toggleLogging,
+                    autoLogEnabled: autoLogEnabled,
+                    autoLogThreshold: autoLogThreshold,
+                    onAutoLogChanged: setAutoLogEnabled,
+                    onAutoLogThresholdChanged: setAutoLogThreshold,
                     telemetryDegraded: telemetryDegraded,
                     telemetryGapCount: telemetryGapCount,
                     maxTelemetryGapMs: maxTelemetryGapMs,
@@ -3877,6 +3956,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
     _scheduleLayoutSave();
     _syncLiveSensorSelection();
+    _warnIfAutoLogNeedsThrottle();
     HapticFeedback.selectionClick();
   }
 
@@ -3996,7 +4076,20 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
     _scheduleLayoutSave();
     _syncLiveSensorSelection();
+    _warnIfAutoLogNeedsThrottle();
     HapticFeedback.selectionClick();
+  }
+
+  void _warnIfAutoLogNeedsThrottle() {
+    if (!autoLogEnabled || visibleSensorIds.contains('throttle_angle') ||
+        !mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Automatic logging is on. Add Throttle Angle to this layout before your next pull.'),
+      ),
+    );
   }
 
   Widget editBanner() => Container(
