@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:bmw_app/tuning/tuner_package.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,8 +34,25 @@ void main() {
     final packagedManifest = jsonDecode(utf8.decode(decoded.files.first.content));
     final folder = packagedManifest['attachments_directory'];
     for (final entry in packagedManifest['data_logs']) {
-      expect(decoded.files.any((f) => f.name == '$folder/${entry['path']}'), isTrue);
+      final archived = decoded.files.singleWhere((f) => f.name == '$folder/${entry['path']}');
+      expect(archived.content.length, entry['size']);
+      expect(sha256.convert(archived.content).toString(), entry['sha256']);
     }
+    // Reopen with a new store: export must not rely on lastAttachments state.
+    final reopened = TunerPackageStore(documentsProvider: () async => root);
+    expect(await (await reopened.createArchive(manifest)).exists(), isTrue);
+    final attachment = store.lastAttachments.first;
+    final originalBytes = await attachment.readAsBytes();
+    final altered = List<int>.from(originalBytes);
+    altered[0] ^= 1;
+    await attachment.writeAsBytes(altered);
+    expect((await reopened.validate(manifest)).errors, contains(startsWith('Hash mismatch:')));
+    await expectLater(reopened.createArchive(manifest), throwsStateError);
+    await attachment.writeAsBytes(originalBytes.take(2).toList());
+    expect((await reopened.validate(manifest)).errors, contains(startsWith('Size mismatch:')));
+    await attachment.delete();
+    expect((await reopened.validate(manifest)).errors, contains(startsWith('Missing attachment:')));
+    await expectLater(reopened.createArchive(manifest), throwsStateError);
     await expectLater(create(['${root.path}/missing.csv']), throwsA(isA<FileSystemException>()));
   });
 }
