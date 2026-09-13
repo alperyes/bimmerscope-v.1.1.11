@@ -129,6 +129,7 @@ class TunerPackageStore {
     for (final entry in attachments) {
       final relative = entry['path'] as String?;
       final expected = entry['sha256'] as String?;
+      final expectedSize = entry['size'] as num?;
       if (relative == null || expected == null || relative.contains('..')) {
         errors.add('Attachment entry is incomplete');
         continue;
@@ -142,6 +143,10 @@ class TunerPackageStore {
       }
       if (!await file.exists()) {
         errors.add('Missing attachment: $relative');
+        continue;
+      }
+      if (expectedSize == null || await file.length() != expectedSize.toInt()) {
+        errors.add('Size mismatch: $relative');
         continue;
       }
       final actual = sha256.convert(await file.readAsBytes()).toString();
