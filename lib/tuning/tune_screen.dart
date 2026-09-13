@@ -746,6 +746,12 @@ class _TuneScreenState extends State<TuneScreen> {
                     File(request.packageManifestPath!).uri.pathSegments.last,
                   ),
                 ),
+              if (request.packageManifestPath != null)
+                OutlinedButton.icon(
+                  onPressed: () => shareSavedPackage(request),
+                  icon: const Icon(Icons.ios_share_outlined),
+                  label: const Text('Share saved package ZIP'),
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.save_outlined),
@@ -769,6 +775,26 @@ class _TuneScreenState extends State<TuneScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> shareSavedPackage(TunerRequest request) async {
+    final path = request.packageManifestPath;
+    if (path == null) return;
+    try {
+      final archive = await tunerPackageStore.createArchive(File(path));
+      if (!mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(archive.path, mimeType: 'application/zip')],
+          text: 'BimmerScope tuner package · ${request.vehicleLabel}',
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not share saved package: $error')),
+      );
+    }
   }
 
   String requestStatusLabel(TunerRequestStatus status) => switch (status) {
