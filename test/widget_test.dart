@@ -1,9 +1,45 @@
 import 'package:bmw_app/app.dart';
+import 'dart:convert';
+import 'package:bmw_app/dashboard/dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('restores saved layout styles and migrates channel presets', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'bimmerscope.dashboard_presets_v1': jsonEncode({
+        'Track': {
+          'visibleSensorIds': ['engine_rpm', 'missing_sensor', 'engine_rpm'],
+          'gaugeWidths': {'engine_rpm': 250},
+          'gaugeHeights': {'engine_rpm': 210},
+          'dialSensorIds': ['engine_rpm'],
+          'valueColorIds': ['engine_rpm'],
+        },
+        'Legacy': ['engine_rpm'],
+      }),
+    });
+    await tester.pumpWidget(const BmwEnetApp(previewMode: true));
+    await tester.pumpAndSettle();
+    final dynamic dashboard = tester.state(find.byType(DashboardScreen));
+    dashboard.applyCustomDashboardPreset('Track');
+    await tester.pump();
+    expect(dashboard.visibleSensorIds, ['engine_rpm']);
+    expect(dashboard.gaugeWidths['engine_rpm'], 250);
+    expect(dashboard.gaugeHeights['engine_rpm'], 210);
+    expect(dashboard.dialSensorIds, contains('engine_rpm'));
+    expect(dashboard.valueColorIds, contains('engine_rpm'));
+    dashboard.applyCustomDashboardPreset('Legacy');
+    await tester.pump();
+    expect(dashboard.visibleSensorIds, ['engine_rpm']);
+    expect(dashboard.gaugeWidths, isEmpty);
+    expect(dashboard.gaugeHeights, isEmpty);
+    expect(dashboard.dialSensorIds, isEmpty);
+    expect(dashboard.valueColorIds, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('shows connection guide on first launch', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const BmwEnetApp());
