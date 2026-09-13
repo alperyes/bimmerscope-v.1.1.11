@@ -1159,6 +1159,20 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                 : quality.reasons.join(' '),
             style: const TextStyle(fontSize: 11),
           ),
+          if (quality.channelQuality.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text('Observed channel sampling', style: TextStyle(fontWeight: FontWeight.w700)),
+            for (final entry in quality.channelQuality.entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '${entry.key}: ${entry.value.sampleCount} samples · '
+                  '${entry.value.observedHz?.toStringAsFixed(2) ?? "—"} Hz · '
+                  'largest gap ${(entry.value.maxGapMs / 1000).toStringAsFixed(2)} s',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+          ],
         ],
       ),
     );

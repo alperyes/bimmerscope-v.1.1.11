@@ -1,5 +1,19 @@
 import 'dart:io';
 
+class ChannelQuality {
+  const ChannelQuality(this.sampleCount, this.firstMs, this.lastMs, this.maxGapMs);
+  final int sampleCount;
+  final int firstMs;
+  final int lastMs;
+  final int maxGapMs;
+  double? get observedHz => lastMs > firstMs
+      ? (sampleCount - 1) * 1000 / (lastMs - firstMs) : null;
+  Map<String, dynamic> toJson() => {
+    'sample_count': sampleCount, 'first_ms': firstMs, 'last_ms': lastMs,
+    'max_gap_ms': maxGapMs, 'observed_hz': observedHz,
+  };
+}
+
 class LogQualityReport {
   const LogQualityReport({
     required this.sampleCount,
@@ -9,6 +23,7 @@ class LogQualityReport {
     required this.maxGapMs,
     required this.reasons,
     this.invalidSampleCount = 0,
+    this.channelQuality = const {},
   });
 
   final int sampleCount;
@@ -18,11 +33,13 @@ class LogQualityReport {
   final int maxGapMs;
   final List<String> reasons;
   final int invalidSampleCount;
+  final Map<String, ChannelQuality> channelQuality;
 
   bool get suitableForTunerReview => reasons.isEmpty;
 
   Map<String, dynamic> toJson() => {
     'sample_count': sampleCount,
+    'channel_quality': channelQuality.map((id, value) => MapEntry(id, value.toJson())),
     'invalid_sample_count': invalidSampleCount,
     'duration_ms': durationMs,
     'channels': channels.toList()..sort(),
@@ -41,6 +58,7 @@ Future<LogQualityReport> inspectLogQuality(
   final lines = await file.readAsLines();
   final header = <String, String>{};
   final channels = <String>{};
+  final channelQuality = <String, ChannelQuality>{};
   var samples = 0;
   var invalidSamples = 0;
   var durationMs = 0;
@@ -83,6 +101,14 @@ Future<LogQualityReport> inspectLogQuality(
           : elapsedMs - previousElapsedMs;
     }
     previousElapsedMsByChannel[channel] = elapsedMs;
+    final previous = channelQuality[channel];
+    final gap = previous == null ? 0 : elapsedMs - previous.lastMs;
+    channelQuality[channel] = ChannelQuality(
+      (previous?.sampleCount ?? 0) + 1,
+      previous?.firstMs ?? elapsedMs,
+      elapsedMs,
+      gap > (previous?.maxGapMs ?? 0) ? gap : (previous?.maxGapMs ?? 0),
+    );
     samples++;
     channels.add(channel);
     durationMs = durationMs > elapsedMs ? durationMs : elapsedMs;
@@ -112,6 +138,7 @@ Future<LogQualityReport> inspectLogQuality(
   return LogQualityReport(
     sampleCount: samples,
     invalidSampleCount: invalidSamples,
+    channelQuality: channelQuality,
     durationMs: durationMs,
     channels: channels,
     provenanceMatches: matches,

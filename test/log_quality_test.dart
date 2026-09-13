@@ -24,6 +24,9 @@ void main() {
     expect(report.invalidSampleCount, 6);
     expect(report.maxGapMs, 6000);
     expect(report.durationMs, 7000);
+    expect(report.channelQuality['rpm']!.sampleCount, 2);
+    expect(report.channelQuality['rpm']!.observedHz, closeTo(1 / 6, .0001));
+    expect(report.channelQuality['rpm']!.maxGapMs, 6000);
     expect(report.suitableForTunerReview, isFalse);
     expect(report.toJson()['invalid_sample_count'], 6);
   });
