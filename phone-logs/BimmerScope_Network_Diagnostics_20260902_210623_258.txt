@@ -1,0 +1,65 @@
+BIMMERSCOPE NETWORK DIAGNOSTICS
+Captured: 2026-09-02T21:06:23.258132
+Platform: android
+Connection phase: discovering
+VIN: Not identified
+Gateway: 169.254.12.64:6801 (ENET)
+Gateway TCP probe: SocketException: SocketException: Connection failed (OS Error: Network is unreachable, errno = 101), address = 169.254.12.64, port = 6801
+Gateway UDP discovery probe: not sent
+Non-loopback interface present: true
+Capture scope: application session telemetry, interface state, and event history; not a raw packet capture
+Interface count: 3
+Session started: 2026-09-02T21:06:08.929569
+Session duration: 14 seconds
+Event count: 36
+Action count: 36
+Scan started: 0
+Scan completed: 0
+Reconnect events: 0
+
+Network interfaces:
+- lo
+  127.0.0.1 (IPv4)
+  ::1%1 (IPv6)
+- eth0
+  10.138.52.211 (IPv4)
+- wlan2
+  10.222.123.87 (IPv4)
+
+Recent connection events:
+21:06:23  ACTION  Clicked Export Network Diagnostics
+21:06:08  ACTION  Clicked Connect
+21:06:06  ACTION  Clicked Disconnect
+21:05:56  ACTION  Selected Vehicle page
+21:05:49  ACTION  Selected Logging page
+21:05:45  ACTION  Selected Vehicle page
+21:05:43  ACTION  Selected Diagnostics page
+21:05:41  ACTION  Selected Other page
+21:05:31  ACTION  Clicked Connect
+21:05:28  ACTION  Clicked Disconnect
+21:04:55  ACTION  Clicked Connect
+21:04:47  ACTION  Clicked Disconnect
+21:04:18  ACTION  Clicked Connect
+21:04:16  ACTION  Clicked Disconnect
+21:04:11  ACTION  Clicked Connect
+21:04:08  ACTION  Clicked Disconnect
+21:03:45  ACTION  Selected Vehicle page
+21:03:43  ACTION  Selected Other page
+21:03:42  ACTION  Selected Diagnostics page
+21:03:35  ACTION  Clicked Export Network Diagnostics
+21:03:35  ACTION  Clicked Export Network Diagnostics
+21:03:34  ACTION  Clicked Export Network Diagnostics
+21:03:32  ACTION  Clicked Export Network Diagnostics
+21:03:26  ACTION  Clicked Connect
+21:03:17  ACTION  Clicked Disconnect
+21:02:54  ACTION  Selected Vehicle page
+21:02:44  ACTION  Selected Other page
+21:02:44  ACTION  Selected Diagnostics page
+21:02:43  ACTION  Selected Diagnostics page
+21:02:06  ACTION  Clicked Connect
+21:02:03  ACTION  Clicked Disconnect
+21:01:42  ACTION  Clicked Connect
+21:01:38  ACTION  Clicked Disconnect
+21:00:59  ACTION  Clicked Connect
+21:00:57  ACTION  Clicked Disconnect
+21:00:26  ACTION  Clicked Connect

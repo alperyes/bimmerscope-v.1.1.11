@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-labelledby="title desc">
+  <title id="title">OBD adapter connection concept</title>
+  <desc id="desc">A blue OBD adapter approaching a dark diagnostic port with a soft connection glow.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101b2d"/><stop offset="1" stop-color="#07101d"/></linearGradient>
+    <linearGradient id="adapter" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#65c8ff"/><stop offset="1" stop-color="#1266c2"/></linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#e5f5ff"/><stop offset="1" stop-color="#7294b0"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="18"/></filter>
+    <filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-opacity=".45"/></filter>
+  </defs>
+  <rect width="900" height="560" rx="36" fill="url(#bg)"/>
+  <circle cx="450" cy="285" r="138" fill="#1687ff" opacity=".12" filter="url(#glow)"/>
+  <text x="56" y="72" fill="#9be7ff" font-family="monospace" font-size="16" letter-spacing="3">BIMMERSCOPE // CONNECTION GUIDE</text>
+  <text x="56" y="120" fill="white" font-family="system-ui,sans-serif" font-size="34" font-weight="700">Plug in your adapter</text>
+  <text x="56" y="153" fill="#9fb3c8" font-family="system-ui,sans-serif" font-size="18">Connect the OBD adapter to begin diagnostics.</text>
+  <!-- port housing -->
+  <g filter="url(#shadow)">
+    <path d="M610 215h132l38 38v112l-38 38H610l-38-38V253z" fill="#1a2b40" stroke="#55718d" stroke-width="3"/>
+    <path d="M608 246h123l19 19v48l-19 19H608l-19-19v-48z" fill="#050b14" stroke="#75a9d4" stroke-width="3"/>
+    <path d="M626 262h88v54h-88z" fill="#0e1c2c"/>
+    <g fill="#b7d7eb"><circle cx="640" cy="275" r="5"/><circle cx="660" cy="275" r="5"/><circle cx="680" cy="275" r="5"/><circle cx="700" cy="275" r="5"/><circle cx="640" cy="302" r="5"/><circle cx="660" cy="302" r="5"/><circle cx="680" cy="302" r="5"/><circle cx="700" cy="302" r="5"/></g>
+  </g>
+  <!-- adapter -->
+  <g transform="translate(230 176) rotate(-7 150 100)" filter="url(#shadow)">
+    <rect x="0" y="25" width="300" height="150" rx="30" fill="url(#adapter)" stroke="#9be7ff" stroke-width="3"/>
+    <rect x="245" y="57" width="78" height="86" rx="10" fill="url(#metal)" stroke="#d9f3ff" stroke-width="3"/>
+    <path d="M266 72v56m20-56v56m20-56v56" stroke="#55718d" stroke-width="5"/>
+    <circle cx="48" cy="100" r="12" fill="#c8f4ff"/><circle cx="48" cy="100" r="5" fill="#1977d2"/>
+    <text x="80" y="108" fill="white" font-family="system-ui,sans-serif" font-size="25" font-weight="700" letter-spacing="2">ENET</text>
+  </g>
+  <!-- cable -->
+  <path d="M-20 325 C100 325 110 475 270 470 C350 468 372 412 395 344" fill="none" stroke="#0a111c" stroke-width="30" stroke-linecap="round"/>
+  <path d="M-20 325 C100 325 110 475 270 470 C350 468 372 412 395 344" fill="none" stroke="#30465d" stroke-width="17" stroke-linecap="round"/>
+  <g transform="translate(56 484)"><circle r="8" fill="#55d6ff"/><text x="20" y="6" fill="#c7d7e8" font-family="system-ui,sans-serif" font-size="16">Move adapter toward the port</text></g>
+</svg>

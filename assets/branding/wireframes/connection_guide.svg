@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">F82 driver footwell ENET connection map</title>
+  <desc id="desc">Restrained traced wireframe of an F82 cockpit, with the driver-footwell OBD port highlighted in BimmerScope blue.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#151d28"/><stop offset="1" stop-color="#070b11"/></linearGradient>
+    <radialGradient id="spot" cx="24%" cy="74%" r="52%"><stop offset="0" stop-color="#2f8cff" stop-opacity=".16"/><stop offset="1" stop-color="#2f8cff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="960" height="540" rx="24" fill="url(#paper)"/><rect width="960" height="540" rx="24" fill="url(#spot)"/>
+  <g fill="none" stroke="#93a5ba" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 111h196c31 0 58-13 92-30 37-19 76-28 128-28h235c82 0 145 29 204 84" stroke-width="3" opacity=".72"/>
+    <path d="M48 134h248m325 0h288M42 372h875" stroke-width="2" opacity=".32"/>
+    <path d="M410 70h143c16 0 28 12 28 28v67H382V98c0-16 12-28 28-28Z" stroke-width="2.5" opacity=".9"/>
+    <path d="M397 103h170m-151 22h132M385 166h194l22 45H363l22-45Z" stroke-width="2" opacity=".76"/>
+    <path d="M382 219h200v69H382zM397 239h170m-170 23h170" stroke-width="1.8" opacity=".62"/>
+    <circle cx="425" cy="308" r="13" stroke-width="1.8"/><circle cx="480" cy="308" r="13" stroke-width="1.8"/><circle cx="535" cy="308" r="13" stroke-width="1.8"/>
+    <path d="M394 337h172l-25 48H419l-25-48Z" stroke-width="2"/><ellipse cx="480" cy="357" rx="30" ry="15" stroke-width="1.8"/><circle cx="541" cy="356" r="11" stroke-width="1.8"/>
+    <circle cx="274" cy="247" r="134" stroke-width="3" opacity=".85"/><circle cx="274" cy="247" r="98" stroke-width="1.8" opacity=".52"/><circle cx="274" cy="247" r="42" stroke-width="2.5"/><circle cx="274" cy="247" r="16" stroke-width="1.8"/>
+    <path d="M274 205v84m-42-42h84m-35 35 40 76m-87-76-40 76m32-95-62 19m155-19 62 19" stroke-width="2.4"/><path d="M233 228h-37l-22 25 59 19m82-44h37l22 25-59 19" stroke-width="1.7"/>
+    <path d="M48 151h143c-23 48-26 101-10 158l20 68H72c-17 0-28-10-32-28l-13-82" stroke-width="2.3"/><path d="M84 273h87v56H84zM101 291h53m-53 21h53" stroke-width="1.8" opacity=".7"/>
+    <path d="M197 385h202l-26 97H176l21-97Z" stroke-width="2.4"/><path d="M254 409l-12 44h28l11-44m48 0 11 44h28l-13-44" stroke-width="1.8"/>
+    <path d="M596 154h285l28 80-18 111H584l-17-74" stroke-width="2.4"/><path d="M615 188h246m-232 24h240m-246 87h250" stroke-width="1.7" opacity=".62"/>
+  </g>
+  <g transform="translate(132 382)"><circle r="76" fill="#2f8cff" opacity=".08"/><circle r="48" fill="#2f8cff" opacity=".13" stroke="#6daeff" stroke-width="1.5"/><path d="M-23-22h46l8 9v31l-8 10h-46l-8-10v-31l8-9Z" fill="#2f8cff"/><path d="M-14-9h28v28h-28zM-8-2h5m6 0h5m6 0h5M-8 10h5m6 0h5m6 0h5" fill="none" stroke="#061326" stroke-width="2.5" stroke-linecap="round"/></g>
+  <path d="M154 382C238 382 276 430 365 430h146" fill="none" stroke="#2f8cff" stroke-width="2.5" stroke-linecap="round"/><circle cx="517" cy="430" r="4.5" fill="#6daeff"/>
+  <text x="542" y="423" fill="#dceaff" font-family="Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="1.8">OBD-II PORT</text><text x="542" y="447" fill="#7f91a6" font-family="Arial, sans-serif" font-size="11" letter-spacing="1.35">DRIVER FOOTWELL · DIRECT ENET</text>
+  <path d="M54 504h852" stroke="#2f8cff" stroke-width="1" opacity=".32"/><text x="54" y="526" fill="#71849a" font-family="Arial, sans-serif" font-size="11" letter-spacing="1.8">F82 COCKPIT / CONNECTION MAP</text>
+</svg>

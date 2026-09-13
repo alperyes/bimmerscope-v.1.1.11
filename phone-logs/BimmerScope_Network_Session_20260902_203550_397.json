@@ -1,0 +1,81 @@
+{
+  "capturedAt": "2026-09-02T20:35:50.397512",
+  "platform": "android",
+  "phase": "error",
+  "vin": "Not identified",
+  "gateway": "169.254.12.64:6801",
+  "gatewayProbe": {
+    "tcp6801": "SocketException: SocketException: Connection timed out, host: 169.254.12.64, port: 6801 (OS Error: Connection timed out, errno = 110)",
+    "udp6811": "sent"
+  },
+  "interfaces": [
+    {
+      "name": "lo",
+      "addresses": [
+        {
+          "address": "127.0.0.1",
+          "type": "IPv4",
+          "isLinkLocal": false
+        },
+        {
+          "address": "::1%1",
+          "type": "IPv6",
+          "isLinkLocal": false
+        }
+      ]
+    },
+    {
+      "name": "wlan0",
+      "addresses": [
+        {
+          "address": "192.168.1.195",
+          "type": "IPv4",
+          "isLinkLocal": false
+        }
+      ]
+    }
+  ],
+  "sessionStartedAt": "2026-09-02T20:35:11.006800",
+  "events": [
+    {
+      "timestamp": "2026-09-02T20:35:48.101781",
+      "type": "action",
+      "message": "Clicked Export Network Diagnostics"
+    },
+    {
+      "timestamp": "2026-09-02T20:35:11.006415",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:35:06.274359",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:34:59.675403",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:34:03.285289",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:33:56.122882",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:33:28.807676",
+      "type": "action",
+      "message": "Clicked Connect"
+    },
+    {
+      "timestamp": "2026-09-02T20:33:20.887726",
+      "type": "action",
+      "message": "Clicked Connect"
+    }
+  ]
+}

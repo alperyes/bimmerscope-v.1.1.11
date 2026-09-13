@@ -1,0 +1,8 @@
+{
+  "date": "2026-08-31",
+  "framework": "Flutter",
+  "fontStack": ["Instrument Sans", "Geist Mono"],
+  "palette": "lib/design/app_palette.dart",
+  "motion": "Material transitions; no motion package",
+  "scope": "app"
+}

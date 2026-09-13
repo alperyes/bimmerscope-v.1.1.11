@@ -1,0 +1,3 @@
+Baseline build artifact: build/app/outputs/flutter-apk/BimmerScope-v1.1.0-dev+24-tune-debug.apk
+SHA-256: 2476611C9903DE16894A7E499677F1E0EB81887AFE182B0EAAB5A0B1E6F7A9A7
+Purpose: protected v24 connection-fix baseline before Experimental 1.

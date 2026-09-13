@@ -1,0 +1,49 @@
+BIMMERSCOPE NETWORK DIAGNOSTICS
+Captured: 2026-09-02T20:35:50.397512
+Platform: android
+Connection phase: error
+VIN: Not identified
+Gateway: 169.254.12.64:6801 (ENET)
+Gateway TCP probe: SocketException: SocketException: Connection timed out, host: 169.254.12.64, port: 6801 (OS Error: Connection timed out, errno = 110)
+Gateway UDP discovery probe: sent
+Non-loopback interface present: true
+Capture scope: application session telemetry, interface state, and event history; not a raw packet capture
+Interface count: 2
+Session started: 2026-09-02T20:35:11.006800
+Session duration: 39 seconds
+Event count: 8
+Action count: 8
+Scan started: 0
+Scan completed: 0
+Reconnect events: 0
+
+Network interfaces:
+- lo
+  127.0.0.1 (IPv4)
+  ::1%1 (IPv6)
+- wlan0
+  192.168.1.195 (IPv4)
+
+Recent connection events:
+20:35:48  ACTION  Clicked Export Network Diagnostics
+20:35:13  No vehicle found. Check the cable and ignition, then tap Retry.
+20:35:11  Vehicle not found yet
+20:35:11  ACTION  Clicked Connect
+20:35:09  No vehicle found. Check the cable and ignition, then tap Retry.
+20:35:06  Vehicle not found yet
+20:35:06  ACTION  Clicked Connect
+20:35:02  No vehicle found. Check the cable and ignition, then tap Retry.
+20:34:59  Vehicle not found yet
+20:34:59  ACTION  Clicked Connect
+20:34:08  No vehicle found. Check the cable and ignition, then tap Retry.
+20:34:03  Vehicle not found yet
+20:34:03  ACTION  Clicked Connect
+20:33:59  No vehicle found. Check the cable and ignition, then tap Retry.
+20:33:56  Vehicle not found yet
+20:33:56  ACTION  Clicked Connect
+20:33:31  No vehicle found. Check the cable and ignition, then tap Retry.
+20:33:28  Vehicle not found yet
+20:33:28  ACTION  Clicked Connect
+20:33:23  No vehicle found. Check the cable and ignition, then tap Retry.
+20:33:20  Vehicle not found yet
+20:33:20  ACTION  Clicked Connect
