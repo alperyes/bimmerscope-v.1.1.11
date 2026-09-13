@@ -513,6 +513,19 @@ class _TuneScreenState extends State<TuneScreen> {
       compatibility: report.toJson(),
       logQuality: logQuality.map((report) => report.toJson()).toList(),
     );
+    final packageValidation = await tunerPackageStore.validate(file);
+    if (!packageValidation.valid) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Package could not be verified: ${packageValidation.errors.join(' ')}',
+            ),
+          ),
+        );
+      }
+      return;
+    }
     final request = TunerRequest(
       id: 'request_${DateTime.now().microsecondsSinceEpoch}',
       vin: widget.vin,
