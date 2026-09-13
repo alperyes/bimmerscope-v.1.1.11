@@ -50,4 +50,25 @@ void main() {
     expect(text, contains('# source,"simulator"'));
   });
 
+  test('renaming a log keeps its integrity sidecar paired', () async {
+    final directory = await Directory.systemTemp.createTemp('bimmerscope-rename-');
+    addTearDown(() => directory.delete(recursive: true));
+    final source = File('${directory.path}/original.csv');
+    await source.writeAsString('recording');
+    final digest = List.filled(64, 'a').join();
+    await File('${source.path}.sha256').writeAsString('$digest  original.csv\n');
+    final renamed = await DataLogger.renameSavedLog(source, '98 RON pull');
+    expect(renamed.uri.pathSegments.last, '98 RON pull.csv');
+    expect(await File('${renamed.path}.sha256').exists(), isTrue);
+    expect(await File('${source.path}.sha256').exists(), isFalse);
+    expect(
+      await File('${renamed.path}.sha256').readAsString(),
+      contains('98 RON pull.csv'),
+    );
+    await expectLater(
+      DataLogger.renameSavedLog(renamed, '   '),
+      throwsArgumentError,
+    );
+  });
+
 }

@@ -147,6 +147,54 @@ class DataLogger {
     return files;
   }
 
+  /// Renames a saved CSV and its integrity sidecar as one operation.
+  /// The log's embedded session metadata is intentionally unchanged.
+  static Future<File> renameSavedLog(File source, String requestedName) async {
+    if (!await source.exists()) {
+      throw FileSystemException('Log file is missing', source.path);
+    }
+    var name = requestedName.trim();
+    if (name.toLowerCase().endsWith('.csv')) {
+      name = name.substring(0, name.length - 4);
+    }
+    name = name.replaceAll(RegExp(r'[^A-Za-z0-9 _.-]'), '_').trim();
+    if (name.isEmpty) {
+      throw ArgumentError.value(requestedName, 'requestedName', 'Enter a valid log name.');
+    }
+    if (name.length > 80) name = name.substring(0, 80);
+    final target = File('${source.parent.path}${Platform.pathSeparator}$name.csv');
+    if (target.path == source.path) return source;
+    if (await target.exists()) {
+      throw FileSystemException('A log with that name already exists', target.path);
+    }
+    final sidecar = File('${source.path}.sha256');
+    final targetSidecar = File('${target.path}.sha256');
+    if (await targetSidecar.exists()) {
+      throw FileSystemException('A log integrity file with that name already exists', targetSidecar.path);
+    }
+    final renamed = await source.rename(target.path);
+    if (!await sidecar.exists()) return renamed;
+    try {
+      await sidecar.rename(targetSidecar.path);
+      final sidecarText = await targetSidecar.readAsString();
+      final digest = sidecarText.trim().split(RegExp(r'\s+')).first;
+      if (RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digest)) {
+        await targetSidecar.writeAsString(
+          '$digest  ${target.uri.pathSegments.last}\n',
+          flush: true,
+        );
+      }
+      return renamed;
+    } catch (_) {
+      // Do not leave a renamed CSV without its matching sidecar when a move
+      // fails (for example, because storage changed mid-operation).
+      if (await renamed.exists() && !await source.exists()) {
+        await renamed.rename(source.path);
+      }
+      rethrow;
+    }
+  }
+
   /// Keeps long drives from filling the device. A value of zero means
   /// unlimited retention. The setting is deliberately local and never
   /// affects an already-exported or shared file.

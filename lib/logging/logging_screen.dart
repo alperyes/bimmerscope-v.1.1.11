@@ -746,12 +746,10 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     );
     controller.dispose();
     if (name == null || name.trim().isEmpty) return;
-    final clean = name.trim().toLowerCase().endsWith('.csv')
-        ? name.trim()
-        : '${name.trim()}.csv';
     try {
-      final renamed = await File(widget.filePath).rename(
-        '${File(widget.filePath).parent.path}${Platform.pathSeparator}$clean',
+      final renamed = await DataLogger.renameSavedLog(
+        File(widget.filePath),
+        name,
       );
       if (mounted) {
         setState(() => _displayFileName = renamed.uri.pathSegments.last);
