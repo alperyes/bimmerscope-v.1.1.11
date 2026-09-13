@@ -55,7 +55,7 @@ Future<LogQualityReport> inspectLogQuality(
     if (line.startsWith('timestamp,') || line.trim().isEmpty) {
       continue;
     }
-    final fields = line.split(',');
+    final fields = _parseCsvLine(line);
     if (fields.length < 5) {
       continue;
     }
@@ -71,7 +71,8 @@ Future<LogQualityReport> inspectLogQuality(
     durationMs = durationMs > elapsedMs ? durationMs : elapsedMs;
   }
   final matches =
-      header['vehicle'] == vin && header['vehicle_profile'] == profileId;
+      header['vehicle'] == _safeVehicleId(vin) &&
+      header['vehicle_profile'] == profileId;
   final reasons = <String>[];
   if (!matches) {
     reasons.add('Log provenance does not match the current VIN and profile.');
@@ -96,4 +97,32 @@ Future<LogQualityReport> inspectLogQuality(
     maxGapMs: maxGapMs,
     reasons: reasons,
   );
+}
+
+String _safeVehicleId(String vin) => vin == 'Not identified'
+    ? 'unknown-vehicle'
+    : vin.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+
+List<String> _parseCsvLine(String line) {
+  final fields = <String>[];
+  var buffer = StringBuffer();
+  var quoted = false;
+  for (var index = 0; index < line.length; index++) {
+    final character = line[index];
+    if (character == '"') {
+      if (quoted && index + 1 < line.length && line[index + 1] == '"') {
+        buffer.write('"');
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character == ',' && !quoted) {
+      fields.add(buffer.toString());
+      buffer = StringBuffer();
+    } else {
+      buffer.write(character);
+    }
+  }
+  fields.add(buffer.toString());
+  return fields;
 }
