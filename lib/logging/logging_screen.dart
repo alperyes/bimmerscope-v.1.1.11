@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:bmw_app/logging/log_health_analysis.dart';
+import 'package:bmw_app/logging/log_quality.dart';
 import 'package:bmw_app/logging/log_sample.dart';
 
 class LoggingScreen extends StatefulWidget {
@@ -433,8 +434,18 @@ class _LoggingScreenState extends State<LoggingScreen> {
     final points = <String, List<double>>{};
     final timedPoints = <String, List<LogSample>>{};
     final markers = <String>[];
+    var loggedVehicle = 'Not identified';
+    var loggedProfile = '';
     var durationSeconds = 0.0;
-    for (final line in lines.skip(4)) {
+    for (final line in lines) {
+      if (line.startsWith('# vehicle,')) {
+        loggedVehicle = line.substring('# vehicle,'.length).trim();
+        continue;
+      }
+      if (line.startsWith('# vehicle_profile,')) {
+        loggedProfile = line.substring('# vehicle_profile,'.length).trim();
+        continue;
+      }
       if (line.startsWith('# marker,')) {
         final fields = _parseCsvLine(line.substring(2));
         if (fields.length >= 4) {
@@ -468,6 +479,11 @@ class _LoggingScreenState extends State<LoggingScreen> {
             .add(LogSample(elapsedMs: (elapsedMs ?? 0).round(), value: value));
       }
     }
+    final quality = await inspectLogQuality(
+      file,
+      vin: loggedVehicle,
+      profileId: loggedProfile,
+    );
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -478,6 +494,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
           timedPoints: timedPoints,
           durationSeconds: durationSeconds,
           markers: markers,
+          quality: quality,
         ),
       ),
     );
@@ -606,6 +623,7 @@ class _LogPlotPage extends StatefulWidget {
     required this.timedPoints,
     required this.durationSeconds,
     required this.markers,
+    required this.quality,
   });
   final String fileName;
   final String filePath;
@@ -613,6 +631,7 @@ class _LogPlotPage extends StatefulWidget {
   final Map<String, List<LogSample>> timedPoints;
   final double durationSeconds;
   final List<String> markers;
+  final LogQualityReport quality;
 
   @override
   State<_LogPlotPage> createState() => _LogPlotPageState();
@@ -857,6 +876,8 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         ),
         const SizedBox(height: 16),
         _sessionSummary(),
+        const SizedBox(height: 10),
+        _tunerReadinessCard(),
         if (widget.markers.isNotEmpty) ...[
           const SizedBox(height: 10),
           _markersCard(),
@@ -1103,6 +1124,42 @@ class _LogPlotPageState extends State<_LogPlotPage> {
               ),
             )
             .toList(),
+      ),
+    );
+  }
+
+  Widget _tunerReadinessCard() {
+    final quality = widget.quality;
+    final ready = quality.suitableForTunerReview;
+    final color = ready ? AppPalette.green : AppPalette.orange;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(ready ? Icons.verified_outlined : Icons.rule_outlined, color: color, size: 19),
+              const SizedBox(width: 8),
+              Text(
+                ready ? 'Ready for tuner review' : 'Review before sending',
+                style: TextStyle(fontWeight: FontWeight.w800, color: color),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ready
+                ? '${quality.sampleCount} samples · ${_LoggingScreenState.formatDuration(Duration(milliseconds: quality.durationMs))} · ${quality.channels.length} channels'
+                : quality.reasons.join(' '),
+            style: const TextStyle(fontSize: 11),
+          ),
+        ],
       ),
     );
   }
