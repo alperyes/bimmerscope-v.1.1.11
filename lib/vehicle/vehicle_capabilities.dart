@@ -207,15 +207,23 @@ extension VehicleIdentityCapabilities on VehicleIdentity {
 
 ResolvedEcuProfile resolveEcuProfile({
   required VehicleIdentity identity,
+  required String vehicleVin,
   required EcuFingerprint fingerprint,
 }) {
   final vehicle = profileFor(identity);
   final familyMatches =
       vehicle.ecu != null &&
-      fingerprint.identity.toUpperCase().contains('MEVD17.2.G') &&
-      vehicle.ecu!.family == EcuFamily.mevd172g;
-  final exact = familyMatches && fingerprint.complete;
+      _identityMatchesFamily(fingerprint.identity, vehicle.ecu!.family);
+  final vinMatches =
+      _normalizeVin(vehicleVin).isNotEmpty &&
+      _normalizeVin(fingerprint.vin) == _normalizeVin(vehicleVin);
+  final exact = familyMatches && vinMatches && fingerprint.complete;
   final capabilities = <VehicleCapability>{...vehicle.capabilities};
+  if (!exact) {
+    // A family match alone is useful for read-only diagnostics, but a stale
+    // or cross-vehicle ECU fingerprint must not grant calibration access.
+    capabilities.remove(VehicleCapability.calibrationRead);
+  }
   if (exact) {
     capabilities.addAll({
       VehicleCapability.ecuMemoryInventoryRead,
@@ -232,6 +240,25 @@ ResolvedEcuProfile resolveEcuProfile({
         ? ProfileConfidence.familyMatch
         : ProfileConfidence.unknown,
   );
+}
+
+String _normalizeVin(String value) =>
+    value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+bool _identityMatchesFamily(String ecuIdentity, EcuFamily family) {
+  final normalized = ecuIdentity.toUpperCase().replaceAll(
+    RegExp(r'[^A-Z0-9]'),
+    '',
+  );
+  return switch (family) {
+    EcuFamily.mevd1724 => normalized.contains('MEVD1724'),
+    EcuFamily.mevd1726 => normalized.contains('MEVD1726'),
+    EcuFamily.mevd172g => normalized.contains('MEVD172G'),
+    EcuFamily.edc17 => normalized.contains('EDC17'),
+    EcuFamily.md1 => normalized.contains('MD1'),
+    EcuFamily.mg1 => normalized.contains('MG1'),
+    EcuFamily.unknown => false,
+  };
 }
 
 VehicleProfile profileFor(VehicleIdentity identity) {
