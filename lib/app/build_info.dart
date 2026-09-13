@@ -3,7 +3,7 @@ abstract final class BuildInfo {
     'BIMMERSCOPE_VERSION',
     // Match pubspec.yaml when a local build omits the version define.
     // Release automation may still override this with an explicit value.
-    defaultValue: '1.1.4-experimental.5+31',
+    defaultValue: '1.1.4-experimental.6+32',
   );
   static const date = String.fromEnvironment(
     'BIMMERSCOPE_BUILD_DATE',
