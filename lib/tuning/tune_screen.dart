@@ -540,6 +540,7 @@ class _TuneScreenState extends State<TuneScreen> {
       createdAt: DateTime.now(),
       productId: selectedProduct.id,
       productLabel: selectedProduct.displayName,
+      packageManifestPath: file.path,
     );
     if (!mounted) return;
     final confirmed = await showDialog<bool>(
@@ -681,6 +682,7 @@ class _TuneScreenState extends State<TuneScreen> {
                         createdAt: request.createdAt,
                         productId: request.productId,
                         productLabel: request.productLabel,
+                        packageManifestPath: request.packageManifestPath,
                       ),
                     );
                     if (!context.mounted) return;
@@ -701,6 +703,15 @@ class _TuneScreenState extends State<TuneScreen> {
                       : request.modifications,
                 ),
               ),
+              if (request.packageManifestPath != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.verified_outlined),
+                  title: const Text('Verified package manifest'),
+                  subtitle: Text(
+                    File(request.packageManifestPath!).uri.pathSegments.last,
+                  ),
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.save_outlined),

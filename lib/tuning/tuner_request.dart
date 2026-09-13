@@ -17,6 +17,7 @@ class TunerRequest {
     required this.createdAt,
     this.productId,
     this.productLabel,
+    this.packageManifestPath,
   });
 
   final String id;
@@ -29,6 +30,7 @@ class TunerRequest {
   final DateTime createdAt;
   final String? productId;
   final String? productLabel;
+  final String? packageManifestPath;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -41,6 +43,8 @@ class TunerRequest {
     'created_at': createdAt.toIso8601String(),
     if (productId != null) 'product_id': productId,
     if (productLabel != null) 'product_label': productLabel,
+    if (packageManifestPath != null)
+      'package_manifest_path': packageManifestPath,
   };
 
   factory TunerRequest.fromJson(Map<String, dynamic> json) => TunerRequest(
@@ -60,6 +64,7 @@ class TunerRequest {
         DateTime.now(),
     productId: json['product_id'] as String?,
     productLabel: json['product_label'] as String?,
+    packageManifestPath: json['package_manifest_path'] as String?,
   );
 }
 
