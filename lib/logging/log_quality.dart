@@ -41,7 +41,7 @@ Future<LogQualityReport> inspectLogQuality(
   var samples = 0;
   var durationMs = 0;
   var maxGapMs = 0;
-  int? previousElapsedMs;
+  final previousElapsedMsByChannel = <String, int>{};
   for (final line in lines) {
     if (line.startsWith('# ')) {
       final comma = line.indexOf(',');
@@ -60,14 +60,16 @@ Future<LogQualityReport> inspectLogQuality(
       continue;
     }
     final elapsedMs = int.tryParse(fields[1]) ?? 0;
-    if (previousElapsedMs != null) {
+    final channel = fields[2].replaceAll('"', '');
+    final previousElapsedMs = previousElapsedMsByChannel[channel];
+    if (previousElapsedMs != null && elapsedMs >= previousElapsedMs) {
       maxGapMs = maxGapMs > elapsedMs - previousElapsedMs
           ? maxGapMs
           : elapsedMs - previousElapsedMs;
     }
-    previousElapsedMs = elapsedMs;
+    previousElapsedMsByChannel[channel] = elapsedMs;
     samples++;
-    channels.add(fields[2].replaceAll('"', ''));
+    channels.add(channel);
     durationMs = durationMs > elapsedMs ? durationMs : elapsedMs;
   }
   final matches =

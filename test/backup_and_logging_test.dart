@@ -18,6 +18,19 @@ void main() {
     expect(report.provenanceMatches, isTrue);
   });
 
+  test('measures telemetry gaps independently for each channel', () async {
+    final directory = await Directory.systemTemp.createTemp('bimmerscope-gap-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/interleaved.csv');
+    await file.writeAsString('''# vehicle,WBS3R92M4TEST\n# vehicle_profile,F82-S55-DCT\ntimestamp,elapsed_ms,sensor_id,sensor_name,value,unit,raw_value,session_id,source\nt,0,rpm,RPM,1000,rpm,1,s1,real\nt,0,boost,Boost,1,psi,1,s1,real\nt,1000,rpm,RPM,1100,rpm,1,s1,real\nt,6000,boost,Boost,2,psi,1,s1,real\n''');
+    final report = await inspectLogQuality(
+      file,
+      vin: 'WBS3R92M4TEST',
+      profileId: 'F82-S55-DCT',
+    );
+    expect(report.maxGapMs, 6000);
+  });
+
   test('stock backup artifacts remain distinct and traceable', () {
     final first = stockBackupArtifactName(vin: 'VIN', sourceName: 'stock.bin', timestamp: 1, digest: 'aaa');
     final second = stockBackupArtifactName(vin: 'VIN', sourceName: 'stock.bin', timestamp: 2, digest: 'bbb');
