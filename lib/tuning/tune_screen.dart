@@ -488,6 +488,17 @@ class _TuneScreenState extends State<TuneScreen> {
   }
 
   Future<void> createTunerPackage() async {
+    try {
+      await _createTunerPackage();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not prepare package: $error')),
+      );
+    }
+  }
+
+  Future<void> _createTunerPackage() async {
     final identity = identifyVehicle(widget.vin);
     final report = compatibilityReport;
     if (identity == null || !report.readyForProfessionalReview) return;

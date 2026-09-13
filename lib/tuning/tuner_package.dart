@@ -5,6 +5,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
 
 class TunerPackageStore {
+  TunerPackageStore({Future<Directory> Function()? documentsProvider})
+      : _documentsProvider = documentsProvider;
+
+  final Future<Directory> Function()? _documentsProvider;
   List<File> lastAttachments = [];
   Future<File> create({
     required String vin,
@@ -20,7 +24,7 @@ class TunerPackageStore {
     required Map<String, dynamic> compatibility,
     required List<Map<String, dynamic>> logQuality,
   }) async {
-    final documents = await getApplicationDocumentsDirectory();
+    final documents = await (_documentsProvider?.call() ?? getApplicationDocumentsDirectory());
     final directory = Directory('${documents.path}/BimmerScope/tuner_packages');
     if (!await directory.exists()) await directory.create(recursive: true);
     final stamp = DateTime.now()
@@ -72,17 +76,25 @@ class TunerPackageStore {
     Directory root,
     String subdir,
   ) async {
-    if (source == null || !await source.exists()) return null;
+    if (source == null) return null;
+    if (!await source.exists()) {
+      throw FileSystemException('Selected attachment is missing', source.path);
+    }
     final targetDir = Directory('${root.path}/$subdir')
       ..createSync(recursive: true);
-    final target = File('${targetDir.path}/${source.uri.pathSegments.last}');
+    final originalName = source.uri.pathSegments.last;
+    var target = File('${targetDir.path}/$originalName');
+    var suffix = 2;
+    while (await target.exists()) {
+      target = File('${targetDir.path}/${suffix++}_$originalName');
+    }
     final temporary = File('${target.path}.part');
     if (await temporary.exists()) await temporary.delete();
     await source.copy(temporary.path);
     await temporary.rename(target.path);
     final digest = sha256.convert(await target.readAsBytes()).toString();
     lastAttachments.add(target);
-    final relativePath = '$subdir/${source.uri.pathSegments.last}';
+    final relativePath = '$subdir/${target.uri.pathSegments.last}';
     return {
       'file_name': source.uri.pathSegments.last,
       'path': relativePath,
