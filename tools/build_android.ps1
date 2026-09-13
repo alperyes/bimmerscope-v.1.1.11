@@ -33,6 +33,9 @@ flutter build apk `
   --dart-define=BIMMERSCOPE_BUILD_DATE=$buildDate `
   --dart-define=BIMMERSCOPE_BUILD_TIME=$buildTime
 
+if ($LASTEXITCODE -ne 0) {
+  throw "Flutter build failed with exit code $LASTEXITCODE. No APK was published."
+}
 if (-not (Test-Path -LiteralPath $flutterApk)) {
   throw "Flutter did not produce the expected APK: $flutterApk"
 }
