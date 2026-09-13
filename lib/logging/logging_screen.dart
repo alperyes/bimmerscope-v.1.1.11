@@ -384,7 +384,9 @@ class _LoggingScreenState extends State<LoggingScreen> {
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           title: const Text('Automatic pull logging'),
-          subtitle: const Text('Start at throttle threshold; stop 3 seconds after release.'),
+          subtitle: const Text(
+            'Start at throttle threshold; stop 3 seconds after release.',
+          ),
           value: widget.autoLogEnabled,
           onChanged: widget.canRecord
               ? (enabled) async => widget.onAutoLogChanged(enabled)
@@ -462,12 +464,15 @@ class _LoggingScreenState extends State<LoggingScreen> {
               tooltip: 'Share CSV log',
               onPressed: () async {
                 final sidecar = File('${file.path}.sha256');
+                final metadata = File('${file.path}.metadata.json');
                 await SharePlus.instance.share(
                   ShareParams(
                     files: [
                       XFile(file.path, mimeType: 'text/csv'),
                       if (await sidecar.exists())
                         XFile(sidecar.path, mimeType: 'text/plain'),
+                      if (await metadata.exists())
+                        XFile(metadata.path, mimeType: 'application/json'),
                     ],
                     subject: 'BimmerScope data log',
                     text: 'BimmerScope vehicle live-data log',
@@ -1195,7 +1200,11 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         children: [
           Row(
             children: [
-              Icon(ready ? Icons.verified_outlined : Icons.rule_outlined, color: color, size: 19),
+              Icon(
+                ready ? Icons.verified_outlined : Icons.rule_outlined,
+                color: color,
+                size: 19,
+              ),
               const SizedBox(width: 8),
               Text(
                 ready ? 'Ready for tuner review' : 'Review before sending',
@@ -1212,7 +1221,10 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           ),
           if (quality.channelQuality.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text('Observed channel sampling', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Text(
+              'Observed channel sampling',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
             for (final entry in quality.channelQuality.entries)
               Padding(
                 padding: const EdgeInsets.only(top: 6),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -17,6 +18,12 @@ class DataLogger {
   Timer? _flushTimer;
   String _sessionId = '';
   String _source = '';
+  String _vin = '';
+  String? _vehicleProfile;
+  String? _ecuIdentity;
+  String? _ecuSoftware;
+  String? _ecuCalibration;
+  final _channels = <String, Map<String, Object?>>{};
   int sampleCount = 0;
   String? lastSha256;
 
@@ -49,6 +56,12 @@ class DataLogger {
     _startedAt = now;
     _sessionId = sessionId;
     _source = source;
+    _vin = vin;
+    _vehicleProfile = vehicleProfile;
+    _ecuIdentity = ecuIdentity;
+    _ecuSoftware = ecuSoftware;
+    _ecuCalibration = ecuCalibration;
+    _channels.clear();
     sampleCount = 0;
     lastSha256 = null;
     _sink!
@@ -75,6 +88,18 @@ class DataLogger {
     final started = _startedAt;
     if (sink == null || started == null || event.kind != 'sensor') return;
     if (!event.value.isFinite) return;
+    _channels.putIfAbsent(
+      sensor.id,
+      () => {
+        'id': sensor.id,
+        'label': sensor.label,
+        'unit': sensor.unit,
+        'minimum': sensor.minimum,
+        'maximum': sensor.maximum,
+        'scale': sensor.scale,
+        'offset': sensor.offset,
+      },
+    );
     final now = DateTime.now();
     sink.writeln(
       '${now.toIso8601String()},${now.difference(started).inMilliseconds},'
@@ -115,6 +140,7 @@ class DataLogger {
       await File(
         '${file.path}.sha256',
       ).writeAsString('$lastSha256  ${file.uri.pathSegments.last}\n');
+      await _writeMetadataSidecar(file, endedAt: DateTime.now());
     } catch (_) {
       lastSha256 = null;
     }
@@ -128,6 +154,39 @@ class DataLogger {
   }
 
   Future<void> dispose() async => stop();
+
+  Future<void> _writeMetadataSidecar(
+    File file, {
+    required DateTime endedAt,
+  }) async {
+    final metadata = File('${file.path}.metadata.json');
+    final temporary = File('${metadata.path}.part');
+    if (await temporary.exists()) await temporary.delete();
+    final content = <String, Object?>{
+      'format': 'bimmerscope-log-metadata-v1',
+      'csv_file': file.uri.pathSegments.last,
+      'csv_sha256': lastSha256,
+      'capture': {
+        'vin': _vin,
+        'session_id': _sessionId,
+        'source': _source,
+        'vehicle_profile': _vehicleProfile,
+        'ecu_identity': _ecuIdentity,
+        'ecu_software': _ecuSoftware,
+        'ecu_calibration': _ecuCalibration,
+        'started_at': _startedAt?.toIso8601String(),
+        'ended_at': endedAt.toIso8601String(),
+        'sample_count': sampleCount,
+      },
+      'channels': _channels.values.toList(),
+    };
+    await temporary.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(content),
+      flush: true,
+    );
+    if (await metadata.exists()) await metadata.delete();
+    await temporary.rename(metadata.path);
+  }
 
   static Future<Directory> logsDirectory() async {
     final documents = await getApplicationDocumentsDirectory();
@@ -147,7 +206,7 @@ class DataLogger {
     return files;
   }
 
-  /// Renames a saved CSV and its integrity sidecar as one operation.
+  /// Renames a saved CSV and all of its integrity/provenance sidecars.
   /// The log's embedded session metadata is intentionally unchanged.
   static Future<File> renameSavedLog(File source, String requestedName) async {
     if (!await source.exists()) {
@@ -159,30 +218,62 @@ class DataLogger {
     }
     name = name.replaceAll(RegExp(r'[^A-Za-z0-9 _.-]'), '_').trim();
     if (name.isEmpty) {
-      throw ArgumentError.value(requestedName, 'requestedName', 'Enter a valid log name.');
+      throw ArgumentError.value(
+        requestedName,
+        'requestedName',
+        'Enter a valid log name.',
+      );
     }
     if (name.length > 80) name = name.substring(0, 80);
-    final target = File('${source.parent.path}${Platform.pathSeparator}$name.csv');
+    final target = File(
+      '${source.parent.path}${Platform.pathSeparator}$name.csv',
+    );
     if (target.path == source.path) return source;
     if (await target.exists()) {
-      throw FileSystemException('A log with that name already exists', target.path);
+      throw FileSystemException(
+        'A log with that name already exists',
+        target.path,
+      );
     }
     final sidecar = File('${source.path}.sha256');
     final targetSidecar = File('${target.path}.sha256');
+    final metadata = File('${source.path}.metadata.json');
+    final targetMetadata = File('${target.path}.metadata.json');
     if (await targetSidecar.exists()) {
-      throw FileSystemException('A log integrity file with that name already exists', targetSidecar.path);
+      throw FileSystemException(
+        'A log integrity file with that name already exists',
+        targetSidecar.path,
+      );
+    }
+    if (await targetMetadata.exists()) {
+      throw FileSystemException(
+        'A log metadata file with that name already exists',
+        targetMetadata.path,
+      );
     }
     final renamed = await source.rename(target.path);
-    if (!await sidecar.exists()) return renamed;
     try {
-      await sidecar.rename(targetSidecar.path);
-      final sidecarText = await targetSidecar.readAsString();
-      final digest = sidecarText.trim().split(RegExp(r'\s+')).first;
-      if (RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digest)) {
-        await targetSidecar.writeAsString(
-          '$digest  ${target.uri.pathSegments.last}\n',
-          flush: true,
-        );
+      if (await sidecar.exists()) {
+        await sidecar.rename(targetSidecar.path);
+        final sidecarText = await targetSidecar.readAsString();
+        final digest = sidecarText.trim().split(RegExp(r'\s+')).first;
+        if (RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digest)) {
+          await targetSidecar.writeAsString(
+            '$digest  ${target.uri.pathSegments.last}\n',
+            flush: true,
+          );
+        }
+      }
+      if (await metadata.exists()) {
+        await metadata.rename(targetMetadata.path);
+        final decoded = jsonDecode(await targetMetadata.readAsString());
+        if (decoded is Map<String, dynamic>) {
+          decoded['csv_file'] = target.uri.pathSegments.last;
+          await targetMetadata.writeAsString(
+            const JsonEncoder.withIndent('  ').convert(decoded),
+            flush: true,
+          );
+        }
       }
       return renamed;
     } catch (_) {
@@ -190,6 +281,12 @@ class DataLogger {
       // fails (for example, because storage changed mid-operation).
       if (await renamed.exists() && !await source.exists()) {
         await renamed.rename(source.path);
+      }
+      if (await targetSidecar.exists() && !await sidecar.exists()) {
+        await targetSidecar.rename(sidecar.path);
+      }
+      if (await targetMetadata.exists() && !await metadata.exists()) {
+        await targetMetadata.rename(metadata.path);
       }
       rethrow;
     }
@@ -223,6 +320,8 @@ class DataLogger {
           await entry.delete();
           final sidecar = File('${entry.path}.sha256');
           if (await sidecar.exists()) await sidecar.delete();
+          final metadata = File('${entry.path}.metadata.json');
+          if (await metadata.exists()) await metadata.delete();
         }
       } catch (_) {
         // A locked or partially written log is kept for the next cleanup.
