@@ -24,6 +24,9 @@ class TunerPackageStore {
     required String modifications,
     required Map<String, dynamic> compatibility,
     required List<Map<String, dynamic>> logQuality,
+    String fuel = '',
+    String hardware = '',
+    double? mileageKm,
   }) async {
     final documents =
         await (_documentsProvider?.call() ??
@@ -64,12 +67,22 @@ class TunerPackageStore {
       const JsonEncoder.withIndent('  ').convert({
         'format': 'bimmerscope-tuner-package-v3',
         'created_at': DateTime.now().toIso8601String(),
-        'vehicle': {'vin': vin, 'label': vehicleLabel, 'profile_id': profileId},
+        'vehicle': {
+          'vin': vin,
+          'label': vehicleLabel,
+          'profile_id': profileId,
+          if (mileageKm != null) 'mileage_km': mileageKm,
+        },
         'product': {'id': productId, 'label': productLabel},
         'capabilities': capabilities,
         'compatibility': compatibility,
         'log_quality': logQuality,
         'modifications': modifications,
+        'request_details': {
+          'fuel': fuel,
+          'hardware': hardware,
+          'modifications': modifications,
+        },
         'stock_backup': stockEntry ?? {'present': false},
         'data_logs': logEntries,
         'attachments_directory': packageName,

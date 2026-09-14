@@ -42,6 +42,8 @@ class TunerRequest {
     required this.logFiles,
     required this.status,
     required this.createdAt,
+    this.fuel = '',
+    this.hardware = '',
     this.productId,
     this.productLabel,
     this.packageManifestPath,
@@ -57,6 +59,8 @@ class TunerRequest {
   final List<String> logFiles;
   final TunerRequestStatus status;
   final DateTime createdAt;
+  final String fuel;
+  final String hardware;
   final String? productId;
   final String? productLabel;
   final String? packageManifestPath;
@@ -78,6 +82,8 @@ class TunerRequest {
       logFiles: logFiles,
       status: TunerRequestStatus.sent,
       createdAt: createdAt,
+      fuel: fuel,
+      hardware: hardware,
       productId: productId,
       productLabel: productLabel,
       packageManifestPath: packageManifestPath,
@@ -102,6 +108,8 @@ class TunerRequest {
     'log_files': logFiles,
     'status': status.name,
     'created_at': createdAt.toIso8601String(),
+    'fuel': fuel,
+    'hardware': hardware,
     if (productId != null) 'product_id': productId,
     if (productLabel != null) 'product_label': productLabel,
     if (packageManifestPath != null)
@@ -125,6 +133,8 @@ class TunerRequest {
     createdAt:
         DateTime.tryParse(json['created_at'] as String? ?? '') ??
         DateTime.now(),
+    fuel: json['fuel'] as String? ?? '',
+    hardware: json['hardware'] as String? ?? '',
     productId: json['product_id'] as String?,
     productLabel: json['product_label'] as String?,
     packageManifestPath: json['package_manifest_path'] as String?,

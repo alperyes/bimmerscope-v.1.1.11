@@ -34,11 +34,20 @@ void main() {
         modifications: '',
         compatibility: {},
         logQuality: [],
+        fuel: '98 RON',
+        hardware: 'Stock turbos',
+        mileageKm: 84231,
       );
       final manifest = await create([first.path, second.path]);
       expect((await store.validate(manifest)).valid, isTrue);
       final data = jsonDecode(await manifest.readAsString());
       expect(data['format'], 'bimmerscope-tuner-package-v3');
+      expect(data['vehicle']['mileage_km'], 84231);
+      expect(data['request_details'], {
+        'fuel': '98 RON',
+        'hardware': 'Stock turbos',
+        'modifications': '',
+      });
       expect(data['data_logs'][0]['path'], isNot(data['data_logs'][1]['path']));
       expect(data['data_logs'][0]['sidecars'], hasLength(2));
       expect(await store.lastAttachments[0].readAsString(), 'first recording');

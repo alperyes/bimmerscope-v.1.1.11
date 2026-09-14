@@ -101,6 +101,8 @@ class _TuneScreenState extends State<TuneScreen> {
   final tunerPackageStore = TunerPackageStore();
   final tunerRequestStore = TunerRequestStore();
   final modificationsController = TextEditingController();
+  final fuelController = TextEditingController();
+  final hardwareController = TextEditingController();
   List<File> availableLogs = [];
   final selectedLogs = <String>{};
   List<TunerRequest> savedRequests = [];
@@ -141,6 +143,8 @@ class _TuneScreenState extends State<TuneScreen> {
         .firstOrNull;
     if (!mounted || draft == null) return;
     modificationsController.text = draft.modifications;
+    fuelController.text = draft.fuel;
+    hardwareController.text = draft.hardware;
     selectedProduct = findTuneProduct(draft.productId) ?? selectedProduct;
     final draftLogNames = draft.logFiles.toSet();
     selectedLogs
@@ -157,6 +161,8 @@ class _TuneScreenState extends State<TuneScreen> {
   void dispose() {
     unawaited(saveDraft());
     modificationsController.dispose();
+    fuelController.dispose();
+    hardwareController.dispose();
     super.dispose();
   }
 
@@ -169,6 +175,8 @@ class _TuneScreenState extends State<TuneScreen> {
         vin: widget.vin,
         vehicleLabel: identity.displayLabel,
         modifications: modificationsController.text.trim(),
+        fuel: fuelController.text.trim(),
+        hardware: hardwareController.text.trim(),
         stockFileName: importedStockFile?.uri.pathSegments.last,
         logFiles: selectedLogs
             .map((path) => File(path).uri.pathSegments.last)
@@ -541,6 +549,9 @@ class _TuneScreenState extends State<TuneScreen> {
       stockFilePath: importedStockFile?.path,
       logFiles: selectedLogFiles.map((log) => log.path).toList(),
       modifications: modificationsController.text.trim(),
+      fuel: fuelController.text.trim(),
+      hardware: hardwareController.text.trim(),
+      mileageKm: widget.mileageKm,
       compatibility: report.toJson(),
       logQuality: logQuality.map((report) => report.toJson()).toList(),
     );
@@ -562,6 +573,8 @@ class _TuneScreenState extends State<TuneScreen> {
       vin: widget.vin,
       vehicleLabel: identity.displayLabel,
       modifications: modificationsController.text.trim(),
+      fuel: fuelController.text.trim(),
+      hardware: hardwareController.text.trim(),
       stockFileName: importedStockFile?.uri.pathSegments.last,
       logFiles: [
         for (final log in logs)
@@ -584,6 +597,8 @@ class _TuneScreenState extends State<TuneScreen> {
           'Product: ${selectedProduct.displayName}\n\n'
           'Stock backup: ${request.stockFileName ?? 'Not attached'}\n'
           'Logs: ${request.logFiles.length}\n'
+          'Fuel: ${request.fuel.isEmpty ? 'Not specified' : request.fuel}\n'
+          'Hardware: ${request.hardware.isEmpty ? 'Not specified' : request.hardware}\n'
           'Notes: ${request.modifications.isEmpty ? 'None added' : request.modifications}',
         ),
         actions: [
@@ -709,6 +724,8 @@ class _TuneScreenState extends State<TuneScreen> {
               FilledButton.icon(
                 onPressed: () {
                   modificationsController.text = request.modifications;
+                  fuelController.text = request.fuel;
+                  hardwareController.text = request.hardware;
                   selectedProduct =
                       findTuneProduct(request.productId) ?? selectedProduct;
                   selectedLogs
@@ -1231,6 +1248,29 @@ class _TuneScreenState extends State<TuneScreen> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 12),
+                              TextField(
+                                controller: fuelController,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                decoration: const InputDecoration(
+                                  labelText: 'Fuel',
+                                  hintText: 'Example: 98 RON / 93 AKI / E30',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: hardwareController,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                decoration: const InputDecoration(
+                                  labelText: 'Hardware',
+                                  hintText:
+                                      'Example: stock turbos, intake, charge pipes',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
                               TextField(
                                 controller: modificationsController,
                                 maxLines: 3,

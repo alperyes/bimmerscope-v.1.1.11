@@ -12,6 +12,8 @@ void main() {
       logFiles: const ['pull.csv'],
       status: TunerRequestStatus.readyToSend,
       createdAt: DateTime.utc(2026, 9, 5),
+      fuel: '98 RON',
+      hardware: 'Stock turbos · intake',
     );
 
     final restored = TunerRequest.fromJson(original.toJson());
@@ -19,6 +21,8 @@ void main() {
     expect(restored.vin, original.vin);
     expect(restored.status, original.status);
     expect(restored.logFiles, original.logFiles);
+    expect(restored.fuel, original.fuel);
+    expect(restored.hardware, original.hardware);
     expect(restored.timeline, hasLength(1));
     expect(restored.timeline.single.action, 'Request created');
   });
@@ -49,5 +53,7 @@ void main() {
     expect(restored.vin, 'VIN');
     expect(restored.status, TunerRequestStatus.draft);
     expect(restored.modifications, isEmpty);
+    expect(restored.fuel, isEmpty);
+    expect(restored.hardware, isEmpty);
   });
 }
