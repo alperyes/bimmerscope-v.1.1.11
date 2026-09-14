@@ -3637,6 +3637,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       final sensor = sensorsById[id];
       final value = values[id];
       if (sensor == null || value == null || !value.isFinite) continue;
+      if (sensor.warning == 0 && sensor.danger == 0) continue;
       final dangerLow = sensor.danger < sensor.warning;
       final isDanger = dangerLow
           ? value <= sensor.danger
