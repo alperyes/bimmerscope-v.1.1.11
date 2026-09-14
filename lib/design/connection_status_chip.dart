@@ -22,9 +22,7 @@ class ConnectionStatusChip extends StatelessWidget {
               normalizedLabel == 'recovering'
         ? AppPalette.orange
         : AppPalette.red;
-    final healthy =
-        normalizedLabel == 'connected' || normalizedLabel == 'monitoring';
-    if (compact && healthy) {
+    if (compact) {
       return Tooltip(
         message: label,
         child: Semantics(
@@ -44,41 +42,6 @@ class ConnectionStatusChip extends StatelessWidget {
                 height: 9,
                 decoration: BoxDecoration(shape: BoxShape.circle, color: color),
               ),
-            ),
-          ),
-        ),
-      );
-    }
-    if (compact) {
-      return Semantics(
-        container: true,
-        label: 'Connection status: $label',
-        liveRegion: true,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: .14),
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
             ),
           ),
         ),

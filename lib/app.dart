@@ -222,7 +222,7 @@ class _LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: isDark ? const Color(0xFF080A10) : const Color(0xFFF5F7FB),
+    backgroundColor: isDark ? Colors.black : const Color(0xFFF5F7FB),
     body: Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

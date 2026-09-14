@@ -16,7 +16,7 @@ abstract final class AppPalette {
   static const orange = Color(0xFFFFB547);
 
   static Color background(bool dark) =>
-      dark ? const Color(0xFF090B10) : const Color(0xFFF2F2F7);
+      dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
 
   static Color surface(bool dark) =>
       dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
