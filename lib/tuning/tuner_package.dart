@@ -7,7 +7,7 @@ import 'package:crypto/crypto.dart';
 
 class TunerPackageStore {
   TunerPackageStore({Future<Directory> Function()? documentsProvider})
-      : _documentsProvider = documentsProvider;
+    : _documentsProvider = documentsProvider;
 
   final Future<Directory> Function()? _documentsProvider;
   List<File> lastAttachments = [];
@@ -25,7 +25,9 @@ class TunerPackageStore {
     required Map<String, dynamic> compatibility,
     required List<Map<String, dynamic>> logQuality,
   }) async {
-    final documents = await (_documentsProvider?.call() ?? getApplicationDocumentsDirectory());
+    final documents =
+        await (_documentsProvider?.call() ??
+            getApplicationDocumentsDirectory());
     final directory = Directory('${documents.path}/BimmerScope/tuner_packages');
     if (!await directory.exists()) await directory.create(recursive: true);
     final stamp = DateTime.now()
@@ -51,12 +53,16 @@ class TunerPackageStore {
     );
     final logEntries = <Map<String, dynamic>>[];
     for (final path in logFiles) {
-      final entry = await _copyAttachment(File(path), packageDir, 'logs');
-      if (entry != null) logEntries.add(entry);
+      final source = File(path);
+      final entry = await _copyAttachment(source, packageDir, 'logs');
+      if (entry != null) {
+        entry['sidecars'] = await _copyLogSidecars(source, entry, packageDir);
+        logEntries.add(entry);
+      }
     }
     await file.writeAsString(
       const JsonEncoder.withIndent('  ').convert({
-        'format': 'bimmerscope-tuner-package-v2',
+        'format': 'bimmerscope-tuner-package-v3',
         'created_at': DateTime.now().toIso8601String(),
         'vehicle': {'vin': vin, 'label': vehicleLabel, 'profile_id': profileId},
         'product': {'id': productId, 'label': productLabel},
@@ -105,23 +111,54 @@ class TunerPackageStore {
     };
   }
 
+  Future<List<Map<String, dynamic>>> _copyLogSidecars(
+    File source,
+    Map<String, dynamic> logEntry,
+    Directory packageDir,
+  ) async {
+    final sidecars = <Map<String, dynamic>>[];
+    final packagedPath = logEntry['path'] as String;
+    for (final suffix in const ['.sha256', '.metadata.json']) {
+      final sidecar = File('${source.path}$suffix');
+      if (!await sidecar.exists()) continue;
+      final target = File(
+        '${packageDir.path}${Platform.pathSeparator}$packagedPath$suffix',
+      );
+      final temporary = File('${target.path}.part');
+      if (await temporary.exists()) await temporary.delete();
+      await sidecar.copy(temporary.path);
+      await temporary.rename(target.path);
+      final bytes = await target.readAsBytes();
+      lastAttachments.add(target);
+      sidecars.add({
+        'path': '$packagedPath$suffix',
+        'sha256': sha256.convert(bytes).toString(),
+        'size': bytes.length,
+        'present': true,
+      });
+    }
+    return sidecars;
+  }
+
   /// Reopens a generated package and verifies every declared attachment. This
   Future<File> createArchive(File manifestFile) async {
     final validation = await validate(manifestFile);
     if (!validation.valid) throw StateError(validation.errors.join(' '));
     final manifestBytes = await manifestFile.readAsBytes();
-    final manifest = jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
+    final manifest =
+        jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>;
     final name = manifestFile.uri.pathSegments.last;
     final folder = name.replaceFirst(RegExp(r'\.json$'), '');
-    final archive = Archive()..addFile(ArchiveFile(name, manifestBytes.length, manifestBytes));
-    final entries = <dynamic>[
-      if (manifest['stock_backup']['present'] == true) manifest['stock_backup'],
-      ...manifest['data_logs'],
-    ];
+    final archive = Archive()
+      ..addFile(ArchiveFile(name, manifestBytes.length, manifestBytes));
+    final entries = _declaredAttachments(manifest);
     for (final entry in entries) {
       final relative = entry['path'] as String;
-      final bytes = await File('${manifestFile.parent.path}/$folder/$relative').readAsBytes();
-      if (bytes.length != entry['size'] || sha256.convert(bytes).toString() != entry['sha256']) {
+      final bytes = await File(
+        '${manifestFile.parent.path}/$folder/$relative',
+      ).readAsBytes();
+      if (bytes.length != entry['size'] ||
+          sha256.convert(bytes).toString() != entry['sha256']) {
         throw StateError('Attachment changed during export: $relative');
       }
       archive.addFile(ArchiveFile('$folder/$relative', bytes.length, bytes));
@@ -148,23 +185,16 @@ class TunerPackageStore {
         errors: ['Invalid package manifest'],
       );
     }
-    if (manifest['format'] != 'bimmerscope-tuner-package-v2') {
+    if (!const {
+      'bimmerscope-tuner-package-v2',
+      'bimmerscope-tuner-package-v3',
+    }.contains(manifest['format'])) {
       errors.add('Unsupported package format');
     }
     final packageDir = Directory(
       '${manifestFile.parent.path}${Platform.pathSeparator}${manifestFile.uri.pathSegments.last.replaceFirst(RegExp(r'\.json$'), '')}',
     );
-    final attachments = <Map<String, dynamic>>[];
-    final stock = manifest['stock_backup'];
-    if (stock is Map && stock['present'] == true) {
-      attachments.add(Map<String, dynamic>.from(stock));
-    }
-    final logs = manifest['data_logs'];
-    if (logs is List) {
-      for (final entry in logs.whereType<Map>()) {
-        attachments.add(Map<String, dynamic>.from(entry));
-      }
-    }
+    final attachments = _declaredAttachments(manifest);
     for (final entry in attachments) {
       final relative = entry['path'] as String?;
       final expected = entry['sha256'] as String?;
@@ -192,6 +222,30 @@ class TunerPackageStore {
       if (actual != expected) errors.add('Hash mismatch: $relative');
     }
     return TunerPackageValidation(valid: errors.isEmpty, errors: errors);
+  }
+
+  List<Map<String, dynamic>> _declaredAttachments(
+    Map<String, dynamic> manifest,
+  ) {
+    final attachments = <Map<String, dynamic>>[];
+    final stock = manifest['stock_backup'];
+    if (stock is Map && stock['present'] == true) {
+      attachments.add(Map<String, dynamic>.from(stock));
+    }
+    final logs = manifest['data_logs'];
+    if (logs is List) {
+      for (final entry in logs.whereType<Map>()) {
+        final log = Map<String, dynamic>.from(entry);
+        attachments.add(log);
+        final sidecars = log['sidecars'];
+        if (sidecars is List) {
+          attachments.addAll(
+            sidecars.whereType<Map>().map(Map<String, dynamic>.from),
+          );
+        }
+      }
+    }
+    return attachments;
   }
 }
 
