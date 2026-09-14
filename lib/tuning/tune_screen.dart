@@ -193,9 +193,14 @@ class _TuneScreenState extends State<TuneScreen> {
   Future<void> saveDraft() async {
     final identity = identifyVehicle(widget.vin);
     if (identity == null) return;
+    final draftId =
+        'draft_${widget.vin.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}';
+    final existingDraft = (await tunerRequestStore.loadAll())
+        .where((request) => request.id == draftId)
+        .firstOrNull;
     await tunerRequestStore.save(
       TunerRequest(
-        id: 'draft_${widget.vin.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}',
+        id: draftId,
         vin: widget.vin,
         vehicleLabel: identity.displayLabel,
         modifications: modificationsController.text.trim(),
@@ -207,7 +212,7 @@ class _TuneScreenState extends State<TuneScreen> {
             .map((path) => File(path).uri.pathSegments.last)
             .toList(),
         status: TunerRequestStatus.draft,
-        createdAt: DateTime.now(),
+        createdAt: existingDraft?.createdAt ?? DateTime.now(),
         productId: selectedProduct.id,
         productLabel: selectedProduct.displayName,
       ),
