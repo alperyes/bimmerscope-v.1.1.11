@@ -69,6 +69,7 @@ void main() {
       sessionId: 'session_test',
       source: 'simulator',
     );
+    expect(logger.addMarker('Third-gear pull'), isTrue);
     final file = await logger.stop();
     final text = await file!.readAsString();
     expect(text, contains('# session_id,"session_test"'));
@@ -80,6 +81,13 @@ void main() {
     expect(metadata['csv_file'], file.uri.pathSegments.last);
     expect(metadata['csv_sha256'], logger.lastSha256);
     expect(metadata['capture']['session_id'], 'session_test');
+    final markers = metadata['markers'] as List<dynamic>;
+    expect(markers, hasLength(1));
+    final marker = markers.single as Map<String, dynamic>;
+    expect(marker['type'], 'marker');
+    expect(marker['label'], 'Third-gear pull');
+    expect(marker['timestamp'], isA<String>());
+    expect(marker['elapsed_ms'], isA<int>());
   });
 
   test('renaming a log keeps its integrity sidecar paired', () async {
