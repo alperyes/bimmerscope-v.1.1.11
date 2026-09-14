@@ -784,6 +784,22 @@ class _TuneScreenState extends State<TuneScreen> {
               ],
               ListTile(
                 contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.local_gas_station_outlined),
+                title: const Text('Fuel'),
+                subtitle: Text(
+                  request.fuel.isEmpty ? 'Not specified' : request.fuel,
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.precision_manufacturing_outlined),
+                title: const Text('Hardware'),
+                subtitle: Text(
+                  request.hardware.isEmpty ? 'Not specified' : request.hardware,
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.build_outlined),
                 title: const Text('Modifications and notes'),
                 subtitle: Text(
