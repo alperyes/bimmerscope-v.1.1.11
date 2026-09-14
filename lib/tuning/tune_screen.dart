@@ -103,6 +103,7 @@ class _TuneScreenState extends State<TuneScreen> {
   final modificationsController = TextEditingController();
   final fuelController = TextEditingController();
   final hardwareController = TextEditingController();
+  Timer? _draftSaveTimer;
   List<File> availableLogs = [];
   final selectedLogs = <String>{};
   List<TunerRequest> savedRequests = [];
@@ -114,6 +115,9 @@ class _TuneScreenState extends State<TuneScreen> {
   @override
   void initState() {
     super.initState();
+    modificationsController.addListener(_scheduleDraftSave);
+    fuelController.addListener(_scheduleDraftSave);
+    hardwareController.addListener(_scheduleDraftSave);
     unawaited(_loadWorkspace());
   }
 
@@ -159,11 +163,31 @@ class _TuneScreenState extends State<TuneScreen> {
 
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
+    modificationsController.removeListener(_scheduleDraftSave);
+    fuelController.removeListener(_scheduleDraftSave);
+    hardwareController.removeListener(_scheduleDraftSave);
     unawaited(saveDraft());
     modificationsController.dispose();
     fuelController.dispose();
     hardwareController.dispose();
     super.dispose();
+  }
+
+  void _scheduleDraftSave() {
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 700), () {
+      unawaited(_saveDraftSafely());
+    });
+  }
+
+  Future<void> _saveDraftSafely() async {
+    try {
+      await saveDraft();
+    } catch (_) {
+      // Draft persistence must never interrupt an edit if local storage is
+      // temporarily unavailable. The user can still prepare/share a package.
+    }
   }
 
   Future<void> saveDraft() async {
@@ -1244,7 +1268,7 @@ class _TuneScreenState extends State<TuneScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Add the hardware, fuel, and map notes your tuner needs.',
+                                'Saved automatically for this vehicle. Add the hardware, fuel, and map notes your tuner needs.',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 12),
