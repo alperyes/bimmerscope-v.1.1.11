@@ -44,6 +44,7 @@ class TunerRequest {
     required this.createdAt,
     this.fuel = '',
     this.hardware = '',
+    this.mileageKm,
     this.productId,
     this.productLabel,
     this.packageManifestPath,
@@ -61,6 +62,7 @@ class TunerRequest {
   final DateTime createdAt;
   final String fuel;
   final String hardware;
+  final double? mileageKm;
   final String? productId;
   final String? productLabel;
   final String? packageManifestPath;
@@ -84,6 +86,7 @@ class TunerRequest {
       createdAt: createdAt,
       fuel: fuel,
       hardware: hardware,
+      mileageKm: mileageKm,
       productId: productId,
       productLabel: productLabel,
       packageManifestPath: packageManifestPath,
@@ -110,6 +113,7 @@ class TunerRequest {
     'created_at': createdAt.toIso8601String(),
     'fuel': fuel,
     'hardware': hardware,
+    if (mileageKm != null) 'mileage_km': mileageKm,
     if (productId != null) 'product_id': productId,
     if (productLabel != null) 'product_label': productLabel,
     if (packageManifestPath != null)
@@ -135,6 +139,7 @@ class TunerRequest {
         DateTime.now(),
     fuel: json['fuel'] as String? ?? '',
     hardware: json['hardware'] as String? ?? '',
+    mileageKm: (json['mileage_km'] as num?)?.toDouble(),
     productId: json['product_id'] as String?,
     productLabel: json['product_label'] as String?,
     packageManifestPath: json['package_manifest_path'] as String?,

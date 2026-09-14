@@ -14,6 +14,7 @@ void main() {
       createdAt: DateTime.utc(2026, 9, 5),
       fuel: '98 RON',
       hardware: 'Stock turbos · intake',
+      mileageKm: 84231,
     );
 
     final restored = TunerRequest.fromJson(original.toJson());
@@ -23,6 +24,7 @@ void main() {
     expect(restored.logFiles, original.logFiles);
     expect(restored.fuel, original.fuel);
     expect(restored.hardware, original.hardware);
+    expect(restored.mileageKm, original.mileageKm);
     expect(restored.timeline, hasLength(1));
     expect(restored.timeline.single.action, 'Request created');
   });
@@ -55,5 +57,6 @@ void main() {
     expect(restored.modifications, isEmpty);
     expect(restored.fuel, isEmpty);
     expect(restored.hardware, isEmpty);
+    expect(restored.mileageKm, isNull);
   });
 }

@@ -201,6 +201,7 @@ class _TuneScreenState extends State<TuneScreen> {
         modifications: modificationsController.text.trim(),
         fuel: fuelController.text.trim(),
         hardware: hardwareController.text.trim(),
+        mileageKm: widget.mileageKm,
         stockFileName: importedStockFile?.uri.pathSegments.last,
         logFiles: selectedLogs
             .map((path) => File(path).uri.pathSegments.last)
@@ -599,6 +600,7 @@ class _TuneScreenState extends State<TuneScreen> {
       modifications: modificationsController.text.trim(),
       fuel: fuelController.text.trim(),
       hardware: hardwareController.text.trim(),
+      mileageKm: widget.mileageKm,
       stockFileName: importedStockFile?.uri.pathSegments.last,
       logFiles: [
         for (final log in logs)
@@ -623,6 +625,7 @@ class _TuneScreenState extends State<TuneScreen> {
           'Logs: ${request.logFiles.length}\n'
           'Fuel: ${request.fuel.isEmpty ? 'Not specified' : request.fuel}\n'
           'Hardware: ${request.hardware.isEmpty ? 'Not specified' : request.hardware}\n'
+          'Mileage: ${request.mileageKm?.toStringAsFixed(0) ?? 'Not specified'} km\n'
           'Notes: ${request.modifications.isEmpty ? 'None added' : request.modifications}',
         ),
         actions: [
@@ -796,6 +799,16 @@ class _TuneScreenState extends State<TuneScreen> {
                 title: const Text('Hardware'),
                 subtitle: Text(
                   request.hardware.isEmpty ? 'Not specified' : request.hardware,
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.speed_outlined),
+                title: const Text('Mileage'),
+                subtitle: Text(
+                  request.mileageKm == null
+                      ? 'Not specified'
+                      : '${request.mileageKm!.toStringAsFixed(0)} km',
                 ),
               ),
               ListTile(
