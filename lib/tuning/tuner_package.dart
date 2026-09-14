@@ -234,7 +234,50 @@ class TunerPackageStore {
       final actual = sha256.convert(await file.readAsBytes()).toString();
       if (actual != expected) errors.add('Hash mismatch: $relative');
     }
+    await _validateLogMetadata(manifest, packageDir, errors);
     return TunerPackageValidation(valid: errors.isEmpty, errors: errors);
+  }
+
+  Future<void> _validateLogMetadata(
+    Map<String, dynamic> manifest,
+    Directory packageDir,
+    List<String> errors,
+  ) async {
+    final logs = manifest['data_logs'];
+    if (logs is! List) return;
+    for (final entry in logs.whereType<Map>()) {
+      final log = Map<String, dynamic>.from(entry);
+      final csvPath = log['path'] as String?;
+      final csvHash = log['sha256'] as String?;
+      final sidecars = log['sidecars'];
+      if (csvPath == null || csvHash == null || sidecars is! List) continue;
+      final metadata = sidecars
+          .whereType<Map>()
+          .map(Map<String, dynamic>.from)
+          .where(
+            (sidecar) =>
+                (sidecar['path'] as String? ?? '').endsWith('.metadata.json'),
+          )
+          .firstOrNull;
+      if (metadata == null) continue; // Pre-metadata logs remain shareable.
+      final metadataPath = metadata['path'] as String?;
+      if (metadataPath == null) continue;
+      try {
+        final decoded = jsonDecode(
+          await File(
+            '${packageDir.path}${Platform.pathSeparator}$metadataPath',
+          ).readAsString(),
+        );
+        if (decoded is! Map<String, dynamic> ||
+            decoded['format'] != 'bimmerscope-log-metadata-v1') {
+          errors.add('Unsupported log metadata: $csvPath');
+        } else if (decoded['csv_sha256'] != csvHash) {
+          errors.add('Log metadata does not match CSV: $csvPath');
+        }
+      } catch (_) {
+        errors.add('Log metadata could not be read: $csvPath');
+      }
+    }
   }
 
   List<Map<String, dynamic>> _declaredAttachments(

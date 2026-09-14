@@ -18,9 +18,12 @@ void main() {
       await first.writeAsString('first recording');
       await second.writeAsString('second recording');
       await File('${first.path}.sha256').writeAsString('integrity sidecar');
-      await File(
-        '${first.path}.metadata.json',
-      ).writeAsString('{"format":"bimmerscope-log-metadata-v1"}');
+      await File('${first.path}.metadata.json').writeAsString(
+        jsonEncode({
+          'format': 'bimmerscope-log-metadata-v1',
+          'csv_sha256': sha256.convert(await first.readAsBytes()).toString(),
+        }),
+      );
       final store = TunerPackageStore(documentsProvider: () async => root);
       Future<File> create(List<String> logs) => store.create(
         vin: 'test',
@@ -102,6 +105,41 @@ void main() {
       await expectLater(
         create(['${root.path}/missing.csv']),
         throwsA(isA<FileSystemException>()),
+      );
+    },
+  );
+
+  test(
+    'rejects a bundled metadata sidecar that does not match its CSV',
+    () async {
+      final root = await Directory.systemTemp.createTemp('package-metadata-');
+      addTearDown(() => root.delete(recursive: true));
+      final log = File('${root.path}/pull.csv');
+      await log.writeAsString('recording');
+      await File('${log.path}.metadata.json').writeAsString(
+        jsonEncode({
+          'format': 'bimmerscope-log-metadata-v1',
+          'csv_sha256': List.filled(64, '0').join(),
+        }),
+      );
+      final store = TunerPackageStore(documentsProvider: () async => root);
+      final manifest = await store.create(
+        vin: 'test',
+        vehicleLabel: 'test',
+        profileId: 'test',
+        productId: 'test',
+        productLabel: 'test',
+        capabilities: const [],
+        stockFileName: null,
+        logFiles: [log.path],
+        modifications: '',
+        compatibility: const {},
+        logQuality: const [],
+      );
+
+      expect(
+        (await store.validate(manifest)).errors,
+        contains('Log metadata does not match CSV: logs/pull.csv'),
       );
     },
   );
