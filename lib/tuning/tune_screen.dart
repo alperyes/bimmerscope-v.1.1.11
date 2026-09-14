@@ -991,6 +991,7 @@ class _TuneScreenState extends State<TuneScreen> {
                     vin: widget.vin,
                     mileageKm: widget.mileageKm,
                     lastConnectedAt: widget.identityCapturedAt,
+                    evidenceProfile: resolvedEcuProfile,
                   ),
                 ],
                 if (s55Connected) ...[
@@ -1413,6 +1414,34 @@ class _TuneScreenState extends State<TuneScreen> {
       capturedAt: widget.identityCapturedAt,
     ),
   );
+
+  /// Resolves only read-only, evidence-gated capabilities. The vehicle profile
+  /// remains visible independently so a partial live read never hides an
+  /// existing feature from the user.
+  ResolvedEcuProfile? get resolvedEcuProfile {
+    final identity = connectedIdentity;
+    if (identity == null) return null;
+    return resolveEcuProfile(
+      identity: identity,
+      vehicleVin: widget.vin,
+      fingerprint: EcuFingerprint(
+        // The vehicle VIN is not proof that this DME belongs to it. Keep the
+        // fingerprint VIN empty until the transport exposes a DME-associated
+        // VIN, so the UI cannot overstate a family match as an exact match.
+        vin: '',
+        identity: widget.engineEcuIdentity ?? '',
+        boschHardware: widget.engineEcuSupplierHardware,
+        bmwHardware: widget.engineEcuHardware,
+        softwareId: widget.engineEcuSoftware,
+        calibrationId: widget.engineEcuCalibration,
+        bootloaderId: widget.engineEcuBootloader,
+        verified:
+            widget.connectionLabel == 'Connected' &&
+            widget.engineEcuDetected &&
+            _ecuFingerprintComplete,
+      ),
+    );
+  }
 
   bool get _ecuFingerprintComplete => compatibilityReport.evidence.complete;
 }
@@ -2037,12 +2066,14 @@ class _ProfileCard extends StatelessWidget {
     required this.vin,
     this.mileageKm,
     this.lastConnectedAt,
+    this.evidenceProfile,
   });
   final bool isDark;
   final VehicleIdentity identity;
   final String vin;
   final double? mileageKm;
   final DateTime? lastConnectedAt;
+  final ResolvedEcuProfile? evidenceProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -2083,6 +2114,33 @@ class _ProfileCard extends StatelessWidget {
                   ),
               ],
             ),
+            if (evidenceProfile != null) ...[
+              const SizedBox(height: 16),
+              Text(
+                'Current-session evidence',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _evidenceDetail,
+                style: TextStyle(
+                  color: AppPalette.secondary(isDark),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final capability in _evidenceCapabilities)
+                    _CapabilityLabel(
+                      capability: capability,
+                      enabled: evidenceProfile!.supports(capability),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
@@ -2109,6 +2167,23 @@ class _ProfileCard extends StatelessWidget {
       ),
     );
   }
+
+  static const _evidenceCapabilities = <VehicleCapability>[
+    VehicleCapability.calibrationRead,
+    VehicleCapability.ecuMemoryInventoryRead,
+    VehicleCapability.offlinePackageInspection,
+  ];
+
+  String get _evidenceDetail => switch (evidenceProfile!.confidence) {
+    ProfileConfidence.exact =>
+      'VIN and complete DME fingerprint match. Read-only inspection evidence is available.',
+    ProfileConfidence.familyMatch =>
+      'DME family matches, but the complete VIN-bound fingerprint is not available yet.',
+    ProfileConfidence.unknown =>
+      'This live DME identity does not match the expected vehicle ECU family.',
+    ProfileConfidence.vehicleOnly =>
+      'Vehicle profile identified; ECU evidence has not been matched yet.',
+  };
 }
 
 class _MapSlot extends StatelessWidget {
