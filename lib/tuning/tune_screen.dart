@@ -962,9 +962,10 @@ class _TuneScreenState extends State<TuneScreen> {
                     products: s55RemapProducts,
                     selectedProductId: selectedProduct.id,
                     identity: connectedIdentity,
-                    onSelected: (product) => setState(() {
-                      selectedProduct = product;
-                    }),
+                    onSelected: (product) {
+                      setState(() => selectedProduct = product);
+                      _scheduleDraftSave();
+                    },
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -1335,18 +1336,23 @@ class _TuneScreenState extends State<TuneScreen> {
                                         ),
                                       ),
                                       TextButton(
-                                        onPressed: () => setState(() {
-                                          selectedLogs.addAll(
-                                            availableLogs.map(
-                                              (log) => log.path,
-                                            ),
-                                          );
-                                        }),
+                                        onPressed: () {
+                                          setState(() {
+                                            selectedLogs.addAll(
+                                              availableLogs.map(
+                                                (log) => log.path,
+                                              ),
+                                            );
+                                          });
+                                          _scheduleDraftSave();
+                                        },
                                         child: const Text('Select all'),
                                       ),
                                       TextButton(
-                                        onPressed: () =>
-                                            setState(selectedLogs.clear),
+                                        onPressed: () {
+                                          setState(selectedLogs.clear);
+                                          _scheduleDraftSave();
+                                        },
                                         child: const Text('Clear'),
                                       ),
                                     ],
@@ -1384,11 +1390,14 @@ class _TuneScreenState extends State<TuneScreen> {
                                     ),
                                     value: selectedLogs.contains(log.path),
                                     title: Text(log.uri.pathSegments.last),
-                                    onChanged: (value) => setState(
-                                      () => value == true
-                                          ? selectedLogs.add(log.path)
-                                          : selectedLogs.remove(log.path),
-                                    ),
+                                    onChanged: (value) {
+                                      setState(
+                                        () => value == true
+                                            ? selectedLogs.add(log.path)
+                                            : selectedLogs.remove(log.path),
+                                      );
+                                      _scheduleDraftSave();
+                                    },
                                   ),
                               ],
                             ),
