@@ -1846,6 +1846,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                               sliver: SliverToBoxAdapter(child: editBanner()),
                             ),
+                          if (_activeGaugeAlerts.isNotEmpty)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(
+                                dashboardHorizontalPadding,
+                                12,
+                                dashboardHorizontalPadding,
+                                0,
+                              ),
+                              sliver: SliverToBoxAdapter(
+                                child: activeGaugeAlertsCard(),
+                              ),
+                            ),
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(
                               dashboardHorizontalPadding,
@@ -3617,6 +3629,83 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
     },
   );
+
+  List<({SensorDefinition sensor, double value, bool danger})>
+  get _activeGaugeAlerts {
+    final alerts = <({SensorDefinition sensor, double value, bool danger})>[];
+    for (final id in visibleSensorIds) {
+      final sensor = sensorsById[id];
+      final value = values[id];
+      if (sensor == null || value == null || !value.isFinite) continue;
+      final dangerLow = sensor.danger < sensor.warning;
+      final isDanger = dangerLow
+          ? value <= sensor.danger
+          : value >= sensor.danger;
+      final isWarning = dangerLow
+          ? value <= sensor.warning
+          : value >= sensor.warning;
+      if (isWarning) {
+        alerts.add((sensor: sensor, value: value, danger: isDanger));
+      }
+    }
+    alerts.sort((a, b) {
+      if (a.danger != b.danger) return a.danger ? -1 : 1;
+      return a.sensor.label.compareTo(b.sensor.label);
+    });
+    return alerts;
+  }
+
+  Widget activeGaugeAlertsCard() {
+    final alerts = _activeGaugeAlerts;
+    final hasDanger = alerts.any((alert) => alert.danger);
+    final color = hasDanger ? AppPalette.red : Colors.orange;
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                hasDanger ? Icons.warning_amber_rounded : Icons.info_outline,
+                color: color,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${alerts.length} active gauge ${alerts.length == 1 ? 'alert' : 'alerts'}',
+                style: TextStyle(color: color, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          for (final alert in alerts.take(3))
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                '${alert.danger ? 'Danger' : 'Warning'} · ${alert.sensor.label}: ${alert.value.toStringAsFixed(alert.sensor.decimals)} ${alert.sensor.unit}',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          if (alerts.length > 3)
+            Text(
+              '+${alerts.length - 3} more visible gauge alerts',
+              style: const TextStyle(fontSize: 12),
+            ),
+          const SizedBox(height: 7),
+          const Text(
+            'Thresholds are dashboard guidance only; review the full log and vehicle context.',
+            style: TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget gaugeBoard({List<String>? onlyIds, bool fillSingle = false}) =>
       LayoutBuilder(
