@@ -2105,12 +2105,38 @@ fn run_vehicle_session(
                 }
             }
             Err(error) => {
-                clear_flap_command_sender();
+                let error = error.to_string();
+                // Android's Ethernet route can disappear briefly while the
+                // adapter renegotiates. Treat that narrow condition like a
+                // peer reset and use the existing bounded backoff rather than
+                // ending an otherwise healthy session immediately.
+                if is_terminal_transport_error(&error)
+                    && !is_transient_network_configuration_error(&error)
+                {
+                    clear_flap_command_sender();
+                    let _ = sink.add(VehicleEvent::status(
+                        "disconnected",
+                        format!("Vehicle network unavailable: {error}"),
+                    ));
+                    return;
+                }
+                recovery_attempts += 1;
+                if recovery_attempts >= MAX_SESSION_RECOVERY_ATTEMPTS {
+                    clear_flap_command_sender();
+                    let _ = sink.add(VehicleEvent::status(
+                        "disconnected",
+                        format!(
+                            "Vehicle network did not recover after {recovery_attempts} attempts: {error}"
+                        ),
+                    ));
+                    return;
+                }
                 let _ = sink.add(VehicleEvent::status(
-                    "disconnected",
-                    format!("Vehicle network unavailable: {error}"),
+                    "reconnecting",
+                    format!(
+                        "{error}; waiting for the vehicle network ({recovery_attempts}/{MAX_SESSION_RECOVERY_ATTEMPTS})"
+                    ),
                 ));
-                return;
             }
         }
         if !stop.load(Ordering::Acquire) {
@@ -2140,6 +2166,13 @@ fn is_terminal_transport_error(error: &str) -> bool {
     ]
     .iter()
     .any(|needle| error.contains(needle))
+}
+
+/// A route can be reinstalled shortly after an Android USB/Ethernet adapter
+/// renegotiates. This is recoverable within the session's bounded retry window.
+fn is_transient_network_configuration_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("network is unreachable") || error.contains("network unreachable")
 }
 
 fn poll_connection(
@@ -2980,6 +3013,16 @@ mod tests {
         ));
         assert!(!is_terminal_transport_error(
             "Software caused connection abort (os error 103)"
+        ));
+    }
+
+    #[test]
+    fn treats_a_brief_enet_route_loss_as_recoverable() {
+        assert!(is_transient_network_configuration_error(
+            "Network is unreachable (os error 101)"
+        ));
+        assert!(!is_transient_network_configuration_error(
+            "Connection refused (os error 111)"
         ));
     }
 }
