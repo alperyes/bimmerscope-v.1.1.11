@@ -64,7 +64,11 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
                 children: [
                   FilledButton.icon(
                     onPressed: () async {
-                      HapticFeedback.mediumImpact();
+                      if (page < 4) {
+                        HapticFeedback.selectionClick();
+                      } else {
+                        HapticFeedback.mediumImpact();
+                      }
                       if (page < 4) {
                         setState(() => page++);
                       } else {

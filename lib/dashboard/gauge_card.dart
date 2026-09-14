@@ -318,7 +318,9 @@ class GaugeCard extends StatelessWidget {
                                 ),
                               ),
                               AnimatedContainer(
-                                duration: const Duration(milliseconds: 220),
+                                duration: MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 220),
                                 height: 5,
                                 width: constraints.maxWidth * animatedFraction,
                                 decoration: BoxDecoration(

@@ -30,12 +30,7 @@ class _BmwEnetAppState extends State<BmwEnetApp> {
   }
 
   Future<void> loadOnboarding() async {
-    final startedAt = DateTime.now();
     final preferences = await SharedPreferences.getInstance();
-    final remaining =
-        const Duration(milliseconds: 900) -
-        DateTime.now().difference(startedAt);
-    if (remaining > Duration.zero) await Future<void>.delayed(remaining);
     if (!mounted) return;
     setState(() {
       mode = preferences.getString('theme_mode') == 'light'
