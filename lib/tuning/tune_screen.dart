@@ -669,7 +669,7 @@ class _TuneScreenState extends State<TuneScreen> {
       acceptedTypeGroups: const [
         XTypeGroup(
           label: 'Calibration files',
-          extensions: ['bin', 'ori', 'hex'],
+          extensions: ['bin', 'ori', 'hex', 'json'],
         ),
       ],
     );
@@ -1090,7 +1090,7 @@ class _TuneScreenState extends State<TuneScreen> {
                             ),
                           ListTile(
                             leading: const Icon(Icons.tune_outlined),
-                            title: const Text('Review a custom map'),
+                            title: const Text('Review a map file'),
                             subtitle: const Text(
                               'Compare a tuner-provided file safely',
                             ),
