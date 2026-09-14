@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:bmw_app/dashboard/gauge_card.dart';
+import 'package:bmw_app/dashboard/dashboard_alerts.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:bmw_app/design/section_title.dart';
@@ -3630,31 +3631,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     },
   );
 
-  List<({SensorDefinition sensor, double value, bool danger})>
-  get _activeGaugeAlerts {
-    final alerts = <({SensorDefinition sensor, double value, bool danger})>[];
-    for (final id in visibleSensorIds) {
-      final sensor = sensorsById[id];
-      final value = values[id];
-      if (sensor == null || value == null || !value.isFinite) continue;
-      if (sensor.warning == 0 && sensor.danger == 0) continue;
-      final dangerLow = sensor.danger < sensor.warning;
-      final isDanger = dangerLow
-          ? value <= sensor.danger
-          : value >= sensor.danger;
-      final isWarning = dangerLow
-          ? value <= sensor.warning
-          : value >= sensor.warning;
-      if (isWarning) {
-        alerts.add((sensor: sensor, value: value, danger: isDanger));
-      }
-    }
-    alerts.sort((a, b) {
-      if (a.danger != b.danger) return a.danger ? -1 : 1;
-      return a.sensor.label.compareTo(b.sensor.label);
-    });
-    return alerts;
-  }
+  List<DashboardGaugeAlert> get _activeGaugeAlerts =>
+      activeDashboardGaugeAlerts(
+        visibleSensorIds: visibleSensorIds,
+        sensorsById: sensorsById,
+        values: values,
+      );
 
   Widget activeGaugeAlertsCard() {
     final alerts = _activeGaugeAlerts;
