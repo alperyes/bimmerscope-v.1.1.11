@@ -1094,7 +1094,7 @@ class _TuneScreenState extends State<TuneScreen> {
                             subtitle: const Text(
                               'Compare a tuner-provided file safely',
                             ),
-                            onTap: identityAvailable
+                            onTap: hasSupportedVehicleProfile
                                 ? () => chooseMap(original: false)
                                 : null,
                           ),
@@ -1219,11 +1219,19 @@ class _TuneScreenState extends State<TuneScreen> {
                               const Text(
                                 'Compare file metadata before sending anything to a tuner.',
                               ),
-                              if (!identityAvailable) ...[
+                              if (!hasSupportedVehicleProfile) ...[
                                 const SizedBox(height: 8),
                                 Text(
                                   'Identify a supported vehicle before comparing map files.',
                                   style: TextStyle(color: Colors.orange),
+                                ),
+                              ] else if (!identityAvailable) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Offline review only. Connect to capture live ECU evidence before requesting a calibration read.',
+                                  style: TextStyle(
+                                    color: AppPalette.secondary(widget.isDark),
+                                  ),
                                 ),
                               ],
                               const SizedBox(height: 12),
@@ -1231,7 +1239,7 @@ class _TuneScreenState extends State<TuneScreen> {
                                 label: 'Original / stock',
                                 file: originalMap,
                                 metadata: mapMetadata['original'],
-                                onPressed: identityAvailable
+                                onPressed: hasSupportedVehicleProfile
                                     ? () => chooseMap(original: true)
                                     : null,
                               ),
@@ -1240,7 +1248,7 @@ class _TuneScreenState extends State<TuneScreen> {
                                 label: 'Comparison map',
                                 file: comparisonMap,
                                 metadata: mapMetadata['comparison'],
-                                onPressed: identityAvailable
+                                onPressed: hasSupportedVehicleProfile
                                     ? () => chooseMap(original: false)
                                     : null,
                               ),
@@ -1459,6 +1467,8 @@ class _TuneScreenState extends State<TuneScreen> {
       widget.connectionLabel == 'Connected' &&
       widget.engineEcuDetected &&
       identifyVehicle(widget.vin) != null;
+
+  bool get hasSupportedVehicleProfile => identifyVehicle(widget.vin) != null;
 
   VehicleIdentity? get connectedIdentity =>
       identityAvailable ? identifyVehicle(widget.vin) : null;
