@@ -73,6 +73,17 @@ class TunerRequest {
       ? [TunerRequestActivity(action: 'Request created', recordedAt: createdAt)]
       : activity;
 
+  /// These are useful review fields, not hard requirements for sharing.
+  List<String> get missingTunerContext => [
+    if (fuel.trim().isEmpty) 'fuel',
+    if (hardware.trim().isEmpty) 'hardware',
+    if (mileageKm == null) 'mileage',
+    if (modifications.trim().isEmpty) 'notes',
+    if (logFiles.isEmpty) 'logs',
+  ];
+
+  bool get hasCompleteTunerContext => missingTunerContext.isEmpty;
+
   TunerRequest markSent({DateTime? at}) {
     final recordedAt = at ?? DateTime.now();
     return TunerRequest(

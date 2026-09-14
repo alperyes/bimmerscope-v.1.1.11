@@ -58,5 +58,31 @@ void main() {
     expect(restored.fuel, isEmpty);
     expect(restored.hardware, isEmpty);
     expect(restored.mileageKm, isNull);
+    expect(restored.missingTunerContext, [
+      'fuel',
+      'hardware',
+      'mileage',
+      'notes',
+      'logs',
+    ]);
+  });
+
+  test('recognizes complete tuner context without blocking sharing', () {
+    final request = TunerRequest(
+      id: 'request_complete',
+      vin: 'VIN',
+      vehicleLabel: 'BMW F82 M4',
+      modifications: 'Stock hardware',
+      stockFileName: null,
+      logFiles: const ['pull.csv'],
+      status: TunerRequestStatus.readyToSend,
+      createdAt: DateTime.utc(2026, 9, 1),
+      fuel: '98 RON',
+      hardware: 'Stock turbos',
+      mileageKm: 84231,
+    );
+
+    expect(request.missingTunerContext, isEmpty);
+    expect(request.hasCompleteTunerContext, isTrue);
   });
 }

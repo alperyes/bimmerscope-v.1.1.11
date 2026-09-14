@@ -626,6 +626,7 @@ class _TuneScreenState extends State<TuneScreen> {
           'Fuel: ${request.fuel.isEmpty ? 'Not specified' : request.fuel}\n'
           'Hardware: ${request.hardware.isEmpty ? 'Not specified' : request.hardware}\n'
           'Mileage: ${request.mileageKm?.toStringAsFixed(0) ?? 'Not specified'} km\n'
+          'Context: ${request.hasCompleteTunerContext ? 'Complete' : 'Missing ${request.missingTunerContext.join(', ')}'}\n'
           'Notes: ${request.modifications.isEmpty ? 'None added' : request.modifications}',
         ),
         actions: [
@@ -698,6 +699,7 @@ class _TuneScreenState extends State<TuneScreen> {
   }
 
   Future<void> showRequestDetails(TunerRequest request) async {
+    final missingContext = request.missingTunerContext;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -728,6 +730,23 @@ class _TuneScreenState extends State<TuneScreen> {
                 title: const Text('Status'),
                 subtitle: Text(
                   '${requestStatusLabel(request.status)} · Revision ${request.revision}',
+                ),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  request.hasCompleteTunerContext
+                      ? Icons.verified_outlined
+                      : Icons.info_outline,
+                  color: request.hasCompleteTunerContext
+                      ? AppPalette.green
+                      : Colors.orange,
+                ),
+                title: const Text('Tuner context'),
+                subtitle: Text(
+                  request.hasCompleteTunerContext
+                      ? 'Fuel, hardware, mileage, notes, and logs are included.'
+                      : 'Still useful to share, but add: ${missingContext.join(', ')}.',
                 ),
               ),
               ExpansionTile(
