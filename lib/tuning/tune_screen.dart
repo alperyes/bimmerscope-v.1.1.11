@@ -510,6 +510,7 @@ class _TuneScreenState extends State<TuneScreen> {
     final identity = identifyVehicle(widget.vin);
     final report = compatibilityReport;
     if (identity == null || !report.readyForProfessionalReview) return;
+    final evidenceCapabilities = resolvedEcuProfile?.capabilities;
     final logs = await DataLogger.savedLogs();
     final selectedLogFiles = [
       for (final log in logs)
@@ -531,9 +532,9 @@ class _TuneScreenState extends State<TuneScreen> {
       productId: selectedProduct.id,
       productLabel: selectedProduct.displayName,
       capabilities: [
-        for (final capability in identity.profile.capabilities)
-          if (capability != VehicleCapability.calibrationRead ||
-              _ecuFingerprintComplete)
+        for (final capability in VehicleCapability.values)
+          if (evidenceCapabilities?.contains(capability) ??
+              identity.profile.supports(capability))
             capability.name,
       ],
       stockFileName: importedStockFile?.uri.pathSegments.last,
