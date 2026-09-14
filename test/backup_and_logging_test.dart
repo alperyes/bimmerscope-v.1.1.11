@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:bmw_app/tuning/stock_file_store.dart';
 import 'package:bmw_app/logging/data_logger.dart';
+import 'package:bmw_app/logging/logging_screen.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bmw_app/logging/log_quality.dart';
 
@@ -116,5 +118,23 @@ void main() {
       DataLogger.renameSavedLog(renamed, '   '),
       throwsArgumentError,
     );
+  });
+
+  test('reports whether log metadata still matches the CSV', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'bimmerscope-provenance-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final csv = File('${directory.path}/pull.csv');
+    await csv.writeAsString('recording');
+    await File('${csv.path}.metadata.json').writeAsString(
+      jsonEncode({
+        'format': 'bimmerscope-log-metadata-v1',
+        'csv_sha256': sha256.convert(await csv.readAsBytes()).toString(),
+      }),
+    );
+    expect((await inspectLogProvenance(csv)).matchesCsv, isTrue);
+    await csv.writeAsString('changed');
+    expect((await inspectLogProvenance(csv)).matchesCsv, isFalse);
   });
 }

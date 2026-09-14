@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:crypto/crypto.dart';
 import 'package:bmw_app/logging/data_logger.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/section_title.dart';
@@ -11,6 +13,63 @@ import 'package:share_plus/share_plus.dart';
 import 'package:bmw_app/logging/log_health_analysis.dart';
 import 'package:bmw_app/logging/log_quality.dart';
 import 'package:bmw_app/logging/log_sample.dart';
+
+class LogProvenanceStatus {
+  const LogProvenanceStatus({
+    required this.metadataPresent,
+    required this.matchesCsv,
+    required this.detail,
+  });
+
+  final bool metadataPresent;
+  final bool matchesCsv;
+  final String detail;
+}
+
+Future<LogProvenanceStatus> inspectLogProvenance(File csvFile) async {
+  final metadataFile = File('${csvFile.path}.metadata.json');
+  if (!await metadataFile.exists()) {
+    return const LogProvenanceStatus(
+      metadataPresent: false,
+      matchesCsv: false,
+      detail:
+          'Older logs remain usable, but do not include a versioned capture metadata sidecar.',
+    );
+  }
+  try {
+    final decoded = jsonDecode(await metadataFile.readAsString());
+    if (decoded is! Map<String, dynamic> ||
+        decoded['format'] != 'bimmerscope-log-metadata-v1') {
+      return const LogProvenanceStatus(
+        metadataPresent: true,
+        matchesCsv: false,
+        detail: 'The metadata sidecar has an unsupported format.',
+      );
+    }
+    final expected = decoded['csv_sha256'] as String?;
+    final actual = sha256.convert(await csvFile.readAsBytes()).toString();
+    if (expected == actual) {
+      return const LogProvenanceStatus(
+        metadataPresent: true,
+        matchesCsv: true,
+        detail:
+            'CSV hash matches the saved capture context and declared channel definitions.',
+      );
+    }
+    return const LogProvenanceStatus(
+      metadataPresent: true,
+      matchesCsv: false,
+      detail:
+          'The CSV hash no longer matches its metadata sidecar. Review before sending.',
+    );
+  } catch (_) {
+    return const LogProvenanceStatus(
+      metadataPresent: true,
+      matchesCsv: false,
+      detail: 'The metadata sidecar could not be read.',
+    );
+  }
+}
 
 class LoggingScreen extends StatefulWidget {
   const LoggingScreen({
@@ -542,6 +601,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
       vin: loggedVehicle,
       profileId: loggedProfile,
     );
+    final provenance = await inspectLogProvenance(file);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -553,6 +613,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
           durationSeconds: durationSeconds,
           markers: markers,
           quality: quality,
+          provenance: provenance,
         ),
       ),
     );
@@ -682,6 +743,7 @@ class _LogPlotPage extends StatefulWidget {
     required this.durationSeconds,
     required this.markers,
     required this.quality,
+    required this.provenance,
   });
   final String fileName;
   final String filePath;
@@ -690,6 +752,7 @@ class _LogPlotPage extends StatefulWidget {
   final double durationSeconds;
   final List<String> markers;
   final LogQualityReport quality;
+  final LogProvenanceStatus provenance;
 
   @override
   State<_LogPlotPage> createState() => _LogPlotPageState();
@@ -934,6 +997,8 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         _sessionSummary(),
         const SizedBox(height: 10),
         _tunerReadinessCard(),
+        const SizedBox(height: 10),
+        _provenanceCard(),
         if (widget.markers.isNotEmpty) ...[
           const SizedBox(height: 10),
           _markersCard(),
@@ -1236,6 +1301,48 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                 ),
               ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _provenanceCard() {
+    final status = widget.provenance;
+    final color = status.matchesCsv ? AppPalette.green : Colors.orange;
+    final title = status.matchesCsv
+        ? 'Capture metadata verified'
+        : status.metadataPresent
+        ? 'Capture metadata needs review'
+        : 'No capture metadata sidecar';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .28)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            status.matchesCsv ? Icons.verified_outlined : Icons.info_outline,
+            color: color,
+            size: 19,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontWeight: FontWeight.w800, color: color),
+                ),
+                const SizedBox(height: 4),
+                Text(status.detail, style: const TextStyle(fontSize: 11)),
+              ],
+            ),
+          ),
         ],
       ),
     );
