@@ -1,4 +1,45 @@
-# BimmerScope `1.1.4+1` experimental handover
+# BimmerScope `1.1.5-experimental.1+47` handover
+
+## Current v1.1.5 state — 16 September 2026
+
+- Workspace: `C:\Users\alper\Desktop\v1.1.5`
+- Branch: `codex/experimental-v1.1.5`
+- Starting commit: `afd7a3b` (`Start experimental v1.1.5`)
+- GitHub remote: not configured
+- `.vscode/` remains an inherited untracked folder and is untouched.
+- Flutter tests: 44/44 passed.
+- Rust tests: 43/43 passed; two existing dead-code warnings remain.
+
+The first v1.1.5 Tune APK was built successfully and was not installed:
+
+- file: `build\app\outputs\flutter-apk\BimmerScope-v1.1.5-experimental.1+47-tune-debug.apk`
+- package: `com.bmwenet.bmw_app.tune`
+- application label: `BimmerScope Tune`
+- version name / code: `1.1.5-experimental.1` / `47`
+- minimum / target SDK: `24` / `36`
+- SHA-256: `D2B0551F288B15B92BCC374A89A635C6E2925629ADBB9BF641DACB8AB1BAFBBA`
+- signature: Android debug certificate, APK Signature Scheme v2 verified
+- native architectures: ARM64, ARMv7, and x86-64; each contains the Rust core
+- ZIP entries: 570; no unsafe archive paths detected
+
+The experimental write-backend work remains disabled for real vehicles. It
+contains an offline Dart transaction/journal prototype and a synthetic Rust
+memory target with exact fingerprint binding, exclusive process-local access,
+durable intent/result records, interruption classification, and explicit
+synthetic recovery tests. No production S55 support profile is registered.
+
+Static analysis of an authentic MHD F-Series v1.01 APK provided clean-room
+architectural evidence for an F8x S55 programming lifecycle and software family
+`00001A84`. That legacy application uses FTDI/serial BMW/KWP framing, not the
+ENET/HSFZ transport used by BimmerScope. No MHD keys, licensing mechanisms,
+patch bytes, or proprietary source were copied into this project.
+
+The next hardware-dependent milestone is a complete, authorized packet capture
+for the exact target DME/bootloader and a matching sacrificial bench DME with a
+documented recovery route. Keep production writing, coding, flashing, and
+unlocking disabled until that evidence exists.
+
+## Earlier recovery history
 
 This workspace is an experimental continuation of the previous BimmerScope
 release. The known-good Git starting point is tagged
@@ -54,3 +95,35 @@ or vehicle behavior.
 No ECU flashing, calibration writes, unlocking, or security-key guessing is
 implemented or authorized. DTC clearing and experimental flap control remain
 the only physical write-capable exceptions and require explicit user action.
+# BimmerScope v1.1.6 handover
+
+## Current state
+
+- Version: `1.1.6-experimental.1+48`
+- Branch: `codex/experimental-v1.1.6`
+- Derived from v1.1.5, including the read-only S55 work and guarded write-backend scaffolding.
+- No flashing, unlocking, coding, or calibration-writing functionality is enabled.
+- Phone installation was not performed.
+
+## Latest change
+
+App Diagnostics now supports persistent capture levels:
+
+- Normal: lifecycle, reconnect, retry, error, and telemetry-gap records.
+- Detailed: adds non-sensor vehicle diagnostic events.
+- Trace: retains high-volume sensor and action records.
+
+Normal is the default. The setting applies when the next diagnostic session starts. Rust raw HSFZ temporary capture behavior remains unchanged and is not controlled by this switch yet.
+
+## Verification
+
+- Flutter analyze for the changed diagnostics/dashboard files: passed.
+- Flutter tests: 44/44 passed.
+- No v1.1.6 APK has been built yet.
+
+## Next steps
+
+1. Build and inspect the first v1.1.6 APK.
+2. Test Normal/Detailed/Trace capture on the phone during a controlled read-only session.
+3. Add bounded Rust transport tracing only if the app-level records are insufficient.
+4. Continue S55 bench and packet-capture work before enabling any programming operation.
