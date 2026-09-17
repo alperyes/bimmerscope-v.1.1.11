@@ -95,35 +95,3 @@ or vehicle behavior.
 No ECU flashing, calibration writes, unlocking, or security-key guessing is
 implemented or authorized. DTC clearing and experimental flap control remain
 the only physical write-capable exceptions and require explicit user action.
-# BimmerScope v1.1.6 handover
-
-## Current state
-
-- Version: `1.1.6-experimental.1+48`
-- Branch: `codex/experimental-v1.1.6`
-- Derived from v1.1.5, including the read-only S55 work and guarded write-backend scaffolding.
-- No flashing, unlocking, coding, or calibration-writing functionality is enabled.
-- Phone installation was not performed.
-
-## Latest change
-
-App Diagnostics now supports persistent capture levels:
-
-- Normal: lifecycle, reconnect, retry, error, and telemetry-gap records.
-- Detailed: adds non-sensor vehicle diagnostic events.
-- Trace: retains high-volume sensor and action records.
-
-Normal is the default. The setting applies when the next diagnostic session starts. Rust raw HSFZ temporary capture behavior remains unchanged and is not controlled by this switch yet.
-
-## Verification
-
-- Flutter analyze for the changed diagnostics/dashboard files: passed.
-- Flutter tests: 44/44 passed.
-- No v1.1.6 APK has been built yet.
-
-## Next steps
-
-1. Build and inspect the first v1.1.6 APK.
-2. Test Normal/Detailed/Trace capture on the phone during a controlled read-only session.
-3. Add bounded Rust transport tracing only if the app-level records are insufficient.
-4. Continue S55 bench and packet-capture work before enabling any programming operation.
