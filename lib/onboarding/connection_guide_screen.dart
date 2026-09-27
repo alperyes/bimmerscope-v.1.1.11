@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:bmw_app/app/android_settings.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:lottie/lottie.dart';
 
@@ -238,10 +239,33 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
         ),
         const SizedBox(height: 16),
         step(index, titles[index - 1], bodies[index - 1], last: true),
+        if (index == 3) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _openHotspotSettings,
+              icon: const Icon(Icons.settings_ethernet_rounded),
+              label: const Text('Open Portable hotspot settings'),
+            ),
+          ),
+        ],
         const SizedBox(height: 24),
         Center(child: _stepIllustration(index)),
         if (index == 4) ...[const SizedBox(height: 20), safetyCard()],
       ],
+    );
+  }
+
+  Future<void> _openHotspotSettings() async {
+    final opened = await openPortableHotspotSettings();
+    if (!mounted || opened) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Could not open hotspot settings. Go to Settings → Portable hotspot.',
+        ),
+      ),
     );
   }
 

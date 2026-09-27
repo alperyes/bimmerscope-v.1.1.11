@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 const appCardRadius = 18.0;
 const appSheetRadius = 24.0;
 const appCardPadding = EdgeInsets.all(16);
+const appTopActionCardHeight = 148.0;
 
 enum AppStatusTone { success, warning, danger, active, neutral }
 
@@ -49,6 +50,7 @@ abstract final class AppPalette {
     return switch (label.trim().toLowerCase()) {
       'connected' || 'monitoring' => AppStatusTone.success,
       'connecting' ||
+      'scanning' ||
       'searching' ||
       'identifying' ||
       'discovering' ||

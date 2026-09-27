@@ -15,7 +15,7 @@ class TuneGuideScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppPalette.background(isDark),
       appBar: AppBar(
-        title: const Text('Tune workspace'),
+        title: const Text('Tune'),
         backgroundColor: Colors.transparent,
       ),
       body: ListView(

@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -65942469;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2126321786;
 
 // Section: executor
 
@@ -107,6 +107,40 @@ fn wire__crate__api__vehicle__cancel_ista_s55_calibration_impl(
                 })?;
                 Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__vehicle__check_n20_bench_unlock_reference_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "check_n20_bench_unlock_reference",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_expected_vin = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok =
+                        crate::api::vehicle::check_n20_bench_unlock_reference(api_expected_vin)?;
+                    Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -1449,6 +1483,22 @@ impl SseDecode for Vec<crate::api::vehicle::VehicleProfile> {
     }
 }
 
+impl SseDecode for crate::api::vehicle::N20UnlockReferenceCheck {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_detail = <String>::sse_decode(deserializer);
+        let mut var_vin = <String>::sse_decode(deserializer);
+        let mut var_readOnly = <bool>::sse_decode(deserializer);
+        return crate::api::vehicle::N20UnlockReferenceCheck {
+            status: var_status,
+            detail: var_detail,
+            vin: var_vin,
+            read_only: var_readOnly,
+        };
+    }
+}
+
 impl SseDecode for Option<String> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1670,54 +1720,60 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        3 => wire__crate__api__vehicle__clear_engine_diagnostics_impl(
+        3 => wire__crate__api__vehicle__check_n20_bench_unlock_reference_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        15 => wire__crate__api__vehicle__ecu_fingerprint_values_default_impl(
+        4 => wire__crate__api__vehicle__clear_engine_diagnostics_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        17 => wire__crate__api__vehicle__experimental_exhaust_flap_service_test_impl(
+        16 => wire__crate__api__vehicle__ecu_fingerprint_values_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        18 => wire__crate__api__vehicle__experimental_exhaust_flap_set_position_impl(
+        18 => wire__crate__api__vehicle__experimental_exhaust_flap_service_test_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        19 => wire__crate__api__vehicle__init_app_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__vehicle__read_ista_s55_calibration_impl(
+        19 => wire__crate__api__vehicle__experimental_exhaust_flap_set_position_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        22 => wire__crate__api__vehicle__scan_engine_diagnostics_impl(
+        20 => wire__crate__api__vehicle__init_app_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__vehicle__read_ista_s55_calibration_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        24 => wire__crate__api__vehicle__start_auto_vehicle_session_impl(
+        23 => wire__crate__api__vehicle__scan_engine_diagnostics_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        25 => wire__crate__api__vehicle__start_demo_session_impl(port, ptr, rust_vec_len, data_len),
-        27 => {
+        25 => wire__crate__api__vehicle__start_auto_vehicle_session_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        26 => wire__crate__api__vehicle__start_demo_session_impl(port, ptr, rust_vec_len, data_len),
+        28 => {
             wire__crate__api__vehicle__start_vehicle_session_impl(port, ptr, rust_vec_len, data_len)
         }
-        31 => {
+        32 => {
             wire__crate__api__vehicle__stop_session_and_wait_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -1735,46 +1791,46 @@ fn pde_ffi_dispatcher_sync_impl(
         2 => {
             wire__crate__api__vehicle__cancel_ista_s55_calibration_impl(ptr, rust_vec_len, data_len)
         }
-        4 => wire__crate__api__vehicle__configure_transport_diagnostics_impl(
+        5 => wire__crate__api__vehicle__configure_transport_diagnostics_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        5 => {
+        6 => {
             wire__crate__api__vehicle__confirmed_vehicle_profiles_impl(ptr, rust_vec_len, data_len)
         }
-        6 => wire__crate__api__vehicle__decode_ecu_identification_impl(ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__vehicle__decode_raw_hsfz_capture_impl(ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__vehicle__default_diagnostic_data_identifiers_impl(
+        7 => wire__crate__api__vehicle__decode_ecu_identification_impl(ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__vehicle__decode_raw_hsfz_capture_impl(ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__vehicle__default_diagnostic_data_identifiers_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        9 => {
+        10 => {
             wire__crate__api__vehicle__default_diagnostic_services_impl(ptr, rust_vec_len, data_len)
         }
-        10 => wire__crate__api__vehicle__default_dtc_response_definition_impl(
+        11 => wire__crate__api__vehicle__default_dtc_response_definition_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        11 => wire__crate__api__vehicle__default_dtc_status_definitions_impl(
+        12 => wire__crate__api__vehicle__default_dtc_status_definitions_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        12 => wire__crate__api__vehicle__default_sensors_impl(ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__vehicle__demo_diagnostics_impl(ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__vehicle__dme_capability_preflight_impl(ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__vehicle__empty_ecu_fingerprint_impl(ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__vehicle__ista_s55_read_profile_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__vehicle__set_live_sensor_ids_impl(ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__vehicle__start_monitoring_impl(ptr, rust_vec_len, data_len),
-        28 => {
+        13 => wire__crate__api__vehicle__default_sensors_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__vehicle__demo_diagnostics_impl(ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__vehicle__dme_capability_preflight_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__vehicle__empty_ecu_fingerprint_impl(ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__vehicle__ista_s55_read_profile_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__vehicle__set_live_sensor_ids_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__vehicle__start_monitoring_impl(ptr, rust_vec_len, data_len),
+        29 => {
             wire__crate__api__vehicle__stop_exhaust_flap_session_impl(ptr, rust_vec_len, data_len)
         }
-        29 => wire__crate__api__vehicle__stop_monitoring_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__vehicle__stop_session_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__vehicle__stop_monitoring_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__vehicle__stop_session_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2084,6 +2140,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::vehicle::IstaDmeReadProfile>
     for crate::api::vehicle::IstaDmeReadProfile
 {
     fn into_into_dart(self) -> crate::api::vehicle::IstaDmeReadProfile {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vehicle::N20UnlockReferenceCheck {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.status.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.vin.into_into_dart().into_dart(),
+            self.read_only.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vehicle::N20UnlockReferenceCheck
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vehicle::N20UnlockReferenceCheck>
+    for crate::api::vehicle::N20UnlockReferenceCheck
+{
+    fn into_into_dart(self) -> crate::api::vehicle::N20UnlockReferenceCheck {
         self
     }
 }
@@ -2485,6 +2564,16 @@ impl SseEncode for Vec<crate::api::vehicle::VehicleProfile> {
         for item in self {
             <crate::api::vehicle::VehicleProfile>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::vehicle::N20UnlockReferenceCheck {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.status, serializer);
+        <String>::sse_encode(self.detail, serializer);
+        <String>::sse_encode(self.vin, serializer);
+        <bool>::sse_encode(self.read_only, serializer);
     }
 }
 

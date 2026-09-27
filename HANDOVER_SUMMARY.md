@@ -1,4 +1,41 @@
-# BimmerScope `1.1.7-experimental.1+49` handover
+# BimmerScope `1.1.8-experimental.1+72` handover
+
+## Current v1.1.8 state — 27 September 2026
+
+- Workspace: `C:\Users\alper\Desktop\v1.1.8`
+- Branch: `codex/experimental-v1.1.8`
+- GitHub remote: `https://github.com/alperyes/bimmerscope-v1.1.8.git`
+- Version: `1.1.8-experimental.1+72`; Tune package: `com.bmwenet.bmw_app.tune`.
+- Target vehicle: user's stock 2014 BMW F82 M4 with DCT. Actual DME software
+  and unlock state remain unverified.
+- The v1.1.8 Tune debug APK was rebuilt on 27 September 2026 and copied to the
+  USB-connected phone `HS621L001389` at
+  `/sdcard/Download/BimmerScope-v1.1.8-experimental.1+72-tune-debug.apk`.
+  Package metadata was checked and the phone file SHA-256 matched the local
+  build: `7168644d8adcbf6a9cb9100a8483cd2fe5d25160907725ac49a04d5a33a23324`.
+  It was sent, not installed. The mistaken v1.1.3 APK previously sent by error
+  was removed from the phone's Downloads folder.
+- This update includes Tune and diagnostics layout/content refinements, DME
+  identity formatting, the Android hotspot-settings shortcut, a dedicated
+  automatic pull-logging settings page, and safer saved-log rename handling.
+- Sidebar/About version fallback in `lib/app/build_info.dart` and `pubspec.yaml`
+  now identify build `1.1.8-experimental.1+72`.
+- Validation: `flutter analyze` passes with no issues; `flutter test` passes
+  48/48; `cargo test --manifest-path rust\Cargo.toml` passes 68/68 (two
+  existing dead-code warnings). `git diff --check` is clean. The latest Tune
+  APK build succeeded before these checks.
+- Physical-vehicle reliability remains unverified. The user previously
+  reported intermittent initial connection and flap commands that sometimes
+  did not respond until cycling ignition and reconnecting, including an
+  occurrence around 16:40–16:41. Screen-off connection drops were also
+  reported. The current Rust live worker serializes flap requests and waits
+  for DME acknowledgement, but this does not establish reliable car behavior.
+- Continue bench/vehicle validation cautiously; inspect timestamped diagnostics
+  around failed first connections and flap acknowledgements before altering
+  transport recovery behavior.
+- No ECU flashing, unlocking, coding, or calibration writing is enabled.
+
+## Historical v1.1.7 and earlier handover notes
 
 ## Current v1.1.7 state — 18 September 2026
 

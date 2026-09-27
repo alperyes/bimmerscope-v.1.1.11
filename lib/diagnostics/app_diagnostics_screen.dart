@@ -14,16 +14,18 @@ class AppDiagnosticsScreen extends StatefulWidget {
     super.key,
     required this.isDark,
     this.onExportCurrent,
+    this.store,
   });
   final bool isDark;
   final Future<void> Function()? onExportCurrent;
+  final AppDiagnosticsStore? store;
 
   @override
   State<AppDiagnosticsScreen> createState() => _AppDiagnosticsScreenState();
 }
 
 class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
-  final store = AppDiagnosticsStore();
+  late final store = widget.store ?? AppDiagnosticsStore();
   final searchController = TextEditingController();
   late Future<List<File>> files = store.list();
   String filter = 'all';
@@ -458,7 +460,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
             '${summary?.title ?? 'Reading session'}, ${summary?.subtitle ?? file.path.split(Platform.pathSeparator).last}',
         child: Material(
           color: AppPalette.surface(widget.isDark),
-          borderRadius: BorderRadius.circular(16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(

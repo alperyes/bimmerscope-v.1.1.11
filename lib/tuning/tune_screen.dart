@@ -8,12 +8,10 @@ import 'package:bmw_app/vehicle/vehicle_capabilities.dart';
 import 'package:bmw_app/vehicle/vehicle_identity.dart';
 import 'package:bmw_app/tuning/stock_file_store.dart';
 import 'package:bmw_app/tuning/tune_product.dart';
-import 'package:bmw_app/tuning/tuning_platform.dart';
 import 'package:bmw_app/tuning/tuner_package.dart';
 import 'package:bmw_app/logging/data_logger.dart';
 import 'package:bmw_app/tuning/tuner_request.dart';
 import 'package:bmw_app/tuning/tune_compatibility.dart';
-import 'package:bmw_app/tuning/s55_identity_report.dart';
 import 'package:bmw_app/tuning/calibration_artifact.dart';
 import 'package:bmw_app/tuning/write_preflight.dart';
 import 'package:bmw_app/vehicle/simulator_transport.dart';
@@ -58,6 +56,8 @@ class TuneScreen extends StatefulWidget {
     required this.onSelectGarageVehicle,
     required this.onShowGuide,
     required this.onToggleTheme,
+    required this.onBeforeVehicleCheck,
+    required this.onAfterVehicleCheck,
   });
 
   final bool isDark;
@@ -88,6 +88,8 @@ class TuneScreen extends StatefulWidget {
   final ValueChanged<GarageVehicle> onSelectGarageVehicle;
   final VoidCallback onShowGuide;
   final VoidCallback onToggleTheme;
+  final Future<void> Function() onBeforeVehicleCheck;
+  final Future<void> Function() onAfterVehicleCheck;
 
   @override
   State<TuneScreen> createState() => _TuneScreenState();
@@ -327,14 +329,51 @@ class _TuneScreenState extends State<TuneScreen> {
     );
   }
 
+  Future<({rust_vehicle.N20UnlockReferenceCheck? result, String? error})>
+  _readN20UnlockReference() async {
+    var paused = false;
+    rust_vehicle.N20UnlockReferenceCheck? result;
+    String? checkError;
+    try {
+      await widget.onBeforeVehicleCheck();
+      paused = true;
+      result = await rust_vehicle.checkN20BenchUnlockReference(
+        expectedVin: widget.vin,
+      );
+    } catch (error) {
+      checkError = '$error';
+    } finally {
+      if (paused) {
+        try {
+          await widget.onAfterVehicleCheck();
+        } catch (error) {
+          result = null;
+          checkError = 'Vehicle reconnect failed: $error';
+        }
+      }
+    }
+    return (result: result, error: checkError);
+  }
+
   Future<void> showUnlockStatus() async {
     final identity = identifyVehicle(widget.vin);
+    final n20Check =
+        widget.connectionLabel == 'Connected' &&
+            !widget.simulatorMode &&
+            widget.vin == 'WBA3A52010F360747'
+        ? await _readN20UnlockReference()
+        : null;
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Unlock requirement'),
         content: Text(
-          identity == null
+          n20Check != null
+              ? n20Check.result == null
+                    ? 'Unable to verify N20 bench DME: ${n20Check.error}'
+                    : '${n20Check.result!.status == 'reference_match' ? 'N20 bench reference matched' : 'Unable to verify'}\n\n${n20Check.result!.detail}\n\nVIN: ${n20Check.result!.vin}'
+              : identity == null
               ? 'Connect and identify a supported vehicle to check its DME requirements.'
               : '${identity.displayLabel}\n\nUnlock checks are informational only in this build. No ECU write or flash operation is available.',
         ),
@@ -357,6 +396,10 @@ class _TuneScreenState extends State<TuneScreen> {
     // disconnected vehicle check.
     final simulatorUnlockStatus = connected && widget.simulatorMode
         ? await readSimulatorDmeUnlockStatus()
+        : null;
+    final n20Check =
+        connected && !widget.simulatorMode && widget.vin == 'WBA3A52010F360747'
+        ? await _readN20UnlockReference()
         : null;
     if (!mounted) return;
     await showDialog<void>(
@@ -387,9 +430,12 @@ class _TuneScreenState extends State<TuneScreen> {
             _CheckResult(
               label: 'DME unlock status',
               passed: simulatorUnlockStatus == 'unlocked',
-              detail:
-                  simulatorUnlockStatus == null ||
-                      simulatorUnlockStatus == 'unknown'
+              detail: n20Check != null
+                  ? n20Check.result?.status == 'reference_match'
+                        ? 'N20 bench reference matched'
+                        : 'Unable to verify N20 bench reference'
+                  : simulatorUnlockStatus == null ||
+                        simulatorUnlockStatus == 'unknown'
                   ? 'Unable to verify'
                   : simulatorUnlockStatus.replaceAll('_', ' '),
             ),
@@ -425,7 +471,13 @@ class _TuneScreenState extends State<TuneScreen> {
               icon: const Icon(Icons.garage_outlined),
               label: const Text('Open vehicle garage'),
             ),
-            if (simulatorUnlockStatus == null ||
+            if (n20Check != null)
+              Text(
+                n20Check.result?.detail ??
+                    'N20 bench check failed: ${n20Check.error}',
+                style: const TextStyle(fontSize: 12),
+              )
+            else if (simulatorUnlockStatus == null ||
                 simulatorUnlockStatus == 'unknown')
               const Text(
                 'DME preflight requires a validated VIN, hardware, software, bootloader, and calibration fingerprint.',
@@ -448,30 +500,6 @@ class _TuneScreenState extends State<TuneScreen> {
             child: const Text('Close'),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> exportS55IdentityReport() async {
-    final capturedAt = widget.identityCapturedAt ?? DateTime.now();
-    final stamp = capturedAt
-        .toIso8601String()
-        .replaceAll(':', '-')
-        .replaceAll('.', '-');
-    final file = File(
-      '${Directory.systemTemp.path}${Platform.pathSeparator}BimmerScope_S55_Identity_$stamp.txt',
-    );
-    await file.writeAsString(
-      buildS55IdentityReport(
-        vin: widget.vin,
-        evidence: compatibilityReport.evidence,
-      ),
-    );
-    if (!mounted) return;
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path, mimeType: 'text/plain')],
-        subject: 'BimmerScope S55 identity report',
       ),
     );
   }
@@ -1084,13 +1112,16 @@ class _TuneScreenState extends State<TuneScreen> {
                   connectionLabel: widget.connectionLabel,
                   onCheckVehicle: showTuneReadiness,
                 ),
-                const SizedBox(height: 12),
-                const _TuneStepLabel(
-                  number: '1',
-                  title: 'Check the vehicle',
-                  detail: 'Confirm the connection and ECU identity first.',
-                ),
                 const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: showUnlockStatus,
+                  icon: const Icon(Icons.lock_open_outlined, size: 18),
+                  label: const Text('Check unlock status'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 if (s55Connected) ...[
                   const _TuneStepLabel(
                     number: '2',
@@ -1112,12 +1143,6 @@ class _TuneScreenState extends State<TuneScreen> {
                   const SizedBox(height: 12),
                 ],
                 const SizedBox(height: 12),
-                const _TuneStepLabel(
-                  number: '3',
-                  title: 'Prepare the request',
-                  detail: 'Add a stock file, notes, and logs for your tuner.',
-                ),
-                const SizedBox(height: 8),
                 _VehicleSnapshotStrip(
                   isDark: widget.isDark,
                   connectionLabel: widget.connectionLabel,
@@ -1125,47 +1150,19 @@ class _TuneScreenState extends State<TuneScreen> {
                   mileageKm: widget.mileageKm,
                 ),
                 const SizedBox(height: 12),
-                _TuningCoveragePanel(
-                  isDark: widget.isDark,
-                  currentEngine: connectedIdentity?.engine,
-                  ecuDetected: widget.engineEcuDetected,
-                ),
                 if (widget.connectionLabel == 'Connected' &&
                     widget.engineEcuDetected) ...[
                   const SizedBox(height: 12),
                   _EcuIdentityFieldBar(
                     isDark: widget.isDark,
+                    vin: widget.vin,
                     identity: widget.engineEcuIdentity,
                     hardware: widget.engineEcuHardware,
                     software: widget.engineEcuSoftware,
-                    applicationSoftware: widget.engineEcuApplicationSoftware,
-                    softwareVersion: widget.engineEcuSoftwareVersion,
                     bootloader: widget.engineEcuBootloader,
                     calibration: widget.engineEcuCalibration,
-                    supplierHardware: widget.engineEcuSupplierHardware,
-                    supplierSoftware: widget.engineEcuSupplierSoftware,
-                    bootloaderFingerprint:
-                        widget.engineEcuBootloaderFingerprint,
-                    softwareFingerprint: widget.engineEcuSoftwareFingerprint,
-                    calibrationFingerprint:
-                        widget.engineEcuCalibrationFingerprint,
-                    sgbdIndex: widget.engineEcuSgbdIndex,
-                    serialNumber: widget.engineEcuSerialNumber,
                     manufacturingDate: widget.engineEcuManufacturingDate,
                     codingId: widget.engineEcuCodingId,
-                    cvn: widget.engineEcuCvn,
-                    sessionId: widget.sessionId,
-                    source: widget.simulatorMode ? 'simulator' : 'live ENET',
-                    capturedAt: widget.identityCapturedAt,
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: OutlinedButton.icon(
-                      onPressed: exportS55IdentityReport,
-                      icon: const Icon(Icons.ios_share_rounded, size: 18),
-                      label: const Text('Export identity report'),
-                    ),
                   ),
                 ],
                 if (identifyVehicle(widget.vin) case final identity?) ...[
@@ -1297,14 +1294,6 @@ class _TuneScreenState extends State<TuneScreen> {
                                 'Unavailable until vehicle-specific support is validated',
                               ),
                             ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.lock_open_outlined),
-                            title: const Text('Check unlock requirement'),
-                            subtitle: const Text(
-                              'Read-only vehicle capability check',
-                            ),
-                            onTap: showUnlockStatus,
                           ),
                         ],
                       ),
@@ -2084,194 +2073,45 @@ class _VehicleSnapshotStrip extends StatelessWidget {
   );
 }
 
-class _TuningCoveragePanel extends StatelessWidget {
-  const _TuningCoveragePanel({
-    required this.isDark,
-    required this.currentEngine,
-    required this.ecuDetected,
-  });
-
-  final bool isDark;
-  final String? currentEngine;
-  final bool ecuDetected;
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = AppPalette.secondary(isDark);
-    final currentTrack = tuningTrackForEngine(currentEngine);
-    final connectedTrack = currentTrack == null
-        ? 'Connect a supported vehicle to identify its engine track.'
-        : ecuDetected
-        ? '${currentTrack.label} · ${currentTrack.statusLabel}'
-        : '${currentTrack.label} · ECU identity pending';
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: AppPalette.surface(isDark),
-        borderRadius: BorderRadius.circular(appCardRadius),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.hub_outlined, size: 18, color: AppPalette.blue),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Tuning coverage',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                '${tuningEngineTracks.length} engine families',
-                style: TextStyle(color: muted, fontSize: 10),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(connectedTrack, style: TextStyle(color: muted, fontSize: 11)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final track in tuningEngineTracks)
-                _TuningTrackChip(
-                  label: track.label,
-                  active: track.engine == currentEngine,
-                  enabled: track.packagePreparationEnabled,
-                  isDark: isDark,
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Only the validated S55 F82 DCT track can prepare a product package today. Other families remain read-only until their ECU evidence is validated.',
-            style: TextStyle(color: muted, fontSize: 10),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TuningTrackChip extends StatelessWidget {
-  const _TuningTrackChip({
-    required this.label,
-    required this.active,
-    required this.enabled,
-    required this.isDark,
-  });
-
-  final String label;
-  final bool active;
-  final bool enabled;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active
-        ? AppPalette.blue
-        : enabled
-        ? AppPalette.green
-        : AppPalette.secondary(isDark);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: active ? .16 : .09),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: active ? .5 : .18)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
 class _EcuIdentityFieldBar extends StatelessWidget {
   const _EcuIdentityFieldBar({
     required this.isDark,
+    required this.vin,
     required this.identity,
     required this.hardware,
     required this.software,
-    required this.applicationSoftware,
-    required this.softwareVersion,
     required this.bootloader,
     required this.calibration,
-    required this.supplierHardware,
-    required this.supplierSoftware,
-    required this.bootloaderFingerprint,
-    required this.softwareFingerprint,
-    required this.calibrationFingerprint,
-    required this.sgbdIndex,
-    required this.serialNumber,
     required this.manufacturingDate,
     required this.codingId,
-    required this.cvn,
-    required this.sessionId,
-    required this.source,
-    required this.capturedAt,
   });
 
   final bool isDark;
+  final String vin;
   final String? identity;
   final String? hardware;
   final String? software;
-  final String? applicationSoftware;
-  final String? softwareVersion;
   final String? bootloader;
   final String? calibration;
-  final String? supplierHardware;
-  final String? supplierSoftware;
-  final String? bootloaderFingerprint;
-  final String? softwareFingerprint;
-  final String? calibrationFingerprint;
-  final String? sgbdIndex;
-  final String? serialNumber;
   final String? manufacturingDate;
   final String? codingId;
-  final String? cvn;
-  final String sessionId;
-  final String source;
-  final DateTime? capturedAt;
-
-  String valueOf(String? value) =>
-      value?.trim().isNotEmpty == true ? value!.trim() : 'Not read';
-
   @override
   Widget build(BuildContext context) {
     final muted = AppPalette.secondary(isDark);
     final border = muted.withValues(alpha: .18);
-    final fields = [
-      ('DME identity', identity),
-      ('HW number', hardware),
-      ('SW number', software),
-      ('App SW', applicationSoftware),
-      ('SW version', softwareVersion),
-      ('Boot / startup', bootloader),
-      ('Calibration', calibration),
-      ('Supplier HW', supplierHardware),
-      ('Supplier SW', supplierSoftware),
-      ('Boot FP', bootloaderFingerprint),
-      ('SW FP', softwareFingerprint),
-      ('Cal FP', calibrationFingerprint),
-      ('SGBD index', sgbdIndex),
-      ('ECU serial', serialNumber),
+    final fields = <(String, String?)>[
+      ('VIN', vin),
+      ('Hardware ID', hardware),
+      ('Software ID', software),
+      ('Bootloader ID', bootloader),
+      ('Calibration ID', calibration),
+      ('Raw ECU ID (F1 50)', identity),
       ('Manufactured', manufacturingDate),
       ('Coding ID', codingId),
-      ('CVN', cvn),
     ];
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
         color: AppPalette.surface(isDark),
         borderRadius: BorderRadius.circular(appCardRadius),
@@ -2280,78 +2120,30 @@ class _EcuIdentityFieldBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.memory_rounded, size: 18, color: AppPalette.blue),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'DME identity',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.lock_outline_rounded, size: 13, color: muted),
-                  const SizedBox(width: 3),
-                  Text(
-                    'Read only',
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Compatibility fields collected from the connected ECU',
-            style: TextStyle(color: muted, fontSize: 11),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            'Source: $source${sessionId.isEmpty ? '' : ' · session $sessionId'}${capturedAt == null ? '' : ' · ${capturedAt!.toLocal().toIso8601String().replaceFirst('T', ' ').substring(0, 19)}'}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: muted,
-              fontFamily: 'Geist Mono',
-              fontSize: 9,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var index = 0; index < fields.length; index++) ...[
-                  if (index > 0)
-                    Container(
-                      width: 1,
-                      height: 38,
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      color: border,
-                    ),
-                  _EcuIdentityField(
-                    label: fields[index].$1,
-                    value: valueOf(fields[index].$2),
-                    muted: muted,
-                    isUnavailable:
-                        fields[index].$2 == null ||
-                        fields[index].$2!.trim().isEmpty,
-                  ),
-                ],
-              ],
-            ),
+          const Text(
+            'DME identity',
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Core review: DME identity, BMW software, boot/startup, and calibration. Physical hardware and supplier fields are optional on some S55 software levels.',
-            style: TextStyle(color: muted, fontSize: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = (constraints.maxWidth - 10) / 2;
+              return Wrap(
+                spacing: 10,
+                runSpacing: 5,
+                children: [
+                  for (final field in fields)
+                    SizedBox(
+                      width: itemWidth,
+                      child: _EcuIdentityField(
+                        label: field.$1,
+                        value: field.$2,
+                        muted: muted,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -2364,53 +2156,42 @@ class _EcuIdentityField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.muted,
-    required this.isUnavailable,
   });
 
   final String label;
-  final String value;
+  final String? value;
   final Color muted;
-  final bool isUnavailable;
 
   @override
   Widget build(BuildContext context) {
-    final valueColor = isUnavailable
+    final shown = value?.trim().isNotEmpty == true ? value!.trim() : 'Not read';
+    final valueColor = shown == 'Not read'
         ? muted
         : Theme.of(context).colorScheme.onSurface;
-    return SizedBox(
-      width: 132,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: muted,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: muted, fontSize: 10),
+          ),
+          const SizedBox(height: 1),
+          SelectableText(
+            shown,
+            maxLines: 1,
+            textAlign: TextAlign.start,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
             ),
-            const SizedBox(height: 4),
-            Tooltip(
-              message: value,
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: valueColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -2911,14 +2692,13 @@ class _TuneReadinessPanel extends StatelessWidget {
     final statusDetail = vin == 'Not identified'
         ? 'Connect and identify the ECU before preparing a package'
         : connected
-        ? 'Connected · VIN $vin'
+        ? 'Connected'
         : 'Waiting for a verified vehicle session';
     return Semantics(
       container: true,
-      label:
-          '${connected ? 'Vehicle ready to review' : 'Tune workspace'}. '
-          '$statusDetail',
+      label: 'Tune. $statusDetail',
       child: Container(
+        height: appTopActionCardHeight,
         padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
         decoration: BoxDecoration(
           color: AppPalette.surface(isDark),
@@ -2927,73 +2707,84 @@ class _TuneReadinessPanel extends StatelessWidget {
             color: AppPalette.separator(isDark).withValues(alpha: .5),
           ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: isDark ? .16 : .09),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: AnimatedSwitcher(
-                duration: reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-                child: connecting && !reduceMotion
-                    ? ExcludeSemantics(
-                        key: const ValueKey('connection-pulse'),
-                        child: Lottie.asset(
-                          'assets/animations/connection_pulse.json',
-                          width: 36,
-                          height: 36,
-                          repeat: true,
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: isDark ? .16 : .09),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    child: connecting && !reduceMotion
+                        ? ExcludeSemantics(
+                            key: const ValueKey('connection-pulse'),
+                            child: Lottie.asset(
+                              'assets/animations/connection_pulse.json',
+                              width: 36,
+                              height: 36,
+                              repeat: true,
+                            ),
+                          )
+                        : Icon(
+                            connected
+                                ? Icons.check_circle_rounded
+                                : Icons.link_off_rounded,
+                            key: ValueKey(
+                              connected ? 'ready-icon' : 'offline-icon',
+                            ),
+                            color: statusColor,
+                            size: 22,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tune',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                         ),
-                      )
-                    : Icon(
-                        connected
-                            ? Icons.check_circle_rounded
-                            : Icons.link_off_rounded,
-                        key: ValueKey(
-                          connected ? 'ready-icon' : 'offline-icon',
-                        ),
-                        color: statusColor,
-                        size: 22,
                       ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    connected ? 'Vehicle ready to review' : 'Tune workspace',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        statusDetail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: muted, fontSize: 11),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    statusDetail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: muted, fontSize: 12),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: onCheckVehicle,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(76, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+            const Spacer(),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: connected ? onCheckVehicle : null,
+                style: FilledButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: Colors.white.withValues(alpha: .65),
+                ),
+                icon: const Icon(Icons.manage_search_rounded, size: 20),
+                label: const Text('Check vehicle'),
               ),
-              child: const Text('Check vehicle'),
             ),
           ],
         ),

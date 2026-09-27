@@ -38,6 +38,8 @@ const ISTA_MEMORY_READ_CHUNK: u32 = 0x100;
 const ISTA_S55_READ_SOFTWARE: &str = "6MC9ED0B";
 const ISTA_S55_READ_START: u32 = 0x8018_0000;
 const ISTA_S55_READ_LENGTH: u32 = 0x80_000;
+const N20_BENCH_VIN: &str = "WBA3A52010F360747";
+const N20_BENCH_F101: &str = "010100052302078F04D20100001000000001000019A601130306000019010131020800001C9F1D96010800001CDB1D96030500000B0A007803";
 static ISTA_READ_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 #[frb(ignore)]
@@ -243,6 +245,98 @@ pub struct DmeCapabilityPreflight {
     pub status: String,
     pub detail: String,
     pub read_only: bool,
+}
+
+/// Comparison with the N20 bench state for which MHD reported no unlock needed.
+/// A match is evidence, not a validated general unlock-state classifier.
+#[derive(Clone, Debug, PartialEq)]
+pub struct N20UnlockReferenceCheck {
+    pub status: String,
+    pub detail: String,
+    pub vin: String,
+    pub read_only: bool,
+}
+
+pub fn check_n20_bench_unlock_reference(
+    expected_vin: String,
+) -> Result<N20UnlockReferenceCheck, String> {
+    if expected_vin != N20_BENCH_VIN {
+        return Err("N20 unlock reference is limited to the documented F30 bench VIN".into());
+    }
+    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
+    let host =
+        last_vehicle_host().ok_or_else(|| "No active vehicle endpoint to check".to_string())?;
+    let mut stream = fresh_diagnostic_stream(&host)?;
+    send_uds(&mut stream, ENGINE_ECU_ADDRESS, &[0x3E, 0x00])?;
+    read_matching_uds_response(
+        &mut stream,
+        ENGINE_ECU_ADDRESS,
+        &[0x7E, 0x00],
+        &[0x3E],
+        Duration::from_secs(2),
+    )?;
+    let f150 = read_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "ecu_identification")?;
+    let vin = read_ascii_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "vehicle_vin")?;
+    if vin != expected_vin {
+        return Err("DME VIN changed during unlock reference check".into());
+    }
+    let f101 = read_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "s55_dme_identity_bundle")?;
+    if f150 != [0x0F, 0x18, 0x10] || hex_payload(&f101) != N20_BENCH_F101 {
+        return Ok(N20UnlockReferenceCheck {
+            status: "unsupported_identity".into(),
+            detail: "DME identity differs from the captured MEVD17.2.9 bench software".into(),
+            vin,
+            read_only: true,
+        });
+    }
+    let short = read_n20_reference_memory(&mut stream, 0x801F_FA40, 16)?;
+    let header = read_n20_reference_memory(&mut stream, 0xD000_0000, 64)?;
+    let full = read_n20_reference_memory(&mut stream, 0x801F_FA00, 64)?;
+    Ok(classify_n20_reference(&vin, &short, &header, &full))
+}
+
+fn read_n20_reference_memory(
+    stream: &mut TcpStream,
+    address: u32,
+    length: u16,
+) -> Result<Vec<u8>, String> {
+    let request = build_ista_memory_read_request(address, length)?;
+    send_uds(stream, ENGINE_ECU_ADDRESS, &request)?;
+    let response = read_matching_uds_response(
+        stream,
+        ENGINE_ECU_ADDRESS,
+        &[0x63],
+        &[0x23],
+        Duration::from_secs(2),
+    )?;
+    Ok(parse_ista_memory_read_response(&response, length as usize)?.to_vec())
+}
+
+fn classify_n20_reference(
+    vin: &str,
+    short: &[u8],
+    header: &[u8],
+    full: &[u8],
+) -> N20UnlockReferenceCheck {
+    const HEADER_PREFIX: [u8; 25] = [
+        0x41, 0x80, 0x8A, 0x05, 0x16, 0x40, 0xA5, 0x98, 0x74, 0x08, 0x00, 0x10, 0x11, 0x14, 0xFD,
+        0x00, 0x5D, 0x55, 0xFD, 0x98, 0xD9, 0x08, 0xF5, 0x05, 0x50,
+    ];
+    let matched = short == [0xC3; 16]
+        && full == [0xC3; 64]
+        && header.len() == 64
+        && header.starts_with(&HEADER_PREFIX)
+        && header[HEADER_PREFIX.len()..].iter().all(|byte| *byte == 0);
+    N20UnlockReferenceCheck {
+        status: if matched { "reference_match" } else { "unable_to_verify" }.into(),
+        detail: if matched {
+            "Matches the captured N20 bench state where no unlock was required. This does not establish BimmerScope flash compatibility or general DME unlock state"
+        } else {
+            "Read-only DME values differ from the captured N20 bench reference"
+        }.into(),
+        vin: vin.into(),
+        read_only: true,
+    }
 }
 
 /// A capture-derived, read-only memory region. Profiles are intentionally
@@ -523,8 +617,20 @@ fn data_identifier_definition(id: &str) -> DiagnosticDataIdentifierDefinition {
 
 #[frb(sync)]
 pub fn decode_ecu_identification(raw_data: Vec<u8>) -> EcuIdentification {
+    let is_text = raw_data
+        .iter()
+        .all(|byte| *byte == 0 || (0x20..=0x7e).contains(byte));
+    let display_value = if is_text {
+        String::from_utf8_lossy(&raw_data).trim().to_string()
+    } else {
+        raw_data
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     EcuIdentification {
-        display_value: String::from_utf8_lossy(&raw_data).trim().to_string(),
+        display_value,
         raw_data,
     }
 }
@@ -582,6 +688,7 @@ fn diagnostic_service(
 // capture. iDrive and gear-selector endpoints are deliberately excluded.
 const ADDITIONAL_DTC_ECUS: [u8; 3] = [0x10, 0x17, 0x18];
 const DTC_QUERY_TIMEOUT: Duration = Duration::from_millis(1500);
+const OPTIONAL_ECU_SESSION_TIMEOUT: Duration = Duration::from_millis(750);
 const MAX_LIVE_SENSORS: usize = 4;
 
 fn ecu_display_name(address: u8) -> String {
@@ -606,6 +713,7 @@ enum FlapCommand {
     },
 }
 
+#[frb(ignore)]
 #[derive(Default)]
 struct PendingFlapReply(Option<mpsc::Sender<Result<(), String>>>);
 
@@ -1302,15 +1410,18 @@ pub fn scan_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> {
     )?;
     // ISTA's F82 scan also queries the FEM at HSFZ address 0x40. This is
     // read-only; Clear-DTC remains restricted to the separately guarded DME path.
-    if let Ok(fem_faults) = query_dtc_for_ecu_with_retry(&mut stream, 0x40, &ecu_display_name(0x40))
-    {
-        faults.extend(fem_faults);
-    }
-    for ecu in ADDITIONAL_DTC_ECUS {
-        if let Ok(ecu_faults) =
-            query_dtc_for_ecu_with_retry(&mut stream, ecu, &ecu_display_name(ecu))
-        {
-            faults.extend(ecu_faults);
+    for ecu in std::iter::once(0x40).chain(ADDITIONAL_DTC_ECUS) {
+        match query_dtc_for_ecu(
+            &mut stream,
+            ecu,
+            &ecu_display_name(ecu),
+            OPTIONAL_ECU_SESSION_TIMEOUT,
+        ) {
+            Ok(ecu_faults) => faults.extend(ecu_faults),
+            Err(error) => transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({"type": "optional_dtc_ecu_skipped", "ecu": format!("{ecu:02X}"), "reason": error}),
+            ),
         }
     }
     Ok(faults)
@@ -1320,13 +1431,13 @@ fn query_dtc_for_ecu(
     stream: &mut TcpStream,
     ecu: u8,
     ecu_name: &str,
+    session_timeout: Duration,
 ) -> Result<Vec<DiagnosticTroubleCode>, String> {
     // BM3's captured F82/S55 DME read sends 19 02 0C directly after the
-    // identification exchange. Avoid an extra 10 03 on the confirmed DME
-    // path because this gateway can reset while unrelated ECU session frames
-    // are in flight. Other ECU scans retain the generic session setup.
+    // identification exchange. Other ECUs require session setup, but optional
+    // addresses are probed once so an absent module cannot stall the scan.
     if ecu != confirmed_f82_s55_profile().engine_ecu {
-        enter_extended_session(stream, ecu)?;
+        enter_extended_session_with_timeout(stream, ecu, session_timeout)?;
     }
     send_uds(stream, ecu, &build_dtc_read_request())?;
     let deadline = Instant::now() + DTC_QUERY_TIMEOUT;
@@ -1379,7 +1490,7 @@ fn query_dtc_for_ecu_with_retry(
 ) -> Result<Vec<DiagnosticTroubleCode>, String> {
     let mut last_error = String::new();
     for attempt in 0..3 {
-        match query_dtc_for_ecu(stream, ecu, ecu_name) {
+        match query_dtc_for_ecu(stream, ecu, ecu_name, Duration::from_secs(3)) {
             Ok(faults) => return Ok(faults),
             Err(error) => {
                 last_error = error;
@@ -1590,8 +1701,21 @@ fn identify_engine(
     // coding. Prefer that proven composite record over unverified individual
     // DIDs. Retain the older optional reads as a compatibility fallback when a
     // DME does not implement this S55-specific layout.
-    let mut values = read_s55_dme_identity_bundle(stream, ENGINE_ECU_ADDRESS)
-        .unwrap_or_else(|_| read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS));
+    let mut values =
+        match read_data_identifier(stream, ENGINE_ECU_ADDRESS, "s55_dme_identity_bundle") {
+            Ok(payload) => {
+                let mut decoded = decode_s55_dme_identity_bundle(&payload).unwrap_or_else(|_| {
+                    read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS)
+                });
+                if vin == N20_BENCH_VIN && identity.raw_data == [0x0F, 0x18, 0x10] {
+                    if let Some(hardware) = decode_n20_bench_hardware_from_f101(&payload) {
+                        decoded.hardware = hardware;
+                    }
+                }
+                decoded
+            }
+            Err(_) => read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS),
+        };
     values.manufacturing_date =
         read_s55_ecu_manufacturing_date(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     values.diagnostic_session =
@@ -1684,14 +1808,6 @@ fn decode_s55_bmw_routine_0205(payload: &[u8]) -> Result<BmwRoutine0205Values, S
     })
 }
 
-fn read_s55_dme_identity_bundle(
-    stream: &mut TcpStream,
-    ecu: u8,
-) -> Result<EcuFingerprintValues, String> {
-    let payload = read_data_identifier(stream, ecu, "s55_dme_identity_bundle")?;
-    decode_s55_dme_identity_bundle(&payload)
-}
-
 fn read_s55_ecu_manufacturing_date(stream: &mut TcpStream, ecu: u8) -> Result<String, String> {
     let payload = read_data_identifier(stream, ecu, "s55_ecu_manufacturing_date")?;
     decode_s55_ecu_manufacturing_date(&payload)
@@ -1765,6 +1881,16 @@ fn decode_s55_dme_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues
         coding_id: format_record(&payload[RECORD_OFFSETS[3]..RECORD_OFFSETS[3] + RECORD_SIZE]),
         ..Default::default()
     })
+}
+
+fn decode_n20_bench_hardware_from_f101(payload: &[u8]) -> Option<String> {
+    // MHD's HW value for this identified N20 bench is the raw second F101
+    // seven-byte record. Only apply this mapping to the captured layout;
+    // other DMEs may assign different meanings to the same record position.
+    if hex_payload(payload) != N20_BENCH_F101 {
+        return None;
+    }
+    Some(hex_payload(&payload[34..41]))
 }
 
 fn read_legacy_optional_fingerprint(stream: &mut TcpStream, ecu: u8) -> EcuFingerprintValues {
@@ -1921,13 +2047,20 @@ fn read_data_identifier(
 }
 
 fn enter_extended_session(stream: &mut TcpStream, ecu: u8) -> Result<(), String> {
+    enter_extended_session_with_timeout(stream, ecu, Duration::from_secs(3))
+}
+
+fn enter_extended_session_with_timeout(
+    stream: &mut TcpStream,
+    ecu: u8,
+    timeout: Duration,
+) -> Result<(), String> {
     send_uds(stream, ecu, &[0x10, 0x03])?;
     // The live adapter session can interleave unrelated UDS responses on the
     // same ENET path (for example 6C 03 F3 00). Keep the TCP buffer alive while
     // draining all frames, so a matching 50 03 that follows an unrelated frame
     // in the same read is not discarded.
-    let response =
-        read_matching_uds_response(stream, ecu, &[0x50, 0x03], &[0x10], Duration::from_secs(3))?;
+    let response = read_matching_uds_response(stream, ecu, &[0x50, 0x03], &[0x10], timeout)?;
     debug_transport("RX", ecu, &response);
     Ok(())
 }
@@ -3553,6 +3686,87 @@ mod tests {
     }
 
     #[test]
+    fn n20_unlock_reference_requires_all_three_captured_read_results() {
+        assert_eq!(
+            build_ista_memory_read_request(0x801F_FA40, 16).unwrap(),
+            [0x23, 0x24, 0x80, 0x1F, 0xFA, 0x40, 0x00, 0x10]
+        );
+        assert_eq!(
+            build_ista_memory_read_request(0x801F_FA00, 64).unwrap(),
+            [0x23, 0x24, 0x80, 0x1F, 0xFA, 0x00, 0x00, 0x40]
+        );
+        let mut header = vec![0u8; 64];
+        header[..25].copy_from_slice(&[
+            0x41, 0x80, 0x8A, 0x05, 0x16, 0x40, 0xA5, 0x98, 0x74, 0x08, 0x00, 0x10, 0x11, 0x14,
+            0xFD, 0x00, 0x5D, 0x55, 0xFD, 0x98, 0xD9, 0x08, 0xF5, 0x05, 0x50,
+        ]);
+        assert_eq!(
+            classify_n20_reference(N20_BENCH_VIN, &[0xC3; 16], &header, &[0xC3; 64]).status,
+            "reference_match"
+        );
+        header[25] = 1;
+        assert_eq!(
+            classify_n20_reference(N20_BENCH_VIN, &[0xC3; 16], &header, &[0xC3; 64]).status,
+            "unable_to_verify"
+        );
+        assert_eq!(
+            classify_n20_reference(N20_BENCH_VIN, &[0xC3; 15], &header, &[0xC3; 64]).status,
+            "unable_to_verify"
+        );
+    }
+
+    #[test]
+    fn absent_optional_ecu_times_out_once_and_leaves_socket_usable() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let worker = thread::spawn(move || {
+            let (mut server, _) = listener.accept().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut header = [0u8; 6];
+            server.read_exact(&mut header).unwrap();
+            let mut body = vec![0; u32::from_be_bytes(header[..4].try_into().unwrap()) as usize];
+            server.read_exact(&mut body).unwrap();
+            assert_eq!(body, [TESTER, 0x17, 0x10, 0x03]);
+            let mut ack = build_hsfz(TESTER, 0x17, &[0x10, 0x03]);
+            ack[5] = 2;
+            server.write_all(&ack).unwrap();
+
+            server.read_exact(&mut header).unwrap();
+            let mut body = vec![0; u32::from_be_bytes(header[..4].try_into().unwrap()) as usize];
+            server.read_exact(&mut body).unwrap();
+            assert_eq!(body, [TESTER, 0x12, 0x22, 0xF1, 0x90]);
+            server
+                .write_all(&build_hsfz(0x12, TESTER, &[0x62, 0xF1, 0x90, b'W']))
+                .unwrap();
+        });
+        let started = Instant::now();
+        assert!(query_dtc_for_ecu(
+            &mut client,
+            0x17,
+            "Optional ECU",
+            OPTIONAL_ECU_SESSION_TIMEOUT,
+        )
+        .is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        send_uds(&mut client, 0x12, &[0x22, 0xF1, 0x90]).unwrap();
+        let response = read_matching_uds_response(
+            &mut client,
+            0x12,
+            &[0x62, 0xF1, 0x90],
+            &[0x22],
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(response, [0x62, 0xF1, 0x90, b'W']);
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn builds_clear_all_dtcs_request_without_transport() {
         assert_eq!(
             build_clear_dtc_request([0xFF, 0xFF, 0xFF]),
@@ -3736,6 +3950,22 @@ mod tests {
     }
 
     #[test]
+    fn extracts_mhd_hardware_id_only_from_captured_n20_f101_layout() {
+        let captured = N20_BENCH_F101;
+        let payload = (0..captured.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&captured[index..index + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decode_n20_bench_hardware_from_f101(&payload),
+            Some("00001C9F1D9601".into())
+        );
+        let mut changed = payload;
+        changed[34] ^= 1;
+        assert_eq!(decode_n20_bench_hardware_from_f101(&changed), None);
+    }
+
+    #[test]
     fn decodes_captured_s55_f18b_ecu_date() {
         assert_eq!(
             decode_s55_ecu_manufacturing_date(&[0x14, 0x08, 0x07]),
@@ -3789,6 +4019,13 @@ mod tests {
         let identity = decode_ecu_identification(b"MEVD17.2.9\0".to_vec());
         assert_eq!(identity.display_value, "MEVD17.2.9\0");
         assert_eq!(identity.raw_data, b"MEVD17.2.9\0");
+    }
+
+    #[test]
+    fn renders_binary_ecu_identification_as_hex() {
+        let identity = decode_ecu_identification(vec![0x0F, 0x18, 0x10]);
+        assert_eq!(identity.display_value, "0F 18 10");
+        assert_eq!(identity.raw_data, [0x0F, 0x18, 0x10]);
     }
 
     #[test]

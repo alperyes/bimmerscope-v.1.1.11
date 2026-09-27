@@ -88,7 +88,7 @@ void main() {
 
     await tester.tap(find.text('Diagnostics'));
     await tester.pumpAndSettle();
-    expect(find.text('Scan vehicle'), findsOneWidget);
+    expect(find.text('Scan'), findsOneWidget);
 
     await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
@@ -157,6 +157,19 @@ void main() {
           )
           .onPressed,
       isNotNull,
+    );
+
+    await tester.pumpWidget(diagnostics('Scanning'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PopupMenuButton<String>), findsNothing);
+    expect(find.text('Live monitor pauses during scanning'), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('diagnostics-scan-button')),
+          )
+          .onPressed,
+      isNull,
     );
   });
 }

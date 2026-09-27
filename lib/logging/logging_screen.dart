@@ -13,6 +13,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:bmw_app/logging/log_health_analysis.dart';
 import 'package:bmw_app/logging/log_quality.dart';
 import 'package:bmw_app/logging/log_sample.dart';
+import 'package:bmw_app/logging/auto_pull_logging_screen.dart';
+import 'package:bmw_app/logging/rename_log_dialog.dart';
 
 class LogProvenanceStatus {
   const LogProvenanceStatus({
@@ -82,6 +84,7 @@ class LoggingScreen extends StatefulWidget {
     required this.sampleCount,
     required this.elapsed,
     required this.canRecord,
+    required this.isConnected,
     required this.onToggleRecording,
     required this.autoLogEnabled,
     required this.autoLogThreshold,
@@ -100,6 +103,7 @@ class LoggingScreen extends StatefulWidget {
   final int sampleCount;
   final Duration elapsed;
   final bool canRecord;
+  final bool isConnected;
   final Future<void> Function() onToggleRecording;
   final bool autoLogEnabled;
   final double autoLogThreshold;
@@ -118,17 +122,6 @@ class LoggingScreen extends StatefulWidget {
 class _LoggingScreenState extends State<LoggingScreen> {
   List<File> files = [];
   bool loading = true;
-  final searchController = TextEditingController();
-
-  List<File> get filteredFiles {
-    final query = searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return files;
-    return files
-        .where(
-          (file) => file.uri.pathSegments.last.toLowerCase().contains(query),
-        )
-        .toList();
-  }
 
   @override
   void initState() {
@@ -150,12 +143,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
   }
 
   @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) => ColoredBox(
     color: AppPalette.background(widget.isDark),
     child: SafeArea(
@@ -169,32 +156,8 @@ class _LoggingScreenState extends State<LoggingScreen> {
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            sliver: SliverToBoxAdapter(child: autoLogPanel()),
+            sliver: SliverToBoxAdapter(child: autoLogSettingsCard()),
           ),
-          if (!loading && files.isNotEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              sliver: SliverToBoxAdapter(
-                child: TextField(
-                  controller: searchController,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Search saved logs',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              searchController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                  ),
-                ),
-              ),
-            ),
           if (!loading && files.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -205,7 +168,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
                     children: [
                       const Spacer(),
                       Text(
-                        '${filteredFiles.length} ${filteredFiles.length == 1 ? 'session' : 'sessions'}',
+                        '${files.length} ${files.length == 1 ? 'session' : 'sessions'}',
                         style: TextStyle(
                           color: AppPalette.secondary(widget.isDark),
                           fontSize: 11,
@@ -257,35 +220,26 @@ class _LoggingScreenState extends State<LoggingScreen> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               sliver: SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 30),
-                  decoration: BoxDecoration(
-                    color: AppPalette.surface(widget.isDark),
-                    borderRadius: BorderRadius.circular(appCardRadius),
-                    border: Border.all(
-                      color: AppPalette.separator(
-                        widget.isDark,
-                      ).withValues(alpha: .42),
-                    ),
-                  ),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 92, bottom: 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.insert_chart_outlined_rounded,
-                        size: 42,
+                        size: 40,
                         color: AppPalette.blue,
                       ),
-                      const SizedBox(height: 13),
+                      const SizedBox(height: 12),
                       const Text(
                         'No saved logs yet',
                         style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       if (widget.canRecord) ...[
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
                           'Start a recording to create your first session.',
                           textAlign: TextAlign.center,
@@ -300,66 +254,13 @@ class _LoggingScreenState extends State<LoggingScreen> {
                 ),
               ),
             )
-          else if (filteredFiles.isEmpty)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              sliver: SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                  decoration: BoxDecoration(
-                    color: AppPalette.surface(widget.isDark),
-                    borderRadius: BorderRadius.circular(appCardRadius),
-                    border: Border.all(
-                      color: AppPalette.separator(
-                        widget.isDark,
-                      ).withValues(alpha: .42),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.search_off_rounded,
-                        size: 34,
-                        color: AppPalette.secondary(widget.isDark),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'No matching sessions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        'Try a different filename or clear the search.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppPalette.secondary(widget.isDark),
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: () {
-                          searchController.clear();
-                          setState(() {});
-                        },
-                        child: const Text('Clear search'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               sliver: SliverList.separated(
-                itemCount: filteredFiles.length,
+                itemCount: files.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 9),
-                itemBuilder: (context, index) => logTile(filteredFiles[index]),
+                itemBuilder: (context, index) => logTile(files[index]),
               ),
             ),
         ],
@@ -431,13 +332,15 @@ class _LoggingScreenState extends State<LoggingScreen> {
   Widget recorderPanel() {
     final recorderDetail = widget.isRecording
         ? '${formatDuration(widget.elapsed)} · ${widget.sampleCount} samples'
-        : !widget.canRecord
+        : !widget.isConnected
         ? 'Connect to record live telemetry'
+        : !widget.canRecord
+        ? 'Start live monitoring to record telemetry'
         : widget.telemetryDegraded
         ? 'Connection degraded · waiting for fresh samples'
         : widget.telemetryGapCount == 0
-        ? 'CSV logs · no gaps recorded'
-        : 'CSV logs · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms';
+        ? 'Live telemetry ready · CSV logs · no gaps'
+        : 'Live telemetry ready · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms';
     final recorderLabel = widget.isRecording
         ? 'Recording. $recorderDetail'
         : 'Data recorder. $recorderDetail';
@@ -445,89 +348,8 @@ class _LoggingScreenState extends State<LoggingScreen> {
       container: true,
       label: recorderLabel,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-        decoration: BoxDecoration(
-          color: AppPalette.surface(widget.isDark),
-          borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: (widget.isRecording ? AppPalette.red : AppPalette.blue)
-                    .withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                widget.isRecording
-                    ? Icons.fiber_manual_record_rounded
-                    : Icons.show_chart_rounded,
-                color: widget.isRecording ? AppPalette.red : AppPalette.blue,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.isRecording ? 'Recording' : 'Data recorder',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    recorderDetail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppPalette.secondary(widget.isDark),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            FilledButton(
-              onPressed: widget.isRecording || widget.canRecord
-                  ? () async {
-                      await widget.onToggleRecording();
-                      await loadLogs();
-                    }
-                  : null,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(78, 44),
-                backgroundColor: widget.isRecording
-                    ? AppPalette.red
-                    : AppPalette.blue,
-              ),
-              child: Text(widget.isRecording ? 'Stop' : 'Record'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget autoLogPanel() {
-    final detail = widget.canRecord
-        ? 'Start at throttle threshold; stop 3 seconds after release.'
-        : 'Connect to enable automatic pull logging.';
-    return Semantics(
-      container: true,
-      label: 'Automatic pull logging. $detail',
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        height: appTopActionCardHeight,
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         decoration: BoxDecoration(
           color: AppPalette.surface(widget.isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
@@ -536,39 +358,176 @@ class _LoggingScreenState extends State<LoggingScreen> {
           ),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              visualDensity: const VisualDensity(vertical: -2),
-              title: const Text('Automatic pull logging'),
-              subtitle: Text(detail),
-              value: widget.autoLogEnabled,
-              onChanged: widget.canRecord
-                  ? (enabled) async => widget.onAutoLogChanged(enabled)
-                  : null,
-            ),
-            if (widget.autoLogEnabled) ...[
-              Text(
-                'Start threshold: ${widget.autoLogThreshold.round()}% throttle',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color:
+                        (widget.isRecording ? AppPalette.red : AppPalette.blue)
+                            .withValues(alpha: .13),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    widget.isRecording
+                        ? Icons.fiber_manual_record_rounded
+                        : Icons.show_chart_rounded,
+                    color: widget.isRecording
+                        ? AppPalette.red
+                        : AppPalette.blue,
+                    size: 22,
+                  ),
                 ),
-              ),
-              Slider(
-                value: widget.autoLogThreshold,
-                min: 30,
-                max: 95,
-                divisions: 13,
-                label: '${widget.autoLogThreshold.round()}%',
-                onChanged: widget.canRecord
-                    ? (value) => widget.onAutoLogThresholdChanged(value)
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.isRecording ? 'Recording' : 'Data recorder',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        recorderDetail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: widget.isRecording || widget.canRecord
+                    ? () async {
+                        await widget.onToggleRecording();
+                        await loadLogs();
+                      }
                     : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: widget.isRecording
+                      ? AppPalette.red
+                      : AppPalette.blue,
+                  foregroundColor: Colors.white,
+                ),
+                icon: Icon(
+                  widget.isRecording
+                      ? Icons.stop_circle_outlined
+                      : Icons.fiber_manual_record_rounded,
+                  size: 20,
+                ),
+                label: Text(widget.isRecording ? 'Stop recording' : 'Record'),
               ),
-            ],
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> openAutoLogSettings() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => AutoPullLoggingScreen(
+        isDark: widget.isDark,
+        connectionLabel: widget.connectionLabel,
+        isConnected: widget.isConnected,
+        canConfigure: widget.canRecord,
+        enabled: widget.autoLogEnabled,
+        threshold: widget.autoLogThreshold,
+        onEnabledChanged: widget.onAutoLogChanged,
+        onThresholdChanged: widget.onAutoLogThresholdChanged,
+      ),
+    ),
+  );
+
+  Widget autoLogSettingsCard() {
+    final detail = widget.canRecord
+        ? widget.autoLogEnabled
+              ? 'On · ${widget.autoLogThreshold.round()}% throttle'
+              : 'Configure automatic pull logging'
+        : widget.isConnected
+        ? 'Start live monitoring to enable'
+        : 'Connect to enable';
+    return Semantics(
+      button: true,
+      label: 'Automatic pull logging settings. $detail',
+      child: Material(
+        color: AppPalette.surface(widget.isDark),
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: InkWell(
+          onTap: openAutoLogSettings,
+          borderRadius: BorderRadius.circular(appCardRadius),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(appCardRadius),
+              border: Border.all(
+                color: AppPalette.separator(
+                  widget.isDark,
+                ).withValues(alpha: .45),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppPalette.blue.withValues(alpha: .13),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: const Icon(
+                    Icons.directions_car_filled_rounded,
+                    color: AppPalette.blue,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Automatic pull logging',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppPalette.secondary(widget.isDark),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -635,37 +594,172 @@ class _LoggingScreenState extends State<LoggingScreen> {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: 'Save CSV log as…',
-                onPressed: () => saveLog(file),
-                icon: const Icon(Icons.save_alt_rounded),
-              ),
-              IconButton(
-                tooltip: 'Share CSV log',
-                onPressed: () async {
-                  final sidecar = File('${file.path}.sha256');
-                  final metadata = File('${file.path}.metadata.json');
-                  await SharePlus.instance.share(
-                    ShareParams(
-                      files: [
-                        XFile(file.path, mimeType: 'text/csv'),
-                        if (await sidecar.exists())
-                          XFile(sidecar.path, mimeType: 'text/plain'),
-                        if (await metadata.exists())
-                          XFile(metadata.path, mimeType: 'application/json'),
-                      ],
-                      subject: 'BimmerScope data log',
-                      text: 'BimmerScope vehicle live-data log',
-                    ),
-                  );
+              PopupMenuButton<_SavedLogAction>(
+                tooltip: 'Log actions',
+                onSelected: (action) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    switch (action) {
+                      case _SavedLogAction.save:
+                        saveLog(file);
+                        break;
+                      case _SavedLogAction.share:
+                        shareLog(file);
+                        break;
+                      case _SavedLogAction.rename:
+                        renameLog(file);
+                        break;
+                      case _SavedLogAction.delete:
+                        deleteLog(file);
+                        break;
+                    }
+                  });
                 },
-                icon: const Icon(Icons.ios_share_rounded),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: _SavedLogAction.save,
+                    child: ListTile(
+                      leading: Icon(Icons.save_alt_rounded),
+                      title: Text('Save CSV as…'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _SavedLogAction.share,
+                    child: ListTile(
+                      leading: Icon(Icons.ios_share_rounded),
+                      title: Text('Share log'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _SavedLogAction.rename,
+                    enabled: !widget.isRecording,
+                    child: const ListTile(
+                      leading: Icon(Icons.drive_file_rename_outline_rounded),
+                      title: Text('Rename log'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: _SavedLogAction.delete,
+                    enabled: !widget.isRecording,
+                    child: const ListTile(
+                      leading: Icon(Icons.delete_outline_rounded),
+                      title: Text('Delete log'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> shareLog(File file) async {
+    final sidecar = File('${file.path}.sha256');
+    final metadata = File('${file.path}.metadata.json');
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile(file.path, mimeType: 'text/csv'),
+          if (await sidecar.exists())
+            XFile(sidecar.path, mimeType: 'text/plain'),
+          if (await metadata.exists())
+            XFile(metadata.path, mimeType: 'application/json'),
+        ],
+        subject: 'BimmerScope data log',
+        text: 'BimmerScope vehicle live-data log',
+      ),
+    );
+  }
+
+  Future<void> renameLog(File file) async {
+    final currentName = file.uri.pathSegments.last.replaceFirst(
+      RegExp(r'\.csv$', caseSensitive: false),
+      '',
+    );
+    final requestedName = await showDialog<String>(
+      context: context,
+      builder: (_) =>
+          RenameLogDialog(title: 'Rename data log', initialName: currentName),
+    );
+    if (requestedName == null || requestedName.trim().isEmpty || !mounted) {
+      return;
+    }
+    if (widget.isRecording) return;
+    try {
+      final renamed = await DataLogger.renameSavedLog(file, requestedName);
+      if (!mounted) return;
+      setState(() {
+        final index = files.indexWhere((saved) => saved.path == file.path);
+        if (index >= 0) files[index] = renamed;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Data log renamed.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not rename the data log: $error')),
+      );
+    }
+  }
+
+  Future<void> deleteLog(File file) async {
+    final name = file.uri.pathSegments.last;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete data log?'),
+        content: Text('“$name” and its associated metadata will be deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppPalette.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (widget.isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Stop recording before deleting logs.')),
+      );
+      return;
+    }
+    try {
+      for (final path in [
+        file.path,
+        '${file.path}.sha256',
+        '${file.path}.metadata.json',
+      ]) {
+        final target = File(path);
+        if (await target.exists()) await target.delete();
+      }
+      if (!mounted) return;
+      setState(() => files.removeWhere((saved) => saved.path == file.path));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Data log deleted.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete the data log: $error')),
+      );
+    }
   }
 
   Future<void> showPlot(File file) async {
@@ -854,6 +948,8 @@ List<String> _parseCsvLine(String line) {
   return fields;
 }
 
+enum _SavedLogAction { save, share, rename, delete }
+
 enum _PlotAction { zoomOut, zoomIn, reset, timeScale, rename }
 
 class _LogPlotPage extends StatefulWidget {
@@ -965,29 +1061,15 @@ class _LogPlotPageState extends State<_LogPlotPage> {
   }
 
   Future<void> _renameFile() async {
-    final controller = TextEditingController(text: _displayFileName);
+    final currentName = _displayFileName.replaceFirst(
+      RegExp(r'\.csv$', caseSensitive: false),
+      '',
+    );
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename CSV file'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(suffixText: '.csv'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          RenameLogDialog(title: 'Rename CSV file', initialName: currentName),
     );
-    controller.dispose();
     if (name == null || name.trim().isEmpty) return;
     try {
       final renamed = await DataLogger.renameSavedLog(

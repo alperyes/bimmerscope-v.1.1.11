@@ -2,6 +2,7 @@ package com.bmwenet.bmw_app
 
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.os.Build
 import android.net.ConnectivityManager
 import android.net.Network
@@ -20,6 +21,26 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 if (call.method != "bindEthernet") {
                     when (call.method) {
+                        "openHotspotSettings" -> {
+                            val intents = listOf(
+                                Intent("android.settings.TETHER_SETTINGS"),
+                                Intent(Settings.ACTION_WIRELESS_SETTINGS),
+                                Intent(Settings.ACTION_SETTINGS),
+                            )
+                            val settingsIntent = intents.firstOrNull { intent ->
+                                intent.resolveActivity(packageManager) != null
+                            }
+                            if (settingsIntent == null) {
+                                result.success(false)
+                            } else {
+                                try {
+                                    startActivity(settingsIntent)
+                                    result.success(true)
+                                } catch (_: Exception) {
+                                    result.success(false)
+                                }
+                            }
+                        }
                         "startVehicleSessionService" -> {
                             val intent = Intent(this, VehicleSessionService::class.java)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -275,7 +275,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             List.of(result),
             vin: widget.vin,
             durationMs: stopwatch.elapsedMilliseconds,
-            operation: 'Scan',
+            operation: 'DME scan',
           ),
         );
         if (history.length > 20) history.removeLast();
@@ -406,6 +406,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   );
 
   Widget scanPanel() => Container(
+    height: appTopActionCardHeight,
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
     decoration: BoxDecoration(
       color: AppPalette.surface(widget.isDark),
@@ -456,75 +457,10 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.lock_outline_rounded,
-              size: 14,
-              color: AppPalette.secondary(widget.isDark),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Read only',
-              style: TextStyle(
-                color: AppPalette.secondary(widget.isDark),
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            if (!_vehicleAvailable && !scanning)
-              PopupMenuButton<String>(
-                tooltip: 'More diagnostic actions',
-                icon: const Icon(Icons.more_horiz_rounded),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 28,
-                ),
-                onSelected: (value) {
-                  if (value == 'demo') scan(demo: true);
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem<String>(
-                    value: 'demo',
-                    child: Row(
-                      children: [
-                        Icon(Icons.play_arrow_rounded, size: 20),
-                        SizedBox(width: 10),
-                        Text('Run demo scan'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
           ],
         ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _vehicleAvailable
-                  ? Icons.pause_circle_outline_rounded
-                  : Icons.link_off_rounded,
-              size: 14,
-              color: AppPalette.secondary(widget.isDark),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                _vehicleAvailable
-                    ? 'Live monitoring pauses while the ECU is scanned.'
-                    : 'Connect the vehicle to enable an ECU scan.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppPalette.secondary(widget.isDark),
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 9),
+        const Spacer(),
+        const SizedBox(height: 4),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
@@ -532,6 +468,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             onPressed: scanning || !_vehicleAvailable ? null : () => scan(),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
+              foregroundColor: Colors.white,
             ),
             icon: scanning
                 ? const SizedBox(
@@ -543,7 +480,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     ),
                   )
                 : const Icon(Icons.manage_search_rounded, size: 20),
-            label: Text(scanning ? scanStage : 'Scan vehicle'),
+            label: Text(scanning ? scanStage : 'Scan'),
           ),
         ),
       ],
@@ -557,16 +494,42 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       children: [
         Row(
           children: [
-            Semantics(
-              header: true,
-              child: Text(
-                hasScanned ? 'Latest scan' : 'Scan history',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
+            if (hasScanned || history.isNotEmpty)
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: AppPalette.red),
+                onPressed: clearing || faults.isEmpty
+                    ? null
+                    : demoScan
+                    ? clearDemoCodes
+                    : clearVehicleCodes,
+                icon: clearing
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_sweep_rounded, size: 18),
+                label: Text(clearing ? 'Clearing…' : 'Clear codes'),
+              ),
+            if (hasScanned && error == null) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppPalette.secondary(
+                    widget.isDark,
+                  ).withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${faults.length} ${faults.length == 1 ? 'fault' : 'faults'}',
+                  style: TextStyle(
+                    color: AppPalette.secondary(widget.isDark),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
+            ],
             const Spacer(),
             if (hasScanned && faults.isNotEmpty)
               IconButton(
@@ -582,56 +545,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ),
           ],
         ),
-        if (hasScanned || history.isNotEmpty) ...[
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Expanded(
-                child: Center(
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppPalette.red,
-                    ),
-                    onPressed: clearing || faults.isEmpty
-                        ? null
-                        : demoScan
-                        ? clearDemoCodes
-                        : clearVehicleCodes,
-                    icon: clearing
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.delete_sweep_rounded, size: 18),
-                    label: Text(clearing ? 'Clearing…' : 'Clear codes'),
-                  ),
-                ),
-              ),
-              if (hasScanned && error == null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppPalette.secondary(
-                      widget.isDark,
-                    ).withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${faults.length} ${faults.length == 1 ? 'fault' : 'faults'}',
-                    style: TextStyle(
-                      color: AppPalette.secondary(widget.isDark),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
         if (flapTestRunning) ...[
           const SizedBox(height: 8),
           LinearProgressIndicator(value: flapTestStep / 9),
@@ -649,71 +562,69 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
-              child: Semantics(
-                header: true,
-                child: Text(
-                  'Scan history',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .7,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Scan history',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
                 ),
               ),
-            ),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * .65,
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  itemCount: history.length,
+                  itemBuilder: (context, index) {
+                    final item = history[index];
+                    final hasFaults = item.faults.isNotEmpty;
+                    return Semantics(
+                      container: true,
+                      button: true,
+                      label:
+                          '${item.operation}, ${_formatSnapshotTime(item.time)}, '
+                          '${hasFaults ? _historyFaultSummary(item.faults) : 'no stored faults'}'
+                          '${index == 0 ? ', latest' : ''}',
+                      child: ListTile(
+                        leading: Icon(
+                          hasFaults
+                              ? Icons.warning_amber_rounded
+                              : Icons.verified_rounded,
+                          color: hasFaults
+                              ? AppPalette.orange
+                              : AppPalette.green,
+                        ),
+                        title: Text(item.operation),
+                        subtitle: Text(
+                          '${_formatSnapshotTime(item.time)} · ${hasFaults ? '${item.faults.length} ${item.faults.length == 1 ? 'fault' : 'faults'}' : 'no faults'}\n${hasFaults ? _historyFaultSummary(item.faults) : 'DME reported no stored faults'}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: index == 0
+                            ? const Chip(
+                                label: Text('Latest'),
+                                visualDensity: VisualDensity.compact,
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showSnapshotDetails(item);
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                itemCount: history.length,
-                itemBuilder: (context, index) {
-                  final item = history[index];
-                  final hasFaults = item.faults.isNotEmpty;
-                  return Semantics(
-                    container: true,
-                    button: true,
-                    label:
-                        '${item.operation}, ${_formatSnapshotTime(item.time)}, '
-                        '${hasFaults ? _historyFaultSummary(item.faults) : 'no stored faults'}'
-                        '${index == 0 ? ', latest' : ''}',
-                    child: ListTile(
-                      leading: Icon(
-                        hasFaults
-                            ? Icons.warning_amber_rounded
-                            : Icons.verified_rounded,
-                        color: hasFaults ? AppPalette.orange : AppPalette.green,
-                      ),
-                      title: Text(
-                        hasFaults
-                            ? '${item.operation} · ${item.faults.length} ${item.faults.length == 1 ? 'fault' : 'faults'}'
-                            : '${item.operation} · no faults',
-                      ),
-                      subtitle: Text(
-                        '${_formatSnapshotTime(item.time)}\n${hasFaults ? _historyFaultSummary(item.faults) : 'DME reported no stored faults'}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: index == 0
-                          ? const Chip(
-                              label: Text('Latest'),
-                              visualDensity: VisualDensity.compact,
-                            )
-                          : null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSnapshotDetails(item);
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1205,101 +1116,104 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Widget faultCard(DiagnosticTroubleCode fault) {
     final definition = faultDefinition(fault.code);
     final muted = AppPalette.secondary(widget.isDark);
-    return Semantics(
-      container: true,
-      label:
-          '${fault.code}, ${definition?.title ?? 'BMW-specific fault'}, ${fault.ecu}',
-      child: Container(
-        padding: appCardPadding,
-        decoration: BoxDecoration(
-          color: AppPalette.surface(widget.isDark),
+    final dateLabel = scannedAt == null
+        ? 'Not scanned'
+        : '${scannedAt!.day.toString().padLeft(2, '0')}/${scannedAt!.month.toString().padLeft(2, '0')}/${scannedAt!.year}';
+    return Container(
+      decoration: BoxDecoration(
+        color: AppPalette.surface(widget.isDark),
+        borderRadius: BorderRadius.circular(appCardRadius),
+        border: Border.all(
+          color: AppPalette.separator(widget.isDark).withValues(alpha: .58),
+        ),
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(widget.isDark).withValues(alpha: .58),
+        ),
+        collapsedShape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(appCardRadius),
+        ),
+        leading: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppPalette.orange.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.warning_amber_rounded,
+            color: AppPalette.orange,
+            size: 20,
           ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: AppPalette.orange.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.warning_amber_rounded,
-                color: AppPalette.orange,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    fault.code,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: .6,
-                    ),
+        title: Text(
+          fault.code,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            letterSpacing: .5,
+          ),
+        ),
+        subtitle: Text(
+          fault.ecu,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: muted, fontSize: 11),
+        ),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$dateLabel · ${widget.simulatorMode ? '62,340 km' : 'Mileage unavailable'}',
+                  style: TextStyle(color: muted, fontSize: 10),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 5,
+                  children: _faultStatusFlags(fault.status),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  definition?.title ?? 'BMW-specific fault',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
                   ),
+                ),
+                if (definition != null && definition.system != fault.ecu) ...[
                   const SizedBox(height: 3),
                   Text(
-                    '${scannedAt == null ? 'Not scanned' : '${scannedAt!.day.toString().padLeft(2, '0')}/${scannedAt!.month.toString().padLeft(2, '0')}/${scannedAt!.year}'} · ${widget.simulatorMode ? '62,340 km' : 'Mileage unavailable'}',
-                    style: TextStyle(color: muted, fontSize: 10),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    fault.ecu,
-                    style: TextStyle(
-                      color: muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 5,
-                    children: _faultStatusFlags(fault.status),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    definition?.title ?? 'BMW-specific fault',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    definition?.system ?? fault.ecu,
+                    definition.system,
                     style: const TextStyle(
                       color: AppPalette.blue,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 9),
-                  Text(
-                    definition?.explanation ?? 'Definition unavailable.',
-                    style: const TextStyle(fontSize: 11, height: 1.45),
-                  ),
-                  if (definition != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Next check: ${definition.nextStep}',
-                      style: TextStyle(color: muted, fontSize: 10, height: 1.4),
-                    ),
-                  ],
                 ],
-              ),
+                const SizedBox(height: 9),
+                Text(
+                  definition?.explanation ?? 'Definition unavailable.',
+                  style: const TextStyle(fontSize: 11, height: 1.45),
+                ),
+                if (definition != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Next check: ${definition.nextStep}',
+                    style: TextStyle(color: muted, fontSize: 10, height: 1.4),
+                  ),
+                ],
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

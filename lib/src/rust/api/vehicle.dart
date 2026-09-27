@@ -6,10 +6,10 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_flap_command`, `begin_session`, `build_clear_dtc_request`, `build_dtc_read_request`, `build_exhaust_flap_cycle_request`, `build_exhaust_flap_reset_request`, `build_hsfz`, `build_ista_memory_read_request`, `clear_flap_command_sender`, `configured_flap_control`, `configured_live_sensor_ids`, `confirmed_f82_s55_profile`, `data_identifier_definition`, `data_identifier`, `debug_transport`, `decode_s55_bmw_routine_0205`, `decode_s55_dme_diagnostic_session`, `decode_s55_dme_identity_bundle`, `decode_s55_ecu_manufacturing_date`, `decode_unsigned`, `diagnostic_code`, `diagnostic_service`, `discover_vehicle`, `discover_zgw_udp`, `drain_hsfz`, `dtc_status`, `ecu_display_name`, `ecu_fingerprint`, `ecu_identity`, `enter_extended_session`, `fresh_diagnostic_stream`, `hex_payload`, `identify_engine_at`, `identify_engine`, `is_application_response`, `is_expected_response`, `is_private_ipv4`, `is_terminal_transport_error`, `is_transient_network_configuration_error`, `label`, `last_vehicle_host`, `local_interface_summary`, `log_ignored_live_response`, `match_live_poll_response`, `monitoring_enabled`, `parse_clear_dtc_response`, `parse_dtc_response_for_ecu`, `parse_dtc_response`, `parse_exhaust_flap_io_response`, `parse_ista_memory_read_response`, `parse_zgw_vin`, `parse`, `poll_connection`, `probe_enet`, `query_dtc_for_ecu_with_retry`, `query_dtc_for_ecu`, `raw_transport_log`, `read_ascii_data_identifier`, `read_data_identifier`, `read_legacy_optional_fingerprint`, `read_matching_uds_response`, `read_optional_identifier_hex`, `read_optional_identifier`, `read_s55_bmw_routine_0205`, `read_s55_dme_diagnostic_session`, `read_s55_dme_identity_bundle`, `read_s55_ecu_manufacturing_date`, `remember_vehicle_host`, `request_sid`, `response_request_service`, `run_demo_session`, `run_vehicle_session`, `selected_sensors`, `send_uds`, `sensor_with_transport`, `sensor`, `sensor`, `session_slot`, `start_poll`, `status`, `transport_diagnostic`, `transport_identifier`, `validate_service_vehicle`, `validate_vehicle_identity`, `vin`, `wait_for_broadcast_clear_dtc_responses`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DownloadHsfzTransport`, `FlapCommand`, `HsfzFrame`, `LivePollResponse`, `LivePollStage`, `PendingLivePoll`, `PendingTransportRequest`, `TransportDiagnosticsConfig`, `TransportDiagnosticsLevel`, `TransportRequestContext`, `ValidatedVehicleIdentity`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `partial_cmp`
-// These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`, `receive`, `send`
+// These functions are ignored because they are not marked as `pub`: `apply_flap_command`, `begin_session`, `build_clear_dtc_request`, `build_dtc_read_request`, `build_exhaust_flap_cycle_request`, `build_exhaust_flap_reset_request`, `build_hsfz`, `build_ista_memory_read_request`, `classify_n20_reference`, `clear_flap_command_sender`, `complete`, `configured_flap_control`, `configured_live_sensor_ids`, `confirmed_f82_s55_profile`, `data_identifier_definition`, `data_identifier`, `debug_transport`, `decode_s55_bmw_routine_0205`, `decode_s55_dme_diagnostic_session`, `decode_s55_dme_identity_bundle`, `decode_s55_ecu_manufacturing_date`, `decode_unsigned`, `diagnostic_code`, `diagnostic_service`, `discover_vehicle`, `discover_zgw_udp`, `drain_hsfz`, `dtc_status`, `ecu_display_name`, `ecu_fingerprint`, `ecu_identity`, `enter_extended_session_with_timeout`, `enter_extended_session`, `fresh_diagnostic_stream`, `hex_payload`, `identify_engine`, `is_application_response`, `is_expected_response`, `is_private_ipv4`, `is_terminal_transport_error`, `is_transient_network_configuration_error`, `label`, `last_vehicle_host`, `local_interface_summary`, `log_ignored_live_response`, `match_live_poll_response`, `monitoring_enabled`, `parse_clear_dtc_response`, `parse_dtc_response_for_ecu`, `parse_dtc_response`, `parse_exhaust_flap_io_response`, `parse_ista_memory_read_response`, `parse_zgw_vin`, `parse`, `poll_connection`, `probe_enet`, `query_dtc_for_ecu_with_retry`, `query_dtc_for_ecu`, `raw_transport_log`, `read_ascii_data_identifier`, `read_data_identifier`, `read_legacy_optional_fingerprint`, `read_matching_uds_response`, `read_n20_reference_memory`, `read_optional_identifier_hex`, `read_optional_identifier`, `read_s55_bmw_routine_0205`, `read_s55_dme_diagnostic_session`, `read_s55_dme_identity_bundle`, `read_s55_ecu_manufacturing_date`, `recovery_attempt_limit`, `remember_vehicle_host`, `request_sid`, `response_request_service`, `run_demo_session`, `run_vehicle_session`, `selected_sensors`, `send_uds`, `sensor_with_transport`, `sensor`, `sensor`, `session_slot`, `stable_dme_identity`, `start_poll`, `status`, `transport_diagnostic`, `transport_identifier`, `validate_service_vehicle`, `validate_vehicle_identity`, `vin`, `wait_for_broadcast_clear_dtc_responses`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DownloadHsfzTransport`, `FlapCommand`, `HsfzFrame`, `LivePollResponse`, `LivePollStage`, `PendingFlapReply`, `PendingLivePoll`, `PendingTransportRequest`, `TransportDiagnosticsConfig`, `TransportDiagnosticsLevel`, `TransportRequestContext`, `ValidatedVehicleIdentity`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `partial_cmp`
+// These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`, `default`, `receive`, `send`
 
 /// Configure Rust transport capture for the next vehicle session. The app calls
 /// this once before opening a session, so a level change never alters a capture
@@ -29,6 +29,12 @@ List<DecodedHsfzFrame> decodeRawHsfzCapture({required List<int> bytes}) =>
 
 List<VehicleProfile> confirmedVehicleProfiles() =>
     RustLib.instance.api.crateApiVehicleConfirmedVehicleProfiles();
+
+Future<N20UnlockReferenceCheck> checkN20BenchUnlockReference({
+  required String expectedVin,
+}) => RustLib.instance.api.crateApiVehicleCheckN20BenchUnlockReference(
+  expectedVin: expectedVin,
+);
 
 IstaDmeReadProfile istaS55ReadProfile() =>
     RustLib.instance.api.crateApiVehicleIstaS55ReadProfile();
@@ -625,6 +631,36 @@ class IstaDmeReadProfile {
           length == other.length &&
           chunkSize == other.chunkSize &&
           responseSid == other.responseSid;
+}
+
+/// Comparison with the one N20 bench state observed during three MHD checks.
+/// A match is evidence, not a validated general unlock-state classifier.
+class N20UnlockReferenceCheck {
+  final String status;
+  final String detail;
+  final String vin;
+  final bool readOnly;
+
+  const N20UnlockReferenceCheck({
+    required this.status,
+    required this.detail,
+    required this.vin,
+    required this.readOnly,
+  });
+
+  @override
+  int get hashCode =>
+      status.hashCode ^ detail.hashCode ^ vin.hashCode ^ readOnly.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is N20UnlockReferenceCheck &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          detail == other.detail &&
+          vin == other.vin &&
+          readOnly == other.readOnly;
 }
 
 class SensorDefinition {

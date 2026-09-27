@@ -117,6 +117,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<VehicleProfile> dco_decode_list_vehicle_profile(dynamic raw);
 
   @protected
+  N20UnlockReferenceCheck dco_decode_n_20_unlock_reference_check(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
@@ -267,6 +270,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<VehicleProfile> sse_decode_list_vehicle_profile(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  N20UnlockReferenceCheck sse_decode_n_20_unlock_reference_check(
     SseDeserializer deserializer,
   );
 
@@ -456,6 +464,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_vehicle_profile(
     List<VehicleProfile> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_n_20_unlock_reference_check(
+    N20UnlockReferenceCheck self,
     SseSerializer serializer,
   );
 
