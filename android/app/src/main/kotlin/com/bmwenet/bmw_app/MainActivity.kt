@@ -1,6 +1,8 @@
 package com.bmwenet.bmw_app
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -17,7 +19,22 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 if (call.method != "bindEthernet") {
-                    result.notImplemented()
+                    when (call.method) {
+                        "startVehicleSessionService" -> {
+                            val intent = Intent(this, VehicleSessionService::class.java)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                startForegroundService(intent)
+                            } else {
+                                startService(intent)
+                            }
+                            result.success(true)
+                        }
+                        "stopVehicleSessionService" -> {
+                            stopService(Intent(this, VehicleSessionService::class.java))
+                            result.success(true)
+                        }
+                        else -> result.notImplemented()
+                    }
                     return@setMethodCallHandler
                 }
                 val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

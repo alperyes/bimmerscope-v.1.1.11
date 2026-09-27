@@ -31,6 +31,8 @@ class AppDiagnosticsStore {
   static const _levelKey = 'bimmerscope.diagnostics.level';
   static const _folderName = 'bimmerscope_diagnostics';
   static const _filePrefix = 'BimmerScope_Session_';
+  static const _maxArchiveBytes = 64 * 1024 * 1024;
+  static const _maxRawTransportArchives = 10;
 
   Future<Directory> _directory() async {
     final root = await getApplicationDocumentsDirectory();
@@ -123,7 +125,33 @@ class AppDiagnosticsStore {
         if ((await entry.lastModified()).isBefore(cutoff)) await entry.delete();
       } catch (_) {}
     }
+    final files =
+        directory.listSync().whereType<File>().where(_isDiagnosticFile).toList()
+          ..sort(
+            (a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()),
+          );
+    var rawTransportCount = 0;
+    var retainedBytes = 0;
+    for (final file in files) {
+      try {
+        final isRawTransport = file.path.contains('BimmerScope_Raw_HSFZ_');
+        if (isRawTransport) rawTransportCount++;
+        final size = await file.length();
+        if ((isRawTransport && rawTransportCount > _maxRawTransportArchives) ||
+            retainedBytes + size > _maxArchiveBytes) {
+          await file.delete();
+        } else {
+          retainedBytes += size;
+        }
+      } catch (_) {}
+    }
   }
+
+  bool _isDiagnosticFile(File file) =>
+      file.path.endsWith('.jsonl') ||
+      file.path.contains('BimmerScope_App_Diagnostics_') ||
+      file.path.contains('BimmerScope_App_Session_') ||
+      file.path.contains('BimmerScope_Raw_HSFZ_');
 
   Future<void> delete(File file) => file.exists().then((exists) async {
     if (exists) await file.delete();

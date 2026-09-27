@@ -70,6 +70,18 @@ pub(crate) struct SupportProfile<'a> {
     identity: ExactIdentity<'a>,
     region_size: usize,
     chunk_size: usize,
+    electrical: ElectricalPolicy,
+}
+
+#[derive(Clone, Copy)]
+struct ElectricalPolicy {
+    minimum_voltage_mv: u16,
+    maximum_voltage_mv: u16,
+    maximum_voltage_span_mv: u16,
+    minimum_samples: usize,
+    require_current: bool,
+    minimum_current_ma: u32,
+    maximum_current_ma: u32,
 }
 
 struct SupportDefinition {
@@ -85,6 +97,7 @@ struct SupportDefinition {
     bootloader: &'static str,
     region_size: usize,
     chunk_size: usize,
+    electrical: ElectricalPolicy,
 }
 
 /// Production entries require a reviewed bench evidence bundle and recovery
@@ -111,6 +124,7 @@ pub(crate) fn lookup_approved_support(
             identity: candidate,
             region_size: definition.region_size,
             chunk_size: definition.chunk_size,
+            electrical: definition.electrical,
         })
     })
 }
@@ -125,6 +139,15 @@ impl<'a> SupportProfile<'a> {
             identity,
             region_size,
             chunk_size,
+            electrical: ElectricalPolicy {
+                minimum_voltage_mv: 12_000,
+                maximum_voltage_mv: 14_800,
+                maximum_voltage_span_mv: 250,
+                minimum_samples: 3,
+                require_current: true,
+                minimum_current_ma: 100,
+                maximum_current_ma: 15_000,
+            },
         }
     }
 }
@@ -161,6 +184,88 @@ fn valid_operation_event(event: &str) -> bool {
         && fields[1..12].iter().all(|value| safe_token(value))
         && valid_sha256(fields[12])
         && valid_sha256(fields[13])
+}
+
+fn valid_electrical_event(event: &str) -> bool {
+    let fields = event.split_whitespace().collect::<Vec<_>>();
+    fields.len() == 13
+        && fields[0] == "electrical-preflight"
+        && fields[1] == "samples"
+        && fields[2].parse::<usize>().is_ok_and(|value| value > 0)
+        && fields[3] == "voltage-min-mv"
+        && fields[4].parse::<u16>().is_ok()
+        && fields[5] == "voltage-max-mv"
+        && fields[6].parse::<u16>().is_ok()
+        && fields[7] == "current-min-ma"
+        && (fields[8] == "na" || fields[8].parse::<u32>().is_ok())
+        && fields[9] == "current-max-ma"
+        && (fields[10] == "na" || fields[10].parse::<u32>().is_ok())
+        && fields[11] == "ignition"
+        && fields[12] == "on"
+}
+
+fn validate_electrical_preflight(
+    samples: &[ElectricalSample],
+    policy: ElectricalPolicy,
+) -> Result<String, String> {
+    if samples.len() < policy.minimum_samples {
+        return Err("Electrical preflight did not provide enough samples".into());
+    }
+    if samples
+        .windows(2)
+        .any(|pair| pair[0].monotonic_ms >= pair[1].monotonic_ms)
+    {
+        return Err("Electrical preflight sample timing is invalid".into());
+    }
+    if samples.iter().any(|sample| !sample.ignition_on) {
+        return Err("Electrical preflight refused: ignition is not continuously on".into());
+    }
+    let minimum_voltage = samples
+        .iter()
+        .map(|sample| sample.voltage_mv)
+        .min()
+        .unwrap();
+    let maximum_voltage = samples
+        .iter()
+        .map(|sample| sample.voltage_mv)
+        .max()
+        .unwrap();
+    if minimum_voltage < policy.minimum_voltage_mv
+        || maximum_voltage > policy.maximum_voltage_mv
+        || maximum_voltage - minimum_voltage > policy.maximum_voltage_span_mv
+    {
+        return Err(
+            "Electrical preflight refused: supply voltage is outside the supported stable range"
+                .into(),
+        );
+    }
+    let currents = samples
+        .iter()
+        .filter_map(|sample| sample.current_ma)
+        .collect::<Vec<_>>();
+    if policy.require_current && currents.len() != samples.len() {
+        return Err("Electrical preflight refused: current measurement is unavailable".into());
+    }
+    if currents
+        .iter()
+        .any(|current| *current < policy.minimum_current_ma || *current > policy.maximum_current_ma)
+    {
+        return Err(
+            "Electrical preflight refused: supply current is outside the supported range".into(),
+        );
+    }
+    let (minimum_current, maximum_current) = if currents.is_empty() {
+        ("na".into(), "na".into())
+    } else {
+        (
+            currents.iter().min().unwrap().to_string(),
+            currents.iter().max().unwrap().to_string(),
+        )
+    };
+    Ok(format!(
+        "electrical-preflight samples {} voltage-min-mv {} voltage-max-mv {} current-min-ma {} current-max-ma {} ignition on",
+        samples.len(), minimum_voltage, maximum_voltage, minimum_current, maximum_current
+    ))
 }
 
 fn same_identity(left: &ExactIdentity<'_>, right: &ExactIdentity<'_>) -> bool {
@@ -350,6 +455,17 @@ pub(crate) fn inspect_journal(path: &Path) -> Inspection {
             return corrupt(last);
         }
         let recovery = &body[1..];
+        let recovery = if recovery
+            .first()
+            .is_some_and(|event| event.starts_with("electrical-preflight "))
+        {
+            if !valid_electrical_event(&recovery[0]) {
+                return corrupt(last);
+            }
+            &recovery[1..]
+        } else {
+            recovery
+        };
         if recovery.is_empty() || recovery == ["recovery-preflight-accepted"] {
             return Inspection {
                 status: RecordedStatus::InterruptedBeforeMutation,
@@ -422,6 +538,17 @@ pub(crate) fn inspect_journal(path: &Path) -> Inspection {
         .is_some_and(|event| event.starts_with("operation "))
     {
         if !valid_operation_event(&body[0]) {
+            return corrupt(last);
+        }
+        &body[1..]
+    } else {
+        body
+    };
+    let body = if body
+        .first()
+        .is_some_and(|event| event.starts_with("electrical-preflight "))
+    {
+        if !valid_electrical_event(&body[0]) {
             return corrupt(last);
         }
         &body[1..]
@@ -504,7 +631,19 @@ pub(crate) struct Faults {
     pub reject_erase: bool,
     pub lose_erase_acknowledgement: bool,
     pub report_wrong_identity: bool,
+    pub electrical_unavailable: bool,
+    pub unstable_voltage: bool,
+    pub ignition_off: bool,
+    pub current_unavailable: bool,
     writes: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ElectricalSample {
+    monotonic_ms: u64,
+    voltage_mv: u16,
+    current_ma: Option<u32>,
+    ignition_on: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -529,6 +668,7 @@ trait ProgrammingTarget {
     fn begin_operation(&mut self);
     fn region_len(&self) -> usize;
     fn read_identity(&mut self) -> Result<TargetIdentity, TargetFailure>;
+    fn read_electrical_samples(&mut self) -> Result<Vec<ElectricalSample>, TargetFailure>;
     fn read_region(&mut self, purpose: ReadPurpose) -> Result<Vec<u8>, TargetFailure>;
     fn prepare(&mut self, mode: OperationMode) -> Result<(), TargetFailure>;
     fn erase(&mut self) -> Result<(), TargetFailure>;
@@ -566,6 +706,29 @@ impl ProgrammingTarget for MemoryTarget {
             calibration: "CAL-TEST".into(),
             bootloader: "BOOT-TEST".into(),
         })
+    }
+
+    fn read_electrical_samples(&mut self) -> Result<Vec<ElectricalSample>, TargetFailure> {
+        if self.faults.electrical_unavailable {
+            return Err(TargetFailure::Rejected(
+                "electrical-measurement-unavailable".into(),
+            ));
+        }
+        let voltages = if self.faults.unstable_voltage {
+            [12_700, 12_100, 13_000]
+        } else {
+            [13_480, 13_500, 13_490]
+        };
+        Ok(voltages
+            .into_iter()
+            .enumerate()
+            .map(|(index, voltage_mv)| ElectricalSample {
+                monotonic_ms: index as u64 * 100,
+                voltage_mv,
+                current_ma: (!self.faults.current_unavailable).then_some(2_400),
+                ignition_on: !self.faults.ignition_off,
+            })
+            .collect())
     }
 
     fn read_region(&mut self, purpose: ReadPurpose) -> Result<Vec<u8>, TargetFailure> {
@@ -640,6 +803,7 @@ fn run_bound<T: ProgrammingTarget>(
         backup,
         support.chunk_size,
         Some(&support.identity),
+        Some(support.electrical),
         journal,
     )
 }
@@ -690,6 +854,13 @@ fn run_recovery<T: ProgrammingTarget>(
         support.recovery_id,
         request.backup_sha256.to_ascii_lowercase(),
     ))?;
+    let samples = target
+        .read_electrical_samples()
+        .map_err(|_| "Unable to acquire electrical preflight measurements".to_string())?;
+    record(&validate_electrical_preflight(
+        &samples,
+        support.electrical,
+    )?)?;
     record("recovery-preflight-accepted")?;
     record("recovery-prepare-intent")?;
     if let Err(error) = target.prepare(OperationMode::Recovery) {
@@ -750,6 +921,7 @@ fn run_transfer<T: ProgrammingTarget>(
     backup: &[u8],
     chunk_size: usize,
     expected_identity: Option<&ExactIdentity<'_>>,
+    electrical_policy: Option<ElectricalPolicy>,
     journal: &mut Journal,
 ) -> Result<Outcome, String> {
     let _lease = access.programming()?;
@@ -776,6 +948,13 @@ fn run_transfer<T: ProgrammingTarget>(
         return Err("Synthetic target, backup or transfer size mismatch".into());
     }
     let mut record = |event: &str| journal.record(event).map_err(|e| e.to_string());
+    if let Some(policy) = electrical_policy {
+        let samples = target
+            .read_electrical_samples()
+            .map_err(|_| "Unable to acquire electrical preflight measurements".to_string())?;
+        let evidence = validate_electrical_preflight(&samples, policy)?;
+        record(&evidence)?;
+    }
     record("preflight-accepted")?;
     if expected_identity.is_some() {
         record("prepare-intent")?;
@@ -978,6 +1157,7 @@ mod tests {
                 &[0; 7],
                 3,
                 None,
+                None,
                 &mut journal,
             );
             let inspection = inspect_journal(&fixture.0);
@@ -1121,9 +1301,55 @@ mod tests {
         );
         let log = std::fs::read_to_string(&fixture.0).unwrap();
         assert!(log.contains("operation operation-1 synthetic-backend-v1"));
+        assert!(log.contains(
+            "electrical-preflight samples 3 voltage-min-mv 13480 voltage-max-mv 13500 current-min-ma 2400 current-max-ma 2400 ignition on"
+        ));
         assert!(log.contains(&payload_hash));
         assert!(log.contains(&backup_hash));
         assert_eq!(inspect_journal(&fixture.0).status, RecordedStatus::Complete);
+    }
+
+    #[test]
+    fn electrical_preflight_refuses_missing_or_unsafe_measurements_before_mutation() {
+        for fault in ["unavailable", "unstable", "ignition", "current"] {
+            let fixture = Fixture::new();
+            let mut journal = Journal::create(&fixture.0).unwrap();
+            let payload = [1; 7];
+            let backup = [0; 7];
+            let payload_hash = sha256_hex(&payload);
+            let backup_hash = sha256_hex(&backup);
+            let request = OperationRequest {
+                operation_id: "operation-electrical-preflight",
+                identity: identity("SW-TEST"),
+                payload_sha256: &payload_hash,
+                backup_sha256: &backup_hash,
+            };
+            let support = SupportProfile::synthetic(identity("SW-TEST"), 7, 3);
+            let mut target = MemoryTarget {
+                bytes: backup.to_vec(),
+                faults: Faults {
+                    electrical_unavailable: fault == "unavailable",
+                    unstable_voltage: fault == "unstable",
+                    ignition_off: fault == "ignition",
+                    current_unavailable: fault == "current",
+                    ..Faults::default()
+                },
+            };
+            assert!(run_bound(
+                &VehicleAccess::default(),
+                &mut target,
+                &payload,
+                &backup,
+                &request,
+                &support,
+                &mut journal,
+            )
+            .is_err());
+            assert_eq!(target.bytes, backup, "fault: {fault}");
+            let log = std::fs::read_to_string(&fixture.0).unwrap();
+            assert!(!log.contains("preflight-accepted"), "fault: {fault}");
+            assert!(!log.contains("erase-intent"), "fault: {fault}");
+        }
     }
 
     #[test]
@@ -1320,7 +1546,7 @@ mod tests {
 
     #[test]
     fn recovery_storage_failure_at_every_record_never_completes() {
-        for failed_record in 1..=15 {
+        for failed_record in 1..=16 {
             let source_fixture = Fixture::new();
             let mut source_journal = Journal::create(&source_fixture.0).unwrap();
             let payload = [1; 7];
@@ -1372,16 +1598,16 @@ mod tests {
             .is_err());
             let mut expected = before;
             let restored = match failed_record {
-                1..=5 => 0,
-                6..=7 => 3,
-                8..=9 => 6,
+                1..=6 => 0,
+                7..=8 => 3,
+                9..=10 => 6,
                 _ => 7,
             };
             expected[..restored].copy_from_slice(&backup[..restored]);
             assert_eq!(target.bytes, expected, "failure at record {failed_record}");
             assert_eq!(
                 inspect_journal(&recovery_fixture.0).status,
-                if failed_record <= 5 {
+                if failed_record <= 6 {
                     RecordedStatus::InterruptedBeforeMutation
                 } else {
                     RecordedStatus::RecoveryRequired
@@ -1484,6 +1710,7 @@ mod tests {
                 &[0; 7],
                 3,
                 None,
+                None,
                 &mut journal
             )
             .is_err());
@@ -1521,6 +1748,7 @@ mod tests {
                 &backup,
                 3,
                 None,
+                None,
                 &mut journal
             )
             .is_err());
@@ -1546,6 +1774,7 @@ mod tests {
                 &payload,
                 &[0; 7],
                 3,
+                None,
                 None,
                 &mut journal
             )
@@ -1583,6 +1812,7 @@ mod tests {
                     &[0; 7],
                     3,
                     None,
+                    None,
                     &mut journal
                 )
                 .unwrap(),
@@ -1615,6 +1845,7 @@ mod tests {
             &[2; 7],
             3,
             None,
+            None,
             &mut journal
         )
         .is_err());
@@ -1625,6 +1856,7 @@ mod tests {
             &[1; 7],
             &[0; 7],
             3,
+            None,
             None,
             &mut journal
         )
@@ -1650,6 +1882,7 @@ mod tests {
                 &[1; 7],
                 &[0; 7],
                 3,
+                None,
                 None,
                 &mut journal
             )

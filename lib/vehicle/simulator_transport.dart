@@ -47,6 +47,13 @@ Stream<VehicleEvent> startSimulatorSession({
     ecuBmwTransmission: '',
     ecuBmwEmissions: '',
     ecuBmwInternalToken: '',
+    transportRequestId: BigInt.zero,
+    transportRequestOperation: '',
+    transportRequestAgeMs: BigInt.zero,
+    transportRetryCount: 0,
+    transportSocketState: 'simulator',
+    transportRecoveryAction: 'none',
+    transportRecoveryResult: 'not_required',
   );
   yield VehicleEvent(
     kind: 'vin',
@@ -81,6 +88,13 @@ Stream<VehicleEvent> startSimulatorSession({
     ecuBmwTransmission: '',
     ecuBmwEmissions: '',
     ecuBmwInternalToken: '',
+    transportRequestId: BigInt.zero,
+    transportRequestOperation: '',
+    transportRequestAgeMs: BigInt.zero,
+    transportRetryCount: 0,
+    transportSocketState: 'simulator',
+    transportRecoveryAction: 'none',
+    transportRecoveryResult: 'not_required',
   );
   yield VehicleEvent(
     kind: 'ecu_identity',
@@ -115,6 +129,13 @@ Stream<VehicleEvent> startSimulatorSession({
     ecuBmwTransmission: '',
     ecuBmwEmissions: '',
     ecuBmwInternalToken: '',
+    transportRequestId: BigInt.zero,
+    transportRequestOperation: '',
+    transportRequestAgeMs: BigInt.zero,
+    transportRetryCount: 0,
+    transportSocketState: 'simulator',
+    transportRecoveryAction: 'none',
+    transportRecoveryResult: 'not_required',
   );
   yield VehicleEvent(
     kind: 'ecu_fingerprint',
@@ -149,6 +170,13 @@ Stream<VehicleEvent> startSimulatorSession({
     ecuBmwTransmission: '',
     ecuBmwEmissions: '',
     ecuBmwInternalToken: '',
+    transportRequestId: BigInt.zero,
+    transportRequestOperation: '',
+    transportRequestAgeMs: BigInt.zero,
+    transportRetryCount: 0,
+    transportSocketState: 'simulator',
+    transportRecoveryAction: 'none',
+    transportRecoveryResult: 'not_required',
   );
   yield VehicleEvent(
     kind: 'mileage',
@@ -183,6 +211,13 @@ Stream<VehicleEvent> startSimulatorSession({
     ecuBmwTransmission: '',
     ecuBmwEmissions: '',
     ecuBmwInternalToken: '',
+    transportRequestId: BigInt.zero,
+    transportRequestOperation: '',
+    transportRequestAgeMs: BigInt.zero,
+    transportRetryCount: 0,
+    transportSocketState: 'simulator',
+    transportRecoveryAction: 'none',
+    transportRecoveryResult: 'not_required',
   );
 
   final sensors = defaultSensors();
@@ -227,6 +262,13 @@ Stream<VehicleEvent> startSimulatorSession({
         ecuBmwTransmission: '',
         ecuBmwEmissions: '',
         ecuBmwInternalToken: '',
+        transportRequestId: BigInt.zero,
+        transportRequestOperation: '',
+        transportRequestAgeMs: BigInt.zero,
+        transportRetryCount: 0,
+        transportSocketState: 'simulator',
+        transportRecoveryAction: 'none',
+        transportRecoveryResult: 'not_required',
       );
       await Future<void>.delayed(const Duration(seconds: 1));
       continue;
@@ -272,6 +314,13 @@ Stream<VehicleEvent> startSimulatorSession({
         ecuBmwTransmission: '',
         ecuBmwEmissions: '',
         ecuBmwInternalToken: '',
+        transportRequestId: BigInt.zero,
+        transportRequestOperation: '',
+        transportRequestAgeMs: BigInt.zero,
+        transportRetryCount: 0,
+        transportSocketState: 'simulator',
+        transportRecoveryAction: 'none',
+        transportRecoveryResult: 'not_required',
       );
     }
     // Keep simulator telemetry visually smooth while leaving the real ENET

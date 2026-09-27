@@ -89,7 +89,8 @@ class GaugeCard extends StatelessWidget {
       onTapDown: onTapDown,
       onTap: onTap,
       child: Semantics(
-        label: '${sensor.label}: ${_formattedValue()} $_unit',
+        label:
+            '${sensor.label}: ${_formattedValue()} $_unit, ${isLive ? 'live' : 'idle'}',
         child: TweenAnimationBuilder<double>(
           tween: Tween(end: fraction),
           duration: MediaQuery.disableAnimationsOf(context)
@@ -105,6 +106,11 @@ class GaugeCard extends StatelessWidget {
                     )
                   : AppPalette.surface(isDark),
               borderRadius: BorderRadius.circular(appCardRadius),
+              border: Border.all(
+                color: accent.withValues(
+                  alpha: valueColorBackground ? .30 : .16,
+                ),
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -354,13 +360,13 @@ class GaugeCard extends StatelessWidget {
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: isLive
-                                        ? const Color(0xFF26D995)
-                                        : const Color(0xFF536071),
+                                        ? AppPalette.green
+                                        : AppPalette.secondary(isDark),
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  isLive ? 'LIVE' : 'IDLE',
+                                  isLive ? 'Live' : 'Idle',
                                   style: _rangeStyle,
                                 ),
                               ],
@@ -436,14 +442,14 @@ class GaugeCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      sensor.label.toUpperCase(),
+                      sensor.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF8B949F),
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 1.4,
+                        letterSpacing: .2,
                       ),
                     ),
                   ),
@@ -453,8 +459,8 @@ class GaugeCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: isLive
-                          ? const Color(0xFF26D995)
-                          : const Color(0xFF4E5763),
+                          ? AppPalette.green
+                          : AppPalette.secondary(isDark),
                     ),
                   ),
                 ],
@@ -560,7 +566,7 @@ class GaugeCard extends StatelessWidget {
                     : CrossAxisAlignment.center,
                 children: [
                   Text(
-                    sensor.label.toUpperCase(),
+                    sensor.label,
                     textAlign:
                         MediaQuery.sizeOf(context).width >
                             MediaQuery.sizeOf(context).height
@@ -570,19 +576,19 @@ class GaugeCard extends StatelessWidget {
                       color: Color(0xFF8B949F),
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 2.2,
+                      letterSpacing: .4,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    isLive ? 'LIVE' : 'IDLE',
+                    isLive ? 'Live' : 'Idle',
                     style: TextStyle(
                       color: isLive
-                          ? const Color(0xFF26D995)
+                          ? AppPalette.green
                           : const Color(0xFF566171),
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 1.8,
+                      letterSpacing: .2,
                     ),
                   ),
                 ],
@@ -727,10 +733,10 @@ class GaugeCard extends StatelessWidget {
     final warning = _convert(sensor.warning);
     final dangerLow = danger < warning;
     if ((dangerLow && input <= danger) || (!dangerLow && input >= danger)) {
-      return const Color(0xFFFF5064);
+      return AppPalette.red;
     }
     if ((dangerLow && input <= warning) || (!dangerLow && input >= warning)) {
-      return const Color(0xFFFFB547);
+      return AppPalette.orange;
     }
     if (sensor.id == 'battery_voltage') return AppPalette.orange;
     return AppPalette.blue;

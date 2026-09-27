@@ -28,13 +28,19 @@ class AppSectionTitle extends StatelessWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context) => Text(
-    title,
-    style: const TextStyle(
-      fontSize: 20,
-      height: 1.05,
-      fontWeight: FontWeight.w800,
-      letterSpacing: -.45,
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    label: title,
+    child: Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontSize: 20,
+        height: 1.05,
+        fontWeight: FontWeight.w800,
+        letterSpacing: -.45,
+      ),
     ),
   );
 }

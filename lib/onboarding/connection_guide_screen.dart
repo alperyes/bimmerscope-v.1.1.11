@@ -185,13 +185,15 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
             Icon(Icons.timer_outlined, color: AppPalette.orange, size: 25),
-            SizedBox(width: 14),
-            Text(
-              'If it drops after a few minutes',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Text(
+                'If it drops after a few minutes',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+              ),
             ),
           ],
         ),
@@ -224,11 +226,14 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     return Column(
       children: [
         const SizedBox(height: 24),
-        Text(
-          'STEP $index OF 4',
-          style: const TextStyle(
-            color: AppPalette.blue,
-            fontWeight: FontWeight.w800,
+        Semantics(
+          header: true,
+          child: Text(
+            'Step $index of 4',
+            style: const TextStyle(
+              color: AppPalette.blue,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -249,7 +254,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _connectionLabel('OBD2 ADAPTER', AppPalette.blue),
+              _connectionLabel('OBD2 adapter', AppPalette.blue),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8),
                 child: Icon(
@@ -258,7 +263,10 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
                   color: AppPalette.blue,
                 ),
               ),
-              _connectionLabel('OBD2 PORT', const Color(0xFF7A8597)),
+              _connectionLabel(
+                'OBD2 port',
+                AppPalette.secondary(widget.isDark),
+              ),
             ],
           ),
         ],
@@ -281,7 +289,12 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
       future: rootBundle.loadString('assets/animations/$asset'),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+          return const Center(
+            child: SizedBox(
+              width: 120,
+              child: LinearProgressIndicator(minHeight: 3),
+            ),
+          );
         }
         // The original ENET file contains one stray character before the JSON.
         // Strip it defensively so the guide remains renderable with old builds.
@@ -289,7 +302,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
         final cleanJson = json.startsWith('{') ? json : json.substring(1);
         final lottie = Lottie.memory(
           Uint8List.fromList(utf8.encode(cleanJson)),
-          repeat: true,
+          animate: !MediaQuery.of(context).disableAnimations,
+          repeat: !MediaQuery.of(context).disableAnimations,
           fit: BoxFit.contain,
           alignment: Alignment.center,
           delegates: LottieDelegates(
@@ -328,13 +342,23 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     );
   }
 
-  Widget _connectionLabel(String label, Color color) => Text(
-    label,
-    style: TextStyle(
-      color: color,
-      fontSize: 9,
-      fontWeight: FontWeight.w800,
-      letterSpacing: .7,
+  Widget _connectionLabel(String label, Color color) => Semantics(
+    label: label,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: widget.isDark ? .12 : .08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .28)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     ),
   );
   /*
@@ -371,28 +395,38 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
   );
 */
 
-  Widget _progressRail() => LayoutBuilder(
-    builder: (context, constraints) => Container(
-      height: 6,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: widget.isDark
-            ? const Color(0xFF25272D)
-            : const Color(0xFFDCE0E6),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          width: constraints.maxWidth * ((page + 1) / 5),
+  Widget _progressRail() => Semantics(
+    container: true,
+    label: 'Setup progress: step ${page + 1} of 5',
+    value: '${((page + 1) / 5 * 100).round()} percent complete',
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
+        return Container(
+          height: 6,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: AppPalette.blue,
+            color: widget.isDark
+                ? const Color(0xFF25272D)
+                : const Color(0xFFDCE0E6),
             borderRadius: BorderRadius.circular(99),
           ),
-        ),
-      ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AnimatedContainer(
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              width: constraints.maxWidth * ((page + 1) / 5),
+              decoration: BoxDecoration(
+                color: AppPalette.blue,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ),
+        );
+      },
     ),
   );
 
@@ -420,21 +454,26 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
           ),
         ),
         const SizedBox(height: 30),
-        const Text(
-          'BIMMERSCOPE',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 42,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 1.4,
+        const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'BIMMERSCOPE',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 42,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 1.4,
+            ),
           ),
         ),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'Live telemetry, diagnostics, and logging',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: Color(0xFF7A8597),
+            color: AppPalette.secondary(widget.isDark),
             fontSize: 15,
             height: 1.45,
           ),
@@ -458,8 +497,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
       const SizedBox(height: 6),
       Text(
         subtitle,
-        style: const TextStyle(
-          color: Color(0xFF7A8597),
+        style: TextStyle(
+          color: AppPalette.secondary(widget.isDark),
           fontSize: 12,
           height: 1.4,
         ),
@@ -500,18 +539,21 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(height: 7),
               Text(
                 body,
-                style: const TextStyle(
-                  color: Color(0xFF7A8597),
+                style: TextStyle(
+                  color: AppPalette.secondary(widget.isDark),
                   fontSize: 15,
                   height: 1.3,
                 ),
@@ -576,8 +618,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
                     const SizedBox(height: 5),
                     Text(
                       body,
-                      style: const TextStyle(
-                        color: Color(0xFF7A8597),
+                      style: TextStyle(
+                        color: AppPalette.secondary(widget.isDark),
                         fontSize: 11,
                         height: 1.45,
                       ),
@@ -590,24 +632,30 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
         ),
       );
 
-  Widget safetyCard() => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFFB547).withValues(alpha: .1),
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: const Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.warning_amber_rounded, color: Color(0xFFFFB547)),
-        SizedBox(width: 11),
-        Expanded(
-          child: Text(
-            'Configure the dashboard before driving. Keep your attention on the road, mount the device securely and never run diagnostics while the vehicle is moving.',
-            style: TextStyle(fontSize: 11, height: 1.45),
+  Widget safetyCard() => Semantics(
+    container: true,
+    label:
+        'Driving safety. Configure the dashboard before driving. Never run diagnostics while the vehicle is moving.',
+    child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppPalette.orange.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppPalette.orange.withValues(alpha: .3)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, color: AppPalette.orange),
+          SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              'Configure the dashboard before driving. Keep your attention on the road, mount the device securely and never run diagnostics while the vehicle is moving.',
+              style: TextStyle(fontSize: 11, height: 1.45),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

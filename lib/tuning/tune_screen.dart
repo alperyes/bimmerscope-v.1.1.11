@@ -271,13 +271,42 @@ class _TuneScreenState extends State<TuneScreen> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
           children: [
-            Text(
-              'Stock backup history',
-              style: Theme.of(context).textTheme.titleLarge,
+            Semantics(
+              header: true,
+              child: Text(
+                'Stock backup history',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
             const SizedBox(height: 8),
             if (backups.isEmpty)
-              const ListTile(title: Text('No backups saved for this vehicle')),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppPalette.surface(widget.isDark),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppPalette.separator(widget.isDark),
+                  ),
+                ),
+                child: Semantics(
+                  container: true,
+                  label:
+                      'No stock backups saved for this vehicle. Read-only backup files will appear here after an ECU read.',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.inventory_2_outlined,
+                        color: AppPalette.secondary(widget.isDark),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text('No backups saved for this vehicle'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             for (final backup in backups)
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -716,9 +745,12 @@ class _TuneScreenState extends State<TuneScreen> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              Text(
-                request.vehicleLabel,
-                style: Theme.of(context).textTheme.titleLarge,
+              Semantics(
+                header: true,
+                child: Text(
+                  request.vehicleLabel,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               ),
               if (request.productLabel != null) ...[
                 const SizedBox(height: 4),
@@ -730,14 +762,52 @@ class _TuneScreenState extends State<TuneScreen> {
               const SizedBox(height: 4),
               Text(request.vin, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.flag_outlined),
-                title: const Text('Status'),
-                subtitle: Text(
-                  '${requestStatusLabel(request.status)} · Revision ${request.revision}',
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color:
+                      (request.status == TunerRequestStatus.readyToSend
+                              ? AppPalette.green
+                              : AppPalette.blue)
+                          .withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
+                        (request.status == TunerRequestStatus.readyToSend
+                                ? AppPalette.green
+                                : AppPalette.blue)
+                            .withValues(alpha: .28),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      request.status == TunerRequestStatus.readyToSend
+                          ? Icons.check_circle_outline_rounded
+                          : Icons.flag_outlined,
+                      size: 18,
+                      color: request.status == TunerRequestStatus.readyToSend
+                          ? AppPalette.green
+                          : AppPalette.blue,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        requestStatusLabel(request.status),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      'Revision ${request.revision}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 8),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(
@@ -746,9 +816,12 @@ class _TuneScreenState extends State<TuneScreen> {
                       : Icons.info_outline,
                   color: request.hasCompleteTunerContext
                       ? AppPalette.green
-                      : Colors.orange,
+                      : AppPalette.orange,
                 ),
-                title: const Text('Tuner context'),
+                title: Semantics(
+                  header: true,
+                  child: const Text('Tuner context'),
+                ),
                 subtitle: Text(
                   request.hasCompleteTunerContext
                       ? 'Fuel, hardware, mileage, notes, and logs are included.'
@@ -756,19 +829,34 @@ class _TuneScreenState extends State<TuneScreen> {
                 ),
               ),
               ExpansionTile(
-                tilePadding: EdgeInsets.zero,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 leading: const Icon(Icons.history_rounded),
-                title: const Text('Request timeline'),
+                title: Semantics(
+                  header: true,
+                  child: const Text('Request timeline'),
+                ),
                 subtitle: Text('${request.timeline.length} recorded events'),
                 children: [
                   for (final event in request.timeline.reversed)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(event.action),
-                      subtitle: Text(
-                        '${event.recordedAt.toLocal()}${event.detail == null ? '' : '\n${event.detail}'}',
+                    Semantics(
+                      container: true,
+                      label:
+                          '${event.action}, recorded ${event.recordedAt.toLocal()}${event.detail == null ? '' : '. ${event.detail}'}',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(event.action),
+                        subtitle: Text(
+                          '${event.recordedAt.toLocal()}${event.detail == null ? '' : '\n${event.detail}'}',
+                        ),
+                        isThreeLine: event.detail != null,
                       ),
-                      isThreeLine: event.detail != null,
                     ),
                 ],
               ),
@@ -978,7 +1066,7 @@ class _TuneScreenState extends State<TuneScreen> {
                     child: ConnectionStatusChip(
                       label: widget.connectionLabel,
                       isDark: widget.isDark,
-                      compact: true,
+                      iconOnly: true,
                     ),
                   ),
                 ],
@@ -1104,17 +1192,48 @@ class _TuneScreenState extends State<TuneScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                Card(
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(appCardRadius),
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).dividerColor.withValues(alpha: .6),
+                    ),
+                  ),
                   child: ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                    childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    collapsedShape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     leading: const Icon(Icons.tune_rounded),
-                    title: const Text('Prepare a tuner request'),
+                    title: Semantics(
+                      header: true,
+                      child: const Text('Prepare a tuner request'),
+                    ),
                     subtitle: const Text(
                       'Stock file, notes, logs, and saved requests',
                     ),
                     children: [
                       ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                        childrenPadding: const EdgeInsets.only(bottom: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        collapsedShape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         leading: const Icon(Icons.map_outlined),
-                        title: const Text('Optional map review'),
+                        title: Semantics(
+                          header: true,
+                          child: const Text('Optional map review'),
+                        ),
                         subtitle: const Text(
                           'Browse, review, and prepare map files',
                         ),
@@ -1122,7 +1241,10 @@ class _TuneScreenState extends State<TuneScreen> {
                           if (s55Connected)
                             ListTile(
                               leading: const Icon(Icons.storefront_outlined),
-                              title: const Text('S55 remap products'),
+                              title: Semantics(
+                                header: true,
+                                child: const Text('S55 remap products'),
+                              ),
                               subtitle: const Text(
                                 'Competition and CS product tracks',
                               ),
@@ -1164,11 +1286,16 @@ class _TuneScreenState extends State<TuneScreen> {
                                 ? importStockFile
                                 : showBackupHistory,
                           ),
-                          ListTile(
-                            leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('Review backend options'),
-                            subtitle: const Text(
-                              'Unavailable until vehicle-specific support is validated',
+                          Semantics(
+                            enabled: false,
+                            label:
+                                'Review backend options unavailable until vehicle-specific support is validated.',
+                            child: ListTile(
+                              leading: const Icon(Icons.info_outline_rounded),
+                              title: const Text('Review backend options'),
+                              subtitle: const Text(
+                                'Unavailable until vehicle-specific support is validated',
+                              ),
                             ),
                           ),
                           ListTile(
@@ -1183,14 +1310,20 @@ class _TuneScreenState extends State<TuneScreen> {
                       ),
                       const SizedBox(height: 12),
                       Card(
+                        margin: EdgeInsets.zero,
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Stock file & backups',
-                                style: Theme.of(context).textTheme.titleMedium,
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  'Stock file & backups',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
                               ),
                               const SizedBox(height: 6),
                               Text(
@@ -1260,14 +1393,20 @@ class _TuneScreenState extends State<TuneScreen> {
                       ),
                       const SizedBox(height: 12),
                       Card(
+                        margin: EdgeInsets.zero,
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Read-only map comparison',
-                                style: Theme.of(context).textTheme.titleMedium,
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  'Read-only map comparison',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
                               ),
                               const SizedBox(height: 6),
                               const Text(
@@ -1277,7 +1416,7 @@ class _TuneScreenState extends State<TuneScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   'Identify a supported vehicle before comparing map files.',
-                                  style: TextStyle(color: Colors.orange),
+                                  style: TextStyle(color: AppPalette.orange),
                                 ),
                               ] else if (!identityAvailable) ...[
                                 const SizedBox(height: 8),
@@ -1320,14 +1459,20 @@ class _TuneScreenState extends State<TuneScreen> {
                       ),
                       const SizedBox(height: 16),
                       Card(
+                        margin: EdgeInsets.zero,
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Tuner request details',
-                                style: Theme.of(context).textTheme.titleMedium,
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  'Tuner request details',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
                               ),
                               const SizedBox(height: 6),
                               Text(
@@ -1375,6 +1520,7 @@ class _TuneScreenState extends State<TuneScreen> {
                       ...[
                         const SizedBox(height: 16),
                         Card(
+                          margin: EdgeInsets.zero,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Column(
@@ -1435,14 +1581,58 @@ class _TuneScreenState extends State<TuneScreen> {
                                   ),
                                 ),
                                 if (availableLogs.isEmpty)
-                                  const ListTile(
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 16,
+                                  Container(
+                                    margin: const EdgeInsets.fromLTRB(
+                                      16,
+                                      4,
+                                      16,
+                                      8,
                                     ),
-                                    leading: Icon(Icons.info_outline_rounded),
-                                    title: Text('No saved logs yet'),
-                                    subtitle: Text(
-                                      'Record a live-data log first, then return here to attach it.',
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppPalette.surface(widget.isDark),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: AppPalette.separator(
+                                          widget.isDark,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Semantics(
+                                      container: true,
+                                      label:
+                                          'No saved logs yet. Record a live-data log first, then return here to attach it.',
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline_rounded,
+                                            color: AppPalette.secondary(
+                                              widget.isDark,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          const Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'No saved logs yet',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 3),
+                                                Text(
+                                                  'Record a live-data log first, then return here to attach it.',
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 for (final log in availableLogs)
@@ -1489,6 +1679,7 @@ class _TuneScreenState extends State<TuneScreen> {
                         const SizedBox(height: 8),
                       ],
                       Card(
+                        margin: EdgeInsets.zero,
                         color: AppPalette.surface(widget.isDark),
                         child: Padding(
                           padding: EdgeInsets.all(16),
@@ -1622,10 +1813,13 @@ class _TuneProductSelector extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            const Expanded(
-              child: Text(
-                'S55 remap',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            Expanded(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  'S55 remap',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
               ),
             ),
             Text('2 products', style: TextStyle(color: muted, fontSize: 12)),
@@ -1685,13 +1879,15 @@ class _TuneProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final muted = AppPalette.secondary(isDark);
     final surface = AppPalette.surface(isDark);
+    final statusLabel = compatible ? 'Vehicle match' : identityStatusLabel;
     final borderColor = selected
         ? primary.withValues(alpha: .75)
         : AppPalette.separator(isDark).withValues(alpha: .7);
     return Semantics(
       button: true,
       selected: selected,
-      label: product.displayName,
+      label:
+          '${product.displayName}, $statusLabel${selected ? ', selected' : ''}',
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(appCardRadius),
@@ -1726,7 +1922,11 @@ class _TuneProductCard extends StatelessWidget {
                       selected
                           ? Icons.radio_button_checked_rounded
                           : Icons.radio_button_off_rounded,
-                      color: selected ? primary : muted,
+                      color: selected
+                          ? primary
+                          : compatible
+                          ? muted
+                          : muted.withValues(alpha: .65),
                       size: 20,
                     ),
                   ],
@@ -1743,7 +1943,7 @@ class _TuneProductCard extends StatelessWidget {
                   children: [
                     _TuneProductTag(label: product.fitment, color: primary),
                     _TuneProductTag(
-                      label: compatible ? 'Vehicle match' : identityStatusLabel,
+                      label: statusLabel,
                       color: compatible ? AppPalette.green : muted,
                     ),
                   ],
@@ -2090,14 +2290,20 @@ class _EcuIdentityFieldBar extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              Text(
-                'READ-ONLY',
-                style: TextStyle(
-                  color: muted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: .7,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline_rounded, size: 13, color: muted),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Read only',
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2230,6 +2436,7 @@ class _ProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final profile = identity.profile;
     return Card(
+      margin: EdgeInsets.zero,
       color: AppPalette.surface(isDark),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2249,9 +2456,12 @@ class _ProfileCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Text(
-              'Profile capabilities',
-              style: Theme.of(context).textTheme.labelLarge,
+            Semantics(
+              header: true,
+              child: Text(
+                'Profile capabilities',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -2267,9 +2477,12 @@ class _ProfileCard extends StatelessWidget {
             ),
             if (evidenceProfile != null) ...[
               const SizedBox(height: 16),
-              Text(
-                'Current-session evidence',
-                style: Theme.of(context).textTheme.labelLarge,
+              Semantics(
+                header: true,
+                child: Text(
+                  'Current-session evidence',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -2350,34 +2563,64 @@ class _MapSlot extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    label: file == null
+        ? '$label, no file selected'
+        : '$label, ${file!.uri.pathSegments.last}',
+    child: Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: .28),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: .55),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              file == null ? label : '$label · ${file!.uri.pathSegments.last}',
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  file == null
+                      ? label
+                      : '$label · ${file!.uri.pathSegments.last}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: onPressed,
+                icon: Icon(
+                  file == null
+                      ? Icons.upload_file_outlined
+                      : Icons.swap_horiz_rounded,
+                  size: 17,
+                ),
+                label: Text(file == null ? 'Choose file' : 'Replace file'),
+              ),
+            ],
+          ),
+          if (metadata != null)
+            Text(
+              '${_formatBytes(metadata!['size'] as int)} · SHA-256 ${('${metadata!['hash']}').substring(0, 12)}…',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-          ),
-          OutlinedButton(
-            onPressed: onPressed,
-            child: Text(file == null ? 'Choose' : 'Replace'),
-          ),
+          if (metadata?['inspection'] is Map) ...[
+            const SizedBox(height: 4),
+            _MapInspectionSummary(
+              inspection: Map<String, dynamic>.from(
+                metadata!['inspection'] as Map,
+              ),
+            ),
+          ],
         ],
       ),
-      if (metadata != null)
-        Text(
-          '${_formatBytes(metadata!['size'] as int)} · SHA-256 ${('${metadata!['hash']}').substring(0, 12)}…',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      if (metadata?['inspection'] is Map) ...[
-        const SizedBox(height: 4),
-        _MapInspectionSummary(
-          inspection: Map<String, dynamic>.from(metadata!['inspection'] as Map),
-        ),
-      ],
-    ],
+    ),
   );
 
   String _formatBytes(int bytes) => bytes < 1024 * 1024
@@ -2395,25 +2638,42 @@ class _MapInspectionSummary extends StatelessWidget {
     final provider = inspection['provider'] as String?;
     final revision = inspection['revision'] as String?;
     final isManifest = inspection['kind'] == 'provider_manifest';
-    final color = isManifest ? AppPalette.blue : Colors.orange;
+    final color = isManifest ? AppPalette.blue : AppPalette.orange;
     final summary = isManifest
         ? 'Provider manifest · signature ${inspection['signature_status']}'
         : 'Opaque artifact · professional review only';
-    return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: .25)),
-      ),
-      child: Text(
-        [
-          summary,
-          if (provider != null && provider.isNotEmpty) 'Provider: $provider',
-          if (revision != null && revision.isNotEmpty) 'Revision: $revision',
-        ].join('\n'),
-        style: Theme.of(context).textTheme.bodySmall,
+    final details = [
+      summary,
+      if (provider != null && provider.isNotEmpty) 'Provider: $provider',
+      if (revision != null && revision.isNotEmpty) 'Revision: $revision',
+    ].join('\n');
+    return Semantics(
+      label: details,
+      child: Container(
+        margin: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: .25)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isManifest ? Icons.verified_outlined : Icons.visibility_outlined,
+              size: 17,
+              color: color,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                details,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2427,45 +2687,51 @@ class _ComparisonSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final identical = original['hash'] == comparison['hash'];
-    final color = identical ? Colors.orange : AppPalette.blue;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: .35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                identical ? Icons.info_outline : Icons.compare_arrows_rounded,
-                color: color,
-                size: 19,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                identical
-                    ? 'Files match byte-for-byte'
-                    : 'Files differ · review only',
-                style: TextStyle(color: color, fontWeight: FontWeight.w800),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Original: ${_size(original['size'] as int)} · imported ${_time(original['imported'] as DateTime)}',
-          ),
-          Text(
-            'Comparison: ${_size(comparison['size'] as int)} · imported ${_time(comparison['imported'] as DateTime)}',
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Byte comparison only · no calibration interpretation or writing is enabled.',
-          ),
-        ],
+    final color = identical ? AppPalette.orange : AppPalette.blue;
+    final status = identical
+        ? 'Files match byte-for-byte. Review only.'
+        : 'Files differ. Review only.';
+    return Semantics(
+      label: status,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: .35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  identical ? Icons.info_outline : Icons.compare_arrows_rounded,
+                  color: color,
+                  size: 19,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  identical
+                      ? 'Files match byte-for-byte'
+                      : 'Files differ · review only',
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Original: ${_size(original['size'] as int)} · imported ${_time(original['imported'] as DateTime)}',
+            ),
+            Text(
+              'Comparison: ${_size(comparison['size'] as int)} · imported ${_time(comparison['imported'] as DateTime)}',
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Byte comparison only · no calibration interpretation or writing is enabled.',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2482,23 +2748,45 @@ class _CapabilityLabel extends StatelessWidget {
   final bool enabled;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: enabled ? Colors.green.withValues(alpha: .12) : Colors.transparent,
-      border: Border.all(
+  Widget build(BuildContext context) => Semantics(
+    label: '$_label: ${enabled ? 'available' : 'not available'}',
+    child: DecoratedBox(
+      decoration: BoxDecoration(
         color: enabled
-            ? Colors.green.withValues(alpha: .45)
-            : Theme.of(context).dividerColor,
+            ? AppPalette.green.withValues(alpha: .12)
+            : Colors.transparent,
+        border: Border.all(
+          color: enabled
+              ? AppPalette.green.withValues(alpha: .45)
+              : Theme.of(context).dividerColor,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      child: Text(
-        _label,
-        style: TextStyle(
-          fontSize: 12,
-          color: enabled ? Colors.green : Theme.of(context).disabledColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              enabled
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.remove_circle_outline_rounded,
+              size: 14,
+              color: enabled
+                  ? AppPalette.green
+                  : Theme.of(context).disabledColor,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              _label,
+              style: TextStyle(
+                fontSize: 12,
+                color: enabled
+                    ? AppPalette.green
+                    : Theme.of(context).disabledColor,
+              ),
+            ),
+          ],
         ),
       ),
     ),
@@ -2537,7 +2825,7 @@ class _CheckResult extends StatelessWidget {
     dense: true,
     leading: Icon(
       passed ? Icons.check_circle_outline_rounded : Icons.info_outline_rounded,
-      color: passed ? Colors.green : Colors.orange,
+      color: passed ? AppPalette.green : AppPalette.orange,
     ),
     title: Text(label),
     subtitle: Text(detail),
@@ -2609,78 +2897,106 @@ class _TuneReadinessPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final muted = isDark ? const Color(0xFF9DA8B8) : const Color(0xFF58677B);
     final connecting =
         connectionLabel == 'Connecting' || connectionLabel == 'Searching';
+    final connected = connectionLabel == 'Connected';
+    final statusColor = connected
+        ? AppPalette.green
+        : connecting
+        ? primary
+        : muted;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-      decoration: BoxDecoration(
-        color: AppPalette.surface(isDark),
-        borderRadius: BorderRadius.circular(appCardRadius),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: primary.withValues(alpha: isDark ? .18 : .10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: connecting
-                  ? ExcludeSemantics(
-                      key: const ValueKey('connection-pulse'),
-                      child: Lottie.asset(
-                        'assets/animations/connection_pulse.json',
-                        width: 36,
-                        height: 36,
-                        repeat: true,
+    final statusDetail = vin == 'Not identified'
+        ? 'Connect and identify the ECU before preparing a package'
+        : connected
+        ? 'Connected · VIN $vin'
+        : 'Waiting for a verified vehicle session';
+    return Semantics(
+      container: true,
+      label:
+          '${connected ? 'Vehicle ready to review' : 'Tune workspace'}. '
+          '$statusDetail',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        decoration: BoxDecoration(
+          color: AppPalette.surface(isDark),
+          borderRadius: BorderRadius.circular(appCardRadius),
+          border: Border.all(
+            color: AppPalette.separator(isDark).withValues(alpha: .5),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: isDark ? .16 : .09),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: AnimatedSwitcher(
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                child: connecting && !reduceMotion
+                    ? ExcludeSemantics(
+                        key: const ValueKey('connection-pulse'),
+                        child: Lottie.asset(
+                          'assets/animations/connection_pulse.json',
+                          width: 36,
+                          height: 36,
+                          repeat: true,
+                        ),
+                      )
+                    : Icon(
+                        connected
+                            ? Icons.check_circle_rounded
+                            : Icons.link_off_rounded,
+                        key: ValueKey(
+                          connected ? 'ready-icon' : 'offline-icon',
+                        ),
+                        color: statusColor,
+                        size: 22,
                       ),
-                    )
-                  : Icon(
-                      Icons.tune_rounded,
-                      key: const ValueKey('tune-icon'),
-                      color: primary,
-                      size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    connected ? 'Vehicle ready to review' : 'Tune workspace',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
                     ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    statusDetail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Tune your vehicle',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  vin == 'Not identified'
-                      ? 'Identify a supported vehicle to prepare a package'
-                      : 'Vehicle connected · VIN $vin',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: muted, fontSize: 12),
-                ),
-              ],
+            const SizedBox(width: 8),
+            FilledButton(
+              onPressed: onCheckVehicle,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(76, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('Check vehicle'),
             ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: onCheckVehicle,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(76, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-            child: const Text('Start here'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

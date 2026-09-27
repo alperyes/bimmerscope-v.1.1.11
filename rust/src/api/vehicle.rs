@@ -1,11 +1,13 @@
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use if_addrs::{get_if_addrs, IfAddr};
+use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, VecDeque};
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Shutdown, TcpStream, ToSocketAddrs, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -25,8 +27,10 @@ const LIVE_POLL_TIMEOUT: Duration = Duration::from_millis(1200);
 // not keep reporting itself as live indefinitely after the adapter network has
 // gone away (for example when the ignition is switched off).
 const MAX_SESSION_RECOVERY_ATTEMPTS: u8 = 5;
+const MAX_NETWORK_CONFIGURATION_RETRIES: u8 = 8;
 const BROADCAST_CLEAR_TIMEOUT: Duration = Duration::from_secs(5);
 const BROADCAST_CLEAR_QUIET_WINDOW: Duration = Duration::from_millis(600);
+const TRANSPORT_DIAGNOSTICS_MAX_BYTES: u64 = 8 * 1024 * 1024;
 // ISTA capture-derived read parameters. These are protocol primitives only;
 // a live read still requires a software-specific, validated region plan.
 const ISTA_MEMORY_ADDRESS_LENGTH_FORMAT: u8 = 0x24;
@@ -35,6 +39,98 @@ const ISTA_S55_READ_SOFTWARE: &str = "6MC9ED0B";
 const ISTA_S55_READ_START: u32 = 0x8018_0000;
 const ISTA_S55_READ_LENGTH: u32 = 0x80_000;
 static ISTA_READ_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+
+#[frb(ignore)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum TransportDiagnosticsLevel {
+    Normal = 0,
+    Detailed = 1,
+    Trace = 2,
+}
+
+impl TransportDiagnosticsLevel {
+    fn parse(value: &str) -> Self {
+        match value {
+            "trace" => Self::Trace,
+            "detailed" => Self::Detailed,
+            _ => Self::Normal,
+        }
+    }
+}
+
+#[frb(ignore)]
+struct TransportDiagnosticsConfig {
+    level: TransportDiagnosticsLevel,
+    session_id: String,
+    bytes_written: u64,
+    truncated: bool,
+}
+
+impl Default for TransportDiagnosticsConfig {
+    fn default() -> Self {
+        Self {
+            level: TransportDiagnosticsLevel::Normal,
+            session_id: String::new(),
+            bytes_written: 0,
+            truncated: false,
+        }
+    }
+}
+
+#[frb(ignore)]
+#[derive(Clone)]
+struct PendingTransportRequest {
+    id: u64,
+    destination: u8,
+    service: u8,
+    identifier: Option<u16>,
+    started: Instant,
+}
+
+#[frb(ignore)]
+#[derive(Default)]
+struct TransportRequestContext {
+    pending: VecDeque<PendingTransportRequest>,
+    completed: VecDeque<(u8, Option<u16>)>,
+}
+
+static TRANSPORT_DIAGNOSTICS: OnceLock<Mutex<TransportDiagnosticsConfig>> = OnceLock::new();
+static NEXT_TRANSPORT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_LIVE_POLL_ID: AtomicU64 = AtomicU64::new(1);
+
+thread_local! {
+    static TRANSPORT_REQUESTS: RefCell<TransportRequestContext> = RefCell::new(TransportRequestContext::default());
+}
+
+/// Configure Rust transport capture for the next vehicle session. The app calls
+/// this once before opening a session, so a level change never alters a capture
+/// already in progress.
+#[frb(sync)]
+pub fn configure_transport_diagnostics(level: String, session_id: String) {
+    let level = TransportDiagnosticsLevel::parse(&level);
+    let path = std::env::temp_dir().join("BimmerScope_Raw_HSFZ.log");
+    let _ = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path);
+    if let Ok(mut config) = TRANSPORT_DIAGNOSTICS
+        .get_or_init(|| Mutex::new(TransportDiagnosticsConfig::default()))
+        .lock()
+    {
+        *config = TransportDiagnosticsConfig {
+            level,
+            session_id,
+            bytes_written: 0,
+            truncated: false,
+        };
+    }
+    TRANSPORT_REQUESTS.with(|requests| *requests.borrow_mut() = TransportRequestContext::default());
+    transport_diagnostic(
+        TransportDiagnosticsLevel::Normal,
+        json!({"type": "transport_session_start", "captureLevel": format!("{level:?}").to_lowercase()}),
+    );
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VehicleProfile {
@@ -319,7 +415,8 @@ pub fn read_ista_s55_calibration() -> Result<Vec<u8>, String> {
     let host = discover_vehicle(&cancelled)
         .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
     let mut stream = fresh_diagnostic_stream(&host)?;
-    let (_identity, _vin, fingerprint) = identify_engine(&mut stream)?;
+    let (vin, identity, fingerprint) = identify_engine(&mut stream)?;
+    validate_vehicle_identity(vin, stable_dme_identity(&fingerprint, &identity)?)?;
     let software = fingerprint.software;
     if software.is_empty() {
         return Err("DME software identifier is unavailable".into());
@@ -499,6 +596,7 @@ fn ecu_display_name(address: u8) -> String {
 static ACTIVE_SESSION: OnceLock<Mutex<Option<Arc<AtomicBool>>>> = OnceLock::new();
 static MONITORING_ENABLED: OnceLock<AtomicBool> = OnceLock::new();
 static LAST_VEHICLE_HOST: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static LAST_VALIDATED_VEHICLE: OnceLock<Mutex<Option<ValidatedVehicleIdentity>>> = OnceLock::new();
 static LIVE_SENSOR_IDS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 static ACTIVE_FLAP_MODE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 enum FlapCommand {
@@ -508,7 +606,25 @@ enum FlapCommand {
     },
 }
 
+#[derive(Default)]
+struct PendingFlapReply(Option<mpsc::Sender<Result<(), String>>>);
+
+impl PendingFlapReply {
+    fn complete(&mut self, result: Result<(), String>) {
+        if let Some(reply) = self.0.take() {
+            let _ = reply.send(result);
+        }
+    }
+}
+
 static FLAP_COMMAND_SENDER: OnceLock<Mutex<Option<mpsc::Sender<FlapCommand>>>> = OnceLock::new();
+
+#[frb(ignore)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ValidatedVehicleIdentity {
+    vin: String,
+    dme_identity: String,
+}
 
 fn monitoring_enabled() -> &'static AtomicBool {
     MONITORING_ENABLED.get_or_init(|| AtomicBool::new(false))
@@ -612,6 +728,13 @@ pub struct VehicleEvent {
     pub ecu_bmw_transmission: String,
     pub ecu_bmw_emissions: String,
     pub ecu_bmw_internal_token: String,
+    pub transport_request_id: u64,
+    pub transport_request_operation: String,
+    pub transport_request_age_ms: u64,
+    pub transport_retry_count: u8,
+    pub transport_socket_state: String,
+    pub transport_recovery_action: String,
+    pub transport_recovery_result: String,
 }
 
 #[derive(Default)]
@@ -686,6 +809,13 @@ impl VehicleEvent {
             ecu_bmw_transmission: String::new(),
             ecu_bmw_emissions: String::new(),
             ecu_bmw_internal_token: String::new(),
+            transport_request_id: 0,
+            transport_request_operation: String::new(),
+            transport_request_age_ms: 0,
+            transport_retry_count: 0,
+            transport_socket_state: String::new(),
+            transport_recovery_action: String::new(),
+            transport_recovery_result: String::new(),
         }
     }
 
@@ -723,7 +853,40 @@ impl VehicleEvent {
             ecu_bmw_transmission: String::new(),
             ecu_bmw_emissions: String::new(),
             ecu_bmw_internal_token: String::new(),
+            transport_request_id: 0,
+            transport_request_operation: String::new(),
+            transport_request_age_ms: 0,
+            transport_retry_count: 0,
+            transport_socket_state: String::new(),
+            transport_recovery_action: String::new(),
+            transport_recovery_result: String::new(),
         }
+    }
+
+    fn sensor_with_transport(
+        sensor: &SensorDefinition,
+        raw_value: u32,
+        request_id: u64,
+        request_age: Duration,
+        retry_count: u8,
+    ) -> Self {
+        let mut event = Self::sensor(sensor, raw_value);
+        event.transport_request_id = request_id;
+        event.transport_request_operation = format!(
+            "{}:{DYNAMIC_DID_HIGH:02X}{DYNAMIC_DID_LOW:02X}",
+            LivePollStage::Read.label()
+        );
+        event.transport_request_age_ms = request_age.as_millis() as u64;
+        event.transport_retry_count = retry_count;
+        event.transport_socket_state = "connected".into();
+        if retry_count > 0 {
+            event.transport_recovery_action = "tcp_reconnect_and_reidentify".into();
+            event.transport_recovery_result = "telemetry_resumed".into();
+        } else {
+            event.transport_recovery_action = "none".into();
+            event.transport_recovery_result = "not_required".into();
+        }
+        event
     }
 
     fn vin(vin: String) -> Self {
@@ -760,6 +923,13 @@ impl VehicleEvent {
             ecu_bmw_transmission: String::new(),
             ecu_bmw_emissions: String::new(),
             ecu_bmw_internal_token: String::new(),
+            transport_request_id: 0,
+            transport_request_operation: String::new(),
+            transport_request_age_ms: 0,
+            transport_retry_count: 0,
+            transport_socket_state: String::new(),
+            transport_recovery_action: String::new(),
+            transport_recovery_result: String::new(),
         }
     }
 
@@ -804,6 +974,13 @@ impl VehicleEvent {
             ecu_bmw_transmission: values.bmw_transmission,
             ecu_bmw_emissions: values.bmw_emissions,
             ecu_bmw_internal_token: values.bmw_internal_token,
+            transport_request_id: 0,
+            transport_request_operation: String::new(),
+            transport_request_age_ms: 0,
+            transport_retry_count: 0,
+            transport_socket_state: String::new(),
+            transport_recovery_action: String::new(),
+            transport_recovery_result: String::new(),
         }
     }
 }
@@ -1096,6 +1273,15 @@ pub fn stop_session() {
     }
 }
 
+/// Stop the live owner and wait until its worker has closed the socket and
+/// released process-wide vehicle access. Standalone services use this handoff
+/// instead of guessing with a fixed delay.
+pub fn stop_session_and_wait(timeout_ms: u64) -> Result<(), String> {
+    stop_session();
+    crate::vehicle_access::vehicle_access()
+        .wait_for_diagnostic_release(Duration::from_millis(timeout_ms))
+}
+
 pub fn scan_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> {
     let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
     // Reuse the diagnostic socket so a later guarded clear can remain in the
@@ -1108,7 +1294,7 @@ pub fn scan_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> {
     let mut stream = fresh_diagnostic_stream(&host)?;
 
     let profile = confirmed_f82_s55_profile();
-    identify_engine(&mut stream)?;
+    validate_service_vehicle(&mut stream)?;
     let mut faults = query_dtc_for_ecu_with_retry(
         &mut stream,
         profile.engine_ecu,
@@ -1154,7 +1340,19 @@ fn query_dtc_for_ecu(
             Err(error) => return Err(error.to_string()),
         }
         for frame in drain_hsfz(&mut buffer)? {
-            if !is_application_response(&frame) {
+            if !is_application_response(&frame) || frame.source != ecu {
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Detailed,
+                    json!({
+                        "type": "response_ignored",
+                        "reason": "dtc_route_mismatch",
+                        "expectedSource": format!("{ecu:02X}"),
+                        "expectedDestination": format!("{TESTER:02X}"),
+                        "actualMessageType": format!("{:04X}", frame.message_type),
+                        "actualSource": format!("{:02X}", frame.source),
+                        "actualDestination": format!("{:02X}", frame.destination),
+                    }),
+                );
                 continue;
             }
             if frame.uds.starts_with(&[0x59, 0x02]) {
@@ -1209,7 +1407,7 @@ pub fn clear_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> 
     let profile = confirmed_f82_s55_profile();
     // Validate the S55 DME directly. 0xDF is an HSFZ broadcast address, not
     // an ECU identity endpoint, so it must never be used for this check.
-    identify_engine_at(&mut stream, profile.engine_ecu)?;
+    validate_service_vehicle(&mut stream)?;
     // BM3 clears with a broadcast 14 FF FF FF and no preceding broadcast
     // session-control request. The gateway fans the command out to the ECUs.
     send_uds(
@@ -1246,9 +1444,7 @@ pub fn experimental_exhaust_flap_service_test() -> Result<(), String> {
     let host = discover_vehicle(&cancelled)
         .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
     let mut stream = fresh_diagnostic_stream(&host)?;
-    // ISTA's captured service-test sequence does not require the generic
-    // ASCII ECU-identification probe used by the scan path. Some S55 DMEs
-    // reject that probe even though they accept the actuator service.
+    validate_service_vehicle(&mut stream)?;
     enter_extended_session(&mut stream, EXHAUST_FLAP_DME)?;
     for control in [[0x19, 0x99], [0xE6, 0x66]].into_iter().cycle().take(8) {
         send_uds(
@@ -1256,7 +1452,13 @@ pub fn experimental_exhaust_flap_service_test() -> Result<(), String> {
             EXHAUST_FLAP_DME,
             &build_exhaust_flap_cycle_request(control),
         )?;
-        let response = read_uds_response(&mut stream, EXHAUST_FLAP_DME, Duration::from_secs(3))?;
+        let response = read_matching_uds_response(
+            &mut stream,
+            EXHAUST_FLAP_DME,
+            &[0x6F, 0x60, 0xFD],
+            &[0x2F],
+            Duration::from_secs(3),
+        )?;
         parse_exhaust_flap_io_response(&response, control)?;
         thread::sleep(Duration::from_secs(1));
     }
@@ -1265,7 +1467,13 @@ pub fn experimental_exhaust_flap_service_test() -> Result<(), String> {
         EXHAUST_FLAP_DME,
         &build_exhaust_flap_reset_request(),
     )?;
-    let response = read_uds_response(&mut stream, EXHAUST_FLAP_DME, Duration::from_secs(3))?;
+    let response = read_matching_uds_response(
+        &mut stream,
+        EXHAUST_FLAP_DME,
+        &[0x6F, 0x60, 0xFD, 0x00],
+        &[0x2F],
+        Duration::from_secs(3),
+    )?;
     if response == [0x6F, 0x60, 0xFD, 0x00] {
         Ok(())
     } else {
@@ -1277,9 +1485,19 @@ pub fn experimental_exhaust_flap_service_test() -> Result<(), String> {
 /// periodic refresh messages; this one-shot API intentionally does not claim
 /// to provide a persistent override.
 pub fn experimental_exhaust_flap_set_position(mode: String) -> Result<(), String> {
-    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
     if !matches!(mode.as_str(), "open" | "closed" | "auto") {
         return Err("Unsupported exhaust flap mode".into());
+    }
+    if !crate::vehicle_access::vehicle_access().diagnostic_active() {
+        return Err("No active vehicle session for flap control".into());
+    }
+    if LAST_VALIDATED_VEHICLE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "Vehicle identity lock poisoned".to_string())?
+        .is_none()
+    {
+        return Err("Active DME identity has not been validated".into());
     }
     let sender = FLAP_COMMAND_SENDER
         .get_or_init(|| Mutex::new(None))
@@ -1573,14 +1791,17 @@ fn read_optional_identifier(stream: &mut TcpStream, ecu: u8, did: u16) -> String
     if send_uds(stream, ecu, &request).is_err() {
         return String::new();
     }
-    let response = match read_uds_response(stream, ecu, Duration::from_millis(700)) {
+    let expected = [0x62, (did >> 8) as u8, did as u8];
+    let response = match read_matching_uds_response(
+        stream,
+        ecu,
+        &expected,
+        &[0x22],
+        Duration::from_millis(700),
+    ) {
         Ok(response) => response,
         Err(_) => return String::new(),
     };
-    let expected = [0x62, (did >> 8) as u8, did as u8];
-    if !response.starts_with(&expected) {
-        return String::new();
-    }
     String::from_utf8_lossy(&response[expected.len()..])
         .trim()
         .to_string()
@@ -1591,27 +1812,82 @@ fn read_optional_identifier_hex(stream: &mut TcpStream, ecu: u8, did: u16) -> St
     if send_uds(stream, ecu, &request).is_err() {
         return String::new();
     }
-    let response = match read_uds_response(stream, ecu, Duration::from_millis(700)) {
+    let expected = [0x62, (did >> 8) as u8, did as u8];
+    let response = match read_matching_uds_response(
+        stream,
+        ecu,
+        &expected,
+        &[0x22],
+        Duration::from_millis(700),
+    ) {
         Ok(response) => response,
         Err(_) => return String::new(),
     };
-    let expected = [0x62, (did >> 8) as u8, did as u8];
-    if !response.starts_with(&expected) {
-        return String::new();
-    }
     response[expected.len()..]
         .iter()
         .map(|byte| format!("{byte:02X}"))
         .collect::<String>()
 }
 
-fn identify_engine_at(stream: &mut TcpStream, ecu: u8) -> Result<(), String> {
-    let _ = read_ascii_data_identifier(stream, ecu, "ecu_identification")?;
-    let vin = read_ascii_data_identifier(stream, ecu, "vehicle_vin")?;
+fn stable_dme_identity(
+    fingerprint: &EcuFingerprintValues,
+    raw_identity: &str,
+) -> Result<String, String> {
+    // F150 is not consistently printable on the target F82/S55 DME. Prefer
+    // its versioned fingerprint, which is designed to identify the software
+    // running in the DME and remains stable across ENET reconnects.
+    if !fingerprint.software.is_empty()
+        && !fingerprint.bootloader.is_empty()
+        && !fingerprint.calibration.is_empty()
+    {
+        return Ok(format!(
+            "SW={} / BL={} / CAL={}",
+            fingerprint.software, fingerprint.bootloader, fingerprint.calibration
+        ));
+    }
+
+    // Retain compatibility with older ECUs only when F150 is genuinely
+    // readable text. Never bind the safety check to lossy/control characters.
+    let printable = raw_identity.trim();
+    if printable.chars().count() >= 4
+        && printable
+            .chars()
+            .all(|character| character.is_ascii_graphic() || character == ' ')
+    {
+        return Ok(printable.to_string());
+    }
+
+    Err("Refusing service operation: stable DME fingerprint is unavailable".into())
+}
+
+fn validate_vehicle_identity(vin: String, dme_identity: String) -> Result<(), String> {
     if vin.len() != 17 || !vin.chars().all(|c| c.is_ascii_alphanumeric()) {
         return Err("Refusing service operation: ECU VIN identity is invalid".into());
     }
+    if dme_identity.trim().is_empty() {
+        return Err("Refusing service operation: DME identity is unavailable".into());
+    }
+    let candidate = ValidatedVehicleIdentity { vin, dme_identity };
+    let mut binding = LAST_VALIDATED_VEHICLE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "Vehicle identity lock poisoned")?;
+    if let Some(expected) = binding.as_ref() {
+        if expected != &candidate {
+            return Err(format!(
+                "Refusing service operation: active vehicle changed (expected VIN {} / DME {}, found VIN {} / DME {})",
+                expected.vin, expected.dme_identity, candidate.vin, candidate.dme_identity
+            ));
+        }
+    } else {
+        *binding = Some(candidate);
+    }
     Ok(())
+}
+
+fn validate_service_vehicle(stream: &mut TcpStream) -> Result<(), String> {
+    let (vin, raw_identity, fingerprint) = identify_engine(stream)?;
+    validate_vehicle_identity(vin, stable_dme_identity(&fingerprint, &raw_identity)?)
 }
 
 fn read_ascii_data_identifier(
@@ -1631,11 +1907,9 @@ fn read_data_identifier(
     let definition = data_identifier_definition(definition_id);
     let did = definition.did.to_be_bytes();
     send_uds(stream, ecu, &[0x22, did[0], did[1]])?;
-    let response = read_uds_response(stream, ecu, Duration::from_secs(2))?;
     let expected = [definition.response_sid, did[0], did[1]];
-    if !response.starts_with(&expected) {
-        return Err(format!("{} was rejected", definition.name));
-    }
+    let response =
+        read_matching_uds_response(stream, ecu, &expected, &[0x22], Duration::from_secs(2))?;
     let value = &response[expected.len()..];
     if definition
         .exact_length
@@ -1660,7 +1934,7 @@ fn enter_extended_session(stream: &mut TcpStream, ecu: u8) -> Result<(), String>
 
 fn read_matching_uds_response(
     stream: &mut TcpStream,
-    _source: u8,
+    source: u8,
     expected: &[u8],
     request_services: &[u8],
     timeout: Duration,
@@ -1678,7 +1952,19 @@ fn read_matching_uds_response(
             Err(error) => return Err(error.to_string()),
         }
         for frame in drain_hsfz(&mut buffer)? {
-            if !is_application_response(&frame) {
+            if !is_application_response(&frame) || frame.source != source {
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Detailed,
+                    json!({
+                        "type": "response_ignored",
+                        "reason": "diagnostic_route_mismatch",
+                        "expectedSource": format!("{source:02X}"),
+                        "expectedDestination": format!("{TESTER:02X}"),
+                        "actualMessageType": format!("{:04X}", frame.message_type),
+                        "actualSource": format!("{:02X}", frame.source),
+                        "actualDestination": format!("{:02X}", frame.destination),
+                    }),
+                );
                 continue;
             }
             if frame.uds.starts_with(expected) {
@@ -1696,50 +1982,17 @@ fn read_matching_uds_response(
                     frame.uds.get(2).copied().unwrap_or_default()
                 ));
             }
-        }
-    }
-    Err("ECU response timeout".into())
-}
-
-fn read_uds_response(
-    stream: &mut TcpStream,
-    _source: u8,
-    timeout: Duration,
-) -> Result<Vec<u8>, String> {
-    let mut deadline = Instant::now() + timeout;
-    let mut buffer = Vec::with_capacity(4096);
-    let mut scratch = [0u8; 4096];
-    while Instant::now() < deadline {
-        match stream.read(&mut scratch) {
-            Ok(0) => return Err("Vehicle closed the diagnostic connection".into()),
-            Ok(count) => buffer.extend_from_slice(&scratch[..count]),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                continue
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-        for frame in drain_hsfz(&mut buffer)? {
-            if !is_application_response(&frame) {
-                continue;
-            }
-            if frame.uds.starts_with(&[0x7F]) {
-                if frame.uds.get(2) == Some(&0x78) {
-                    // UDS response-pending: keep waiting, as ISTA does.
-                    deadline = Instant::now() + timeout.max(Duration::from_secs(3));
-                    continue;
-                }
-                if frame.uds.get(2).is_some() {
-                    return Err(format!(
-                        "ECU rejected request (NRC 0x{:02X})",
-                        frame.uds.get(2).copied().unwrap_or_default()
-                    ));
-                }
-                continue;
-            }
-            // drain_hsfz() may yield several responses from one TCP read;
-            // return the first actual diagnostic response for this ECU.
-            debug_transport("RX", frame.source, &frame.uds);
-            return Ok(frame.uds);
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Detailed,
+                json!({
+                    "type": "response_ignored",
+                    "reason": "diagnostic_payload_mismatch",
+                    "expectedPrefix": hex_payload(expected),
+                    "actualService": frame.uds.first().map(|value| format!("{value:02X}")),
+                    "actualIdentifier": transport_identifier(&frame.uds).map(|value| format!("{value:04X}")),
+                    "actualPayloadLength": frame.uds.len(),
+                }),
+            );
         }
     }
     Err("ECU response timeout".into())
@@ -2030,6 +2283,10 @@ fn run_vehicle_session(
     sink: StreamSink<VehicleEvent>,
     stop: Arc<AtomicBool>,
 ) {
+    transport_diagnostic(
+        TransportDiagnosticsLevel::Normal,
+        json!({"type": "session_worker_started", "host": host, "port": port}),
+    );
     let mut first_attempt = true;
     let mut recovery_attempts = 0u8;
     let mut reconnect_delay = Duration::from_millis(350);
@@ -2043,6 +2300,16 @@ fn run_vehicle_session(
         } else {
             "reconnecting"
         };
+        transport_diagnostic(
+            TransportDiagnosticsLevel::Normal,
+            json!({
+                "type": "socket_connect_attempt",
+                "host": host,
+                "port": port,
+                "phase": phase,
+                "retry": recovery_attempts,
+            }),
+        );
         if sink
             .add(VehicleEvent::status(phase, format!("{host}:{port}")))
             .is_err()
@@ -2066,6 +2333,10 @@ fn run_vehicle_session(
         };
         match TcpStream::connect_timeout(&address, Duration::from_secs(5)) {
             Ok(mut stream) => {
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({"type": "socket_connected", "peer": address.to_string()}),
+                );
                 let _ = stream.set_nodelay(true);
                 let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
                 let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
@@ -2073,8 +2344,16 @@ fn run_vehicle_session(
                     "identifying",
                     "Reading vehicle and ECU identities",
                 ));
-                let session_result = poll_connection(&mut stream, &sink, &stop, &flap_receiver);
+                let session_result =
+                    poll_connection(&mut stream, &sink, &stop, &flap_receiver, recovery_attempts);
                 let _ = stream.shutdown(Shutdown::Both);
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({
+                        "type": "socket_closed",
+                        "reason": session_result.as_ref().err(),
+                    }),
+                );
                 match session_result {
                     Ok(()) => {
                         reconnect_delay = Duration::from_millis(350);
@@ -2087,7 +2366,9 @@ fn run_vehicle_session(
                         // outer loop establish a fresh socket. Emitting
                         // `reconnecting` also preserves the vehicle identity
                         // in the UI while recovery is in progress.
-                        if is_terminal_transport_error(&error) {
+                        if is_terminal_transport_error(&error)
+                            && !is_transient_network_configuration_error(&error)
+                        {
                             clear_flap_command_sender();
                             let _ = sink.add(VehicleEvent::status(
                                 "disconnected",
@@ -2096,7 +2377,17 @@ fn run_vehicle_session(
                             return;
                         }
                         recovery_attempts += 1;
-                        if recovery_attempts >= MAX_SESSION_RECOVERY_ATTEMPTS {
+                        let maximum_attempts = recovery_attempt_limit(&error);
+                        transport_diagnostic(
+                            TransportDiagnosticsLevel::Normal,
+                            json!({
+                                "type": "transport_retry",
+                                "reason": error,
+                                "attempt": recovery_attempts,
+                                "maximumAttempts": maximum_attempts,
+                            }),
+                        );
+                        if recovery_attempts >= maximum_attempts {
                             clear_flap_command_sender();
                             let _ = sink.add(VehicleEvent::status(
                                 "disconnected",
@@ -2109,7 +2400,7 @@ fn run_vehicle_session(
                         let _ = sink.add(VehicleEvent::status(
                             "reconnecting",
                             format!(
-                                "{error}; retrying vehicle session ({recovery_attempts}/{MAX_SESSION_RECOVERY_ATTEMPTS})"
+                                "{error}; retrying vehicle session ({recovery_attempts}/{maximum_attempts})"
                             ),
                         ));
                     }
@@ -2117,6 +2408,14 @@ fn run_vehicle_session(
             }
             Err(error) => {
                 let error = error.to_string();
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({
+                        "type": "socket_connect_error",
+                        "peer": address.to_string(),
+                        "error": error,
+                    }),
+                );
                 // Android's Ethernet route can disappear briefly while the
                 // adapter renegotiates. Treat that narrow condition like a
                 // peer reset and use the existing bounded backoff rather than
@@ -2132,12 +2431,22 @@ fn run_vehicle_session(
                     return;
                 }
                 recovery_attempts += 1;
-                if recovery_attempts >= MAX_SESSION_RECOVERY_ATTEMPTS {
+                let maximum_attempts = recovery_attempt_limit(&error);
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({
+                        "type": "transport_retry",
+                        "reason": error,
+                        "attempt": recovery_attempts,
+                        "maximumAttempts": maximum_attempts,
+                    }),
+                );
+                if recovery_attempts >= maximum_attempts {
                     clear_flap_command_sender();
                     let _ = sink.add(VehicleEvent::status(
                         "disconnected",
                         format!(
-                            "Vehicle network did not recover after {recovery_attempts} attempts: {error}"
+                        "Vehicle network did not recover after {recovery_attempts} attempts: {error}"
                         ),
                     ));
                     return;
@@ -2145,7 +2454,7 @@ fn run_vehicle_session(
                 let _ = sink.add(VehicleEvent::status(
                     "reconnecting",
                     format!(
-                        "{error}; waiting for the vehicle network ({recovery_attempts}/{MAX_SESSION_RECOVERY_ATTEMPTS})"
+                        "{error}; waiting for the vehicle network ({recovery_attempts}/{maximum_attempts})"
                     ),
                 ));
             }
@@ -2156,6 +2465,10 @@ fn run_vehicle_session(
         }
     }
     clear_flap_command_sender();
+    transport_diagnostic(
+        TransportDiagnosticsLevel::Normal,
+        json!({"type": "session_worker_stopped"}),
+    );
     let _ = sink.add(VehicleEvent::status("disconnected", "Session stopped"));
 }
 
@@ -2179,11 +2492,120 @@ fn is_terminal_transport_error(error: &str) -> bool {
     .any(|needle| error.contains(needle))
 }
 
+fn recovery_attempt_limit(error: &str) -> u8 {
+    if is_transient_network_configuration_error(error) {
+        MAX_NETWORK_CONFIGURATION_RETRIES
+    } else {
+        MAX_SESSION_RECOVERY_ATTEMPTS
+    }
+}
+
 /// A route can be reinstalled shortly after an Android USB/Ethernet adapter
 /// renegotiates. This is recoverable within the session's bounded retry window.
 fn is_transient_network_configuration_error(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
-    error.contains("network is unreachable") || error.contains("network unreachable")
+    [
+        "network is unreachable",
+        "network unreachable",
+        "no route to host",
+        "host is unreachable",
+        "host unreachable",
+    ]
+    .iter()
+    .any(|needle| error.contains(needle))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LivePollStage {
+    Define,
+    Read,
+    Clear,
+}
+
+impl LivePollStage {
+    fn request_sid(self) -> u8 {
+        match self {
+            Self::Define | Self::Clear => 0x2C,
+            Self::Read => 0x22,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Define => "define_dynamic_did",
+            Self::Read => "read_dynamic_did",
+            Self::Clear => "clear_dynamic_did",
+        }
+    }
+}
+
+struct PendingLivePoll {
+    id: u64,
+    sensor: SensorDefinition,
+    stage: LivePollStage,
+    started: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LivePollResponse {
+    Positive,
+    Pending,
+    Negative(u8),
+}
+
+fn match_live_poll_response(
+    frame: &HsfzFrame,
+    pending: &PendingLivePoll,
+) -> Option<LivePollResponse> {
+    if frame.message_type != 0x0001
+        || frame.source != pending.sensor.ecu
+        || frame.destination != TESTER
+    {
+        return None;
+    }
+    let positive = match pending.stage {
+        LivePollStage::Define => [0x6C, 0x01, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
+        LivePollStage::Read => [0x62, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW, 0x00],
+        LivePollStage::Clear => [0x6C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
+    };
+    let positive_length = if pending.stage == LivePollStage::Read {
+        3
+    } else {
+        4
+    };
+    if frame.uds.starts_with(&positive[..positive_length]) {
+        return Some(LivePollResponse::Positive);
+    }
+    match frame.uds.as_slice() {
+        [0x7F, request_sid, 0x78] if *request_sid == pending.stage.request_sid() => {
+            Some(LivePollResponse::Pending)
+        }
+        [0x7F, request_sid, nrc] if *request_sid == pending.stage.request_sid() => {
+            Some(LivePollResponse::Negative(*nrc))
+        }
+        _ => None,
+    }
+}
+
+fn log_ignored_live_response(frame: &HsfzFrame, pending: &PendingLivePoll) {
+    transport_diagnostic(
+        TransportDiagnosticsLevel::Detailed,
+        json!({
+            "type": "response_ignored",
+            "reason": "live_poll_mismatch",
+            "expectedSource": format!("{:02X}", pending.sensor.ecu),
+            "expectedDestination": format!("{TESTER:02X}"),
+            "expectedService": format!("{:02X}", pending.stage.request_sid()),
+            "expectedIdentifier": format!("{DYNAMIC_DID_HIGH:02X}{DYNAMIC_DID_LOW:02X}"),
+            "expectedOperation": pending.stage.label(),
+            "actualMessageType": format!("{:04X}", frame.message_type),
+            "actualSource": format!("{:02X}", frame.source),
+            "actualDestination": format!("{:02X}", frame.destination),
+            "actualService": frame.uds.first().map(|value| format!("{value:02X}")),
+            "actualIdentifier": transport_identifier(&frame.uds).map(|value| format!("{value:04X}")),
+            "actualPayloadLength": frame.uds.len(),
+        }),
+    );
 }
 
 fn poll_connection(
@@ -2191,6 +2613,7 @@ fn poll_connection(
     sink: &StreamSink<VehicleEvent>,
     stop: &AtomicBool,
     flap_receiver: &mpsc::Receiver<FlapCommand>,
+    recovery_attempts: u8,
 ) -> Result<(), String> {
     let all_sensors = default_sensors();
     let mut configured_sensor_ids = configured_live_sensor_ids();
@@ -2198,12 +2621,15 @@ fn poll_connection(
     let mut buffer = Vec::with_capacity(4096);
     let mut scratch = [0u8; 4096];
     let mut index = 0usize;
-    let mut pending = None::<(SensorDefinition, Instant)>;
+    let mut pending = None::<PendingLivePoll>;
     let mut flap_commands = VecDeque::new();
     // Preserve the user's selected mode across a transient TCP reconnect.
     // The DME otherwise expires the actuator override after roughly 20s.
     let mut flap_control = configured_flap_control();
     let mut flap_ack_deadline = None::<Instant>;
+    // Keep the command's reply open until the DME confirms the IO-control.
+    // A successful socket write alone is not a successful flap command.
+    let mut pending_flap_reply = PendingFlapReply::default();
     let mut next_flap_refresh = if flap_control.is_some() {
         Instant::now()
     } else {
@@ -2211,6 +2637,10 @@ fn poll_connection(
     };
     let mut was_monitoring = false;
     let (vin, ecu_identity, fingerprint) = identify_engine(stream)?;
+    validate_vehicle_identity(
+        vin.clone(),
+        stable_dme_identity(&fingerprint, &ecu_identity)?,
+    )?;
     let _ = sink.add(VehicleEvent::ecu_identity(ENGINE_ECU_ADDRESS, ecu_identity));
     let _ = sink.add(VehicleEvent::ecu_fingerprint(
         ENGINE_ECU_ADDRESS,
@@ -2283,8 +2713,10 @@ fn poll_connection(
                     };
                     next_flap_refresh = Instant::now() + Duration::from_secs(5);
                     flap_ack_deadline = Some(Instant::now() + Duration::from_secs(3));
+                    pending_flap_reply.0 = Some(reply);
+                } else {
+                    let _ = reply.send(result.clone());
                 }
-                let _ = reply.send(result);
             }
             if let Some(control) = flap_control {
                 if Instant::now() >= next_flap_refresh {
@@ -2307,103 +2739,205 @@ fn poll_connection(
             }
         }
         match stream.read(&mut scratch) {
-            Ok(0) => return Err("Vehicle closed the connection".into()),
+            Ok(0) => {
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({"type": "socket_peer_closed", "operation": "read"}),
+                );
+                return Err("Vehicle closed the connection".into());
+            }
             Ok(count) => buffer.extend_from_slice(&scratch[..count]),
             Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                transport_diagnostic(
+                    TransportDiagnosticsLevel::Normal,
+                    json!({"type": "socket_error", "operation": "read", "error": error.to_string()}),
+                );
+                return Err(error.to_string());
+            }
         }
         for frame in drain_hsfz(&mut buffer)? {
             if frame.message_type == 0x0043 {
                 return Err("Gateway reset detected".into());
             }
-            if frame.message_type != 0x0001 {
-                continue;
-            }
-            let uds = frame.uds;
-            if uds.starts_with(&[0x62, 0xF1, 0x90]) {
-                let vin = String::from_utf8_lossy(&uds[3..]).trim().to_string();
-                let _ = sink.add(VehicleEvent::vin(vin));
-            } else if uds.starts_with(&[0x6C, 0x01, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW]) {
-                if monitoring {
-                    if let Some((sensor, _)) = &pending {
-                        send_uds(
-                            stream,
-                            sensor.ecu,
-                            &[0x22, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
-                        )?;
-                    }
-                }
-            } else if uds.starts_with(&[0x62, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW]) {
-                if let Some((sensor, _)) = pending.take() {
-                    let raw = decode_unsigned(&uds[3..], sensor.size as usize)?;
-                    let _ = sink.add(VehicleEvent::sensor(&sensor, raw));
-                    send_uds(
-                        stream,
-                        sensor.ecu,
-                        &[0x2C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
-                    )?;
-                }
-            } else if uds.starts_with(&[0x6C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW]) {
-                // 6C 03 is the acknowledgement for deleting the previous
-                // dynamic DID. It is only valid after its 62 F3 00 value was
-                // consumed; otherwise it is stale and must not advance the
-                // sensor index or replace the pending request.
-                if pending.is_none() {
-                    if let Some(FlapCommand::Set { mode, reply }) = flap_commands.pop_front() {
-                        let result = apply_flap_command(stream, &mode);
-                        if result.is_ok() {
-                            flap_control = match mode.as_str() {
-                                "open" => Some([0x14, 0x7A]),
-                                "closed" => Some([0xEB, 0x85]),
-                                _ => None,
-                            };
-                            next_flap_refresh = Instant::now() + Duration::from_secs(5);
-                            flap_ack_deadline = Some(Instant::now() + Duration::from_secs(3));
-                        }
-                        let _ = reply.send(result);
-                    }
-                    if let Some(control) = flap_control {
-                        if Instant::now() >= next_flap_refresh {
-                            send_uds(
-                                stream,
-                                EXHAUST_FLAP_DME,
-                                &build_exhaust_flap_cycle_request(control),
-                            )?;
-                            next_flap_refresh = Instant::now() + Duration::from_secs(5);
-                            flap_ack_deadline = Some(Instant::now() + Duration::from_secs(3));
-                        }
-                    }
-                    if monitoring && flap_ack_deadline.is_none() {
-                        thread::sleep(LIVE_POLL_INTER_TRANSACTION_SETTLE);
-                        index = (index + 1) % sensors.len();
-                        start_poll(stream, &sensors[index], &mut pending)?;
-                    }
-                }
-            } else if uds.starts_with(&[0x6F, 0x60, 0xFD]) {
+            if flap_ack_deadline.is_some()
+                && frame.message_type == 0x0001
+                && frame.source == EXHAUST_FLAP_DME
+                && frame.destination == TESTER
+                && frame.uds.starts_with(&[0x6F, 0x60, 0xFD])
+            {
                 // Never overlap a flap IO-control request with the next
                 // dynamic sensor request. The DME can otherwise accept the
                 // command but lose the override shortly afterward.
                 if flap_ack_deadline.take().is_some() && pending.is_none() {
+                    pending_flap_reply.complete(Ok(()));
                     if monitoring {
                         index = (index + 1) % sensors.len();
                         start_poll(stream, &sensors[index], &mut pending)?;
                     }
                 }
-            } else if monitoring && uds.first() == Some(&0x7F) {
-                pending = None;
-                index = (index + 1) % sensors.len();
-                start_poll(stream, &sensors[index], &mut pending)?;
+                continue;
+            }
+            if flap_ack_deadline.is_some()
+                && frame.message_type == 0x0001
+                && frame.source == EXHAUST_FLAP_DME
+                && frame.destination == TESTER
+                && matches!(frame.uds.as_slice(), [0x7F, 0x2F, _])
+            {
+                let nrc = frame.uds[2];
+                let error =
+                    format!("DME rejected exhaust flap command (NRC 0x{nrc:02X}); reconnecting");
+                pending_flap_reply.complete(Err(error.clone()));
+                return Err(error);
+            }
+
+            let Some(response) = pending
+                .as_ref()
+                .and_then(|request| match_live_poll_response(&frame, request))
+            else {
+                if let Some(request) = pending.as_ref() {
+                    log_ignored_live_response(&frame, request);
+                }
+                continue;
+            };
+
+            match response {
+                LivePollResponse::Pending => continue,
+                LivePollResponse::Negative(nrc) => {
+                    let stage = pending.as_ref().expect("matched pending poll").stage;
+                    transport_diagnostic(
+                        TransportDiagnosticsLevel::Detailed,
+                        json!({
+                            "type": "matched_negative_response",
+                            "operation": stage.label(),
+                            "nrc": format!("{nrc:02X}"),
+                        }),
+                    );
+                    if stage == LivePollStage::Read {
+                        let request = pending.as_mut().expect("matched pending poll");
+                        send_uds(
+                            stream,
+                            request.sensor.ecu,
+                            &[0x2C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
+                        )?;
+                        request.stage = LivePollStage::Clear;
+                        request.started = Instant::now();
+                    } else {
+                        pending = None;
+                        if monitoring {
+                            index = (index + 1) % sensors.len();
+                            start_poll(stream, &sensors[index], &mut pending)?;
+                        }
+                    }
+                }
+                LivePollResponse::Positive => {
+                    let stage = pending.as_ref().expect("matched pending poll").stage;
+                    match stage {
+                        LivePollStage::Define => {
+                            let request = pending.as_mut().expect("matched pending poll");
+                            send_uds(
+                                stream,
+                                request.sensor.ecu,
+                                &[0x22, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
+                            )?;
+                            request.stage = LivePollStage::Read;
+                            request.started = Instant::now();
+                        }
+                        LivePollStage::Read => {
+                            let request = pending.as_mut().expect("matched pending poll");
+                            let raw =
+                                decode_unsigned(&frame.uds[3..], request.sensor.size as usize)?;
+                            let _ = sink.add(VehicleEvent::sensor_with_transport(
+                                &request.sensor,
+                                raw,
+                                request.id,
+                                request.started.elapsed(),
+                                recovery_attempts,
+                            ));
+                            send_uds(
+                                stream,
+                                request.sensor.ecu,
+                                &[0x2C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
+                            )?;
+                            request.stage = LivePollStage::Clear;
+                            request.started = Instant::now();
+                        }
+                        LivePollStage::Clear => {
+                            pending = None;
+                            if let Some(FlapCommand::Set { mode, reply }) =
+                                flap_commands.pop_front()
+                            {
+                                let result = apply_flap_command(stream, &mode);
+                                if result.is_ok() {
+                                    flap_control = match mode.as_str() {
+                                        "open" => Some([0x14, 0x7A]),
+                                        "closed" => Some([0xEB, 0x85]),
+                                        _ => None,
+                                    };
+                                    next_flap_refresh = Instant::now() + Duration::from_secs(5);
+                                    flap_ack_deadline =
+                                        Some(Instant::now() + Duration::from_secs(3));
+                                    pending_flap_reply.0 = Some(reply);
+                                } else {
+                                    let _ = reply.send(result.clone());
+                                }
+                            }
+                            if let Some(control) = flap_control {
+                                if Instant::now() >= next_flap_refresh {
+                                    send_uds(
+                                        stream,
+                                        EXHAUST_FLAP_DME,
+                                        &build_exhaust_flap_cycle_request(control),
+                                    )?;
+                                    next_flap_refresh = Instant::now() + Duration::from_secs(5);
+                                    flap_ack_deadline =
+                                        Some(Instant::now() + Duration::from_secs(3));
+                                }
+                            }
+                            if monitoring && flap_ack_deadline.is_none() {
+                                thread::sleep(LIVE_POLL_INTER_TRANSACTION_SETTLE);
+                                index = (index + 1) % sensors.len();
+                                start_poll(stream, &sensors[index], &mut pending)?;
+                            }
+                        }
+                    }
+                }
             }
         }
         if monitoring
             && pending
                 .as_ref()
-                .is_some_and(|(_, started)| started.elapsed() > LIVE_POLL_TIMEOUT)
+                .is_some_and(|request| request.started.elapsed() > LIVE_POLL_TIMEOUT)
         {
+            let (sensor_id, age_ms) = pending
+                .as_ref()
+                .map(|request| {
+                    (
+                        request.sensor.id.clone(),
+                        request.started.elapsed().as_millis() as u64,
+                    )
+                })
+                .unwrap_or_else(|| (String::new(), 0));
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({
+                    "type": "request_timeout",
+                    "operation": "live_poll",
+                    "sensorId": sensor_id,
+                    "ageMs": age_ms,
+                    "timeoutMs": LIVE_POLL_TIMEOUT.as_millis() as u64,
+                }),
+            );
             return Err("ECU polling timeout; reconnecting".into());
         }
         if flap_ack_deadline.is_some_and(|deadline| Instant::now() > deadline) {
-            return Err("Exhaust flap command acknowledgement timeout; reconnecting".into());
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({"type": "request_timeout", "operation": "exhaust_flap_ack"}),
+            );
+            let error = "Exhaust flap command acknowledgement timeout; reconnecting".to_string();
+            pending_flap_reply.complete(Err(error.clone()));
+            return Err(error);
         }
     }
     Ok(())
@@ -2412,7 +2946,7 @@ fn poll_connection(
 fn start_poll(
     stream: &mut TcpStream,
     sensor: &SensorDefinition,
-    pending: &mut Option<(SensorDefinition, Instant)>,
+    pending: &mut Option<PendingLivePoll>,
 ) -> Result<(), String> {
     let did_high = (sensor.did >> 8) as u8;
     let did_low = sensor.did as u8;
@@ -2430,16 +2964,32 @@ fn start_poll(
             sensor.size,
         ],
     )?;
-    *pending = Some((sensor.clone(), Instant::now()));
+    *pending = Some(PendingLivePoll {
+        id: NEXT_LIVE_POLL_ID.fetch_add(1, Ordering::Relaxed),
+        sensor: sensor.clone(),
+        stage: LivePollStage::Define,
+        started: Instant::now(),
+    });
     Ok(())
 }
 
 fn send_uds(stream: &mut TcpStream, destination: u8, uds: &[u8]) -> Result<(), String> {
     debug_transport("TX", destination, uds);
-    raw_transport_log("TX", TESTER, destination, uds);
+    raw_transport_log("TX", 0x0001, TESTER, destination, uds);
     stream
         .write_all(&build_hsfz(TESTER, destination, uds))
-        .map_err(|error| error.to_string())
+        .map_err(|error| {
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({
+                    "type": "socket_error",
+                    "operation": "write",
+                    "destination": format!("{destination:02X}"),
+                    "error": error.to_string(),
+                }),
+            );
+            error.to_string()
+        })
 }
 
 fn debug_transport(direction: &str, ecu: u8, uds: &[u8]) {
@@ -2451,23 +3001,173 @@ fn debug_transport(direction: &str, ecu: u8, uds: &[u8]) {
     );
 }
 
-fn raw_transport_log(direction: &str, source: u8, destination: u8, uds: &[u8]) {
-    let path = std::env::temp_dir().join("BimmerScope_Raw_HSFZ.log");
+fn transport_identifier(uds: &[u8]) -> Option<u16> {
+    match uds {
+        [0x22 | 0x2C | 0x2F | 0x62 | 0x6C | 0x6F, high, low, ..] => {
+            Some(u16::from_be_bytes([*high, *low]))
+        }
+        _ => None,
+    }
+}
+
+fn response_request_service(uds: &[u8]) -> Option<u8> {
+    match uds {
+        [0x7F, request, ..] => Some(*request),
+        [response, ..] if *response >= 0x40 => Some(response - 0x40),
+        _ => None,
+    }
+}
+
+fn hex_payload(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn transport_diagnostic(required: TransportDiagnosticsLevel, mut record: Value) {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
-    let payload = uds
-        .iter()
-        .map(|byte| format!("{byte:02X}"))
-        .collect::<Vec<_>>()
-        .join("");
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(
-            file,
-            "{timestamp} {direction} {source:02X}>{destination:02X} {payload}"
-        );
+    let mut config = match TRANSPORT_DIAGNOSTICS
+        .get_or_init(|| Mutex::new(TransportDiagnosticsConfig::default()))
+        .lock()
+    {
+        Ok(config) => config,
+        Err(_) => return,
+    };
+    if config.level < required || config.truncated {
+        return;
     }
+    if let Some(object) = record.as_object_mut() {
+        object.insert("timestampMs".into(), json!(timestamp));
+        object.insert("sessionId".into(), json!(config.session_id));
+    }
+    let mut line = match serde_json::to_string(&record) {
+        Ok(line) => line,
+        Err(_) => return,
+    };
+    line.push('\n');
+    if config.bytes_written + line.len() as u64 > TRANSPORT_DIAGNOSTICS_MAX_BYTES {
+        let truncated = format!(
+            "{{\"type\":\"transport_capture_truncated\",\"timestampMs\":{timestamp},\"sessionId\":{},\"limitBytes\":{TRANSPORT_DIAGNOSTICS_MAX_BYTES}}}\n",
+            serde_json::to_string(&config.session_id).unwrap_or_else(|_| "\"\"".into())
+        );
+        let path = std::env::temp_dir().join("BimmerScope_Raw_HSFZ.log");
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let _ = file.write_all(truncated.as_bytes());
+        }
+        config.truncated = true;
+        return;
+    }
+    let path = std::env::temp_dir().join("BimmerScope_Raw_HSFZ.log");
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        if file.write_all(line.as_bytes()).is_ok() {
+            config.bytes_written += line.len() as u64;
+        }
+    }
+}
+
+fn raw_transport_log(direction: &str, message_type: u16, source: u8, destination: u8, uds: &[u8]) {
+    let service = uds.first().copied().unwrap_or_default();
+    let identifier = transport_identifier(uds);
+    let mut request_id = None;
+    let mut correlation = "not_applicable";
+    let mut duration_ms = None;
+    let mut queue_depth = 0usize;
+    let mut current_operation = None::<String>;
+
+    TRANSPORT_REQUESTS.with(|requests| {
+        let mut context = requests.borrow_mut();
+        if direction == "TX" && message_type == 0x0001 {
+            let id = NEXT_TRANSPORT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+            context.pending.push_back(PendingTransportRequest {
+                id,
+                destination,
+                service,
+                identifier,
+                started: Instant::now(),
+            });
+            request_id = Some(id);
+            correlation = "pending";
+        } else if direction == "RX" && message_type == 0x0001 {
+            if let Some(request_service) = response_request_service(uds) {
+                let response_identifier = transport_identifier(uds);
+                let matched = context.pending.iter().position(|pending| {
+                    pending.service == request_service
+                        && (pending.destination == source || pending.destination == 0xDF)
+                        && (response_identifier.is_none()
+                            || pending.identifier.is_none()
+                            || pending.identifier == response_identifier)
+                });
+                if let Some(index) = matched {
+                    let response_pending = uds == [0x7F, request_service, 0x78];
+                    if response_pending {
+                        let pending = &context.pending[index];
+                        request_id = Some(pending.id);
+                        duration_ms = Some(pending.started.elapsed().as_millis() as u64);
+                        correlation = "response_pending";
+                    } else if let Some(pending) = context.pending.remove(index) {
+                        request_id = Some(pending.id);
+                        duration_ms = Some(pending.started.elapsed().as_millis() as u64);
+                        correlation = "matched";
+                        context
+                            .completed
+                            .push_back((pending.service, pending.identifier));
+                        while context.completed.len() > 32 {
+                            context.completed.pop_front();
+                        }
+                    }
+                } else if context
+                    .completed
+                    .iter()
+                    .any(|item| item.0 == request_service && item.1 == response_identifier)
+                {
+                    correlation = "late";
+                } else {
+                    correlation = "unmatched";
+                }
+            } else {
+                correlation = "unmatched";
+            }
+        }
+        queue_depth = context.pending.len();
+        current_operation = context.pending.front().map(|pending| {
+            pending.identifier.map_or_else(
+                || format!("service_{:02X}", pending.service),
+                |identifier| format!("service_{:02X}:{identifier:04X}", pending.service),
+            )
+        });
+    });
+
+    let mut record = json!({
+        "type": "hsfz_frame",
+        "direction": direction,
+        "messageType": format!("{message_type:04X}"),
+        "source": format!("{source:02X}"),
+        "destination": format!("{destination:02X}"),
+        "service": format!("{service:02X}"),
+        "identifier": identifier.map(|value| format!("{value:04X}")),
+        "requestId": request_id,
+        "correlation": correlation,
+        "durationMs": duration_ms,
+        "queueDepth": queue_depth,
+        "currentOperation": current_operation,
+        "payloadLength": uds.len(),
+    });
+    let trace_enabled = TRANSPORT_DIAGNOSTICS
+        .get_or_init(|| Mutex::new(TransportDiagnosticsConfig::default()))
+        .lock()
+        .map(|config| config.level == TransportDiagnosticsLevel::Trace)
+        .unwrap_or(false);
+    if trace_enabled {
+        if let Some(object) = record.as_object_mut() {
+            object.insert("payloadHex".into(), json!(hex_payload(uds)));
+        }
+    }
+    transport_diagnostic(TransportDiagnosticsLevel::Detailed, record);
 }
 
 // Prototype only: this builds and validates the UDS ClearDiagnosticInformation
@@ -2625,6 +3325,7 @@ fn is_expected_response(frame: &HsfzFrame, expected: &[u8]) -> bool {
 /// Socket adapter for the download runner. Construction remains test-only until
 /// an approved procedure can bind identity, route and exclusive ownership.
 #[allow(dead_code)]
+#[frb(ignore)]
 struct DownloadHsfzTransport {
     stream: TcpStream,
     tester: u8,
@@ -2744,7 +3445,13 @@ fn drain_hsfz(buffer: &mut Vec<u8>) -> Result<Vec<HsfzFrame>, String> {
             destination: buffer[7],
             uds: buffer[8..total].to_vec(),
         };
-        raw_transport_log("RX", frame.source, frame.destination, &frame.uds);
+        raw_transport_log(
+            "RX",
+            frame.message_type,
+            frame.source,
+            frame.destination,
+            &frame.uds,
+        );
         frames.push(frame);
         buffer.drain(..total);
     }
@@ -2791,6 +3498,21 @@ pub fn init_app() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flap_command_reply_waits_for_dme_acknowledgement() {
+        let (reply, result) = mpsc::channel();
+        let mut pending = PendingFlapReply(Some(reply));
+
+        assert!(matches!(result.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        pending.complete(Ok(()));
+        assert_eq!(result.recv().unwrap(), Ok(()));
+
+        let (reply, result) = mpsc::channel();
+        let mut pending = PendingFlapReply(Some(reply));
+        pending.complete(Err("ack timeout".into()));
+        assert_eq!(result.recv().unwrap(), Err("ack timeout".into()));
+    }
 
     #[test]
     fn builds_desktop_compatible_hsfz_packet() {
@@ -3192,5 +3914,205 @@ mod tests {
         assert!(!is_transient_network_configuration_error(
             "Connection refused (os error 111)"
         ));
+    }
+
+    #[test]
+    fn transport_capture_levels_and_correlation_are_structured() {
+        let trace_session = format!(
+            "transport-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        configure_transport_diagnostics("trace".into(), trace_session.clone());
+        raw_transport_log("TX", 0x0001, TESTER, 0x12, &[0x22, 0xF1, 0x90]);
+        raw_transport_log("RX", 0x0001, 0x12, TESTER, &[0x7F, 0x22, 0x78]);
+        raw_transport_log("RX", 0x0001, 0x12, TESTER, &[0x62, 0xF1, 0x90, 0x57]);
+
+        let path = std::env::temp_dir().join("BimmerScope_Raw_HSFZ.log");
+        let records = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|record| record["sessionId"] == trace_session)
+            .collect::<Vec<_>>();
+        let frames = records
+            .iter()
+            .filter(|record| {
+                record["type"] == "hsfz_frame"
+                    && matches!(
+                        record["payloadHex"].as_str(),
+                        Some("22F190") | Some("62F19057")
+                    )
+            })
+            .collect::<Vec<_>>();
+        let matched = frames
+            .iter()
+            .find(|record| record["payloadHex"] == "62F19057" && record["correlation"] == "matched")
+            .expect("correlated response record");
+        let request_id = &matched["requestId"];
+        let response_pending = records
+            .iter()
+            .find(|record| record["correlation"] == "response_pending")
+            .expect("response-pending record");
+        assert_eq!(&response_pending["requestId"], request_id);
+        let pending = frames
+            .iter()
+            .find(|record| {
+                record["payloadHex"] == "22F190"
+                    && record["correlation"] == "pending"
+                    && &record["requestId"] == request_id
+            })
+            .expect("matching request record");
+        assert_eq!(pending["identifier"], "F190");
+
+        let normal_session = format!("{trace_session}-normal");
+        configure_transport_diagnostics("normal".into(), normal_session.clone());
+        raw_transport_log("TX", 0x0001, TESTER, 0x12, &[0x22, 0xF1, 0x90]);
+        let normal_records = std::fs::read_to_string(path).unwrap();
+        assert!(normal_records.contains(&normal_session));
+        assert!(!normal_records.lines().any(|line| {
+            line.contains(&normal_session) && line.contains("\"type\":\"hsfz_frame\"")
+        }));
+    }
+
+    #[test]
+    fn live_poll_matching_requires_route_service_identifier_and_stage() {
+        let sensor = default_sensors().remove(0);
+        let pending = PendingLivePoll {
+            id: 1,
+            sensor: sensor.clone(),
+            stage: LivePollStage::Define,
+            started: Instant::now(),
+        };
+        let frame = |message_type, source, destination, uds: &[u8]| HsfzFrame {
+            message_type,
+            source,
+            destination,
+            uds: uds.to_vec(),
+        };
+
+        assert_eq!(
+            match_live_poll_response(
+                &frame(0x0001, sensor.ecu, TESTER, &[0x6C, 0x01, 0xF3, 0x00]),
+                &pending,
+            ),
+            Some(LivePollResponse::Positive)
+        );
+        for unrelated in [
+            frame(0x0002, sensor.ecu, TESTER, &[0x6C, 0x01, 0xF3, 0x00]),
+            frame(0x0001, 0x20, TESTER, &[0x6C, 0x01, 0xF3, 0x00]),
+            frame(0x0001, sensor.ecu, 0x00, &[0x6C, 0x01, 0xF3, 0x00]),
+            frame(0x0001, sensor.ecu, TESTER, &[0x6C, 0x01, 0xF3, 0x01]),
+            frame(0x0001, sensor.ecu, TESTER, &[0x62, 0xF3, 0x00, 0x12]),
+            frame(0x0001, sensor.ecu, TESTER, &[0x7F, 0x22, 0x31]),
+        ] {
+            assert_eq!(match_live_poll_response(&unrelated, &pending), None);
+        }
+
+        let read_pending = PendingLivePoll {
+            id: 2,
+            sensor: sensor.clone(),
+            stage: LivePollStage::Read,
+            started: Instant::now(),
+        };
+        assert_eq!(
+            match_live_poll_response(
+                &frame(0x0001, sensor.ecu, TESTER, &[0x62, 0xF3, 0x00, 0x12]),
+                &read_pending,
+            ),
+            Some(LivePollResponse::Positive)
+        );
+        assert_eq!(
+            match_live_poll_response(
+                &frame(0x0001, sensor.ecu, TESTER, &[0x7F, 0x22, 0x78]),
+                &read_pending,
+            ),
+            Some(LivePollResponse::Pending)
+        );
+        assert_eq!(
+            match_live_poll_response(
+                &frame(0x0001, sensor.ecu, TESTER, &[0x7F, 0x22, 0x31]),
+                &read_pending,
+            ),
+            Some(LivePollResponse::Negative(0x31))
+        );
+
+        let clear_pending = PendingLivePoll {
+            id: 3,
+            sensor,
+            stage: LivePollStage::Clear,
+            started: Instant::now(),
+        };
+        assert_eq!(
+            match_live_poll_response(
+                &frame(
+                    0x0001,
+                    clear_pending.sensor.ecu,
+                    TESTER,
+                    &[0x6C, 0x03, 0xF3, 0x00]
+                ),
+                &clear_pending,
+            ),
+            Some(LivePollResponse::Positive)
+        );
+        assert_eq!(
+            match_live_poll_response(
+                &frame(
+                    0x0001,
+                    clear_pending.sensor.ecu,
+                    TESTER,
+                    &[0x6C, 0x01, 0xF3, 0x00]
+                ),
+                &clear_pending,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn diagnostic_reader_ignores_matching_payload_from_wrong_ecu() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let worker = thread::spawn(move || {
+            let (mut server, _) = listener.accept().unwrap();
+            server
+                .write_all(&build_hsfz(0x20, TESTER, &[0x62, 0xF1, 0x90, b'X']))
+                .unwrap();
+            server
+                .write_all(&build_hsfz(0x12, TESTER, &[0x62, 0xF1, 0x90, b'W']))
+                .unwrap();
+        });
+        let response = read_matching_uds_response(
+            &mut client,
+            0x12,
+            &[0x62, 0xF1, 0x90],
+            &[0x22],
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(response, [0x62, 0xF1, 0x90, b'W']);
+    }
+
+    #[test]
+    fn sensor_event_carries_request_and_recovery_evidence() {
+        let sensor = default_sensors().remove(0);
+        let event =
+            VehicleEvent::sensor_with_transport(&sensor, 123, 42, Duration::from_millis(3119), 1);
+        assert_eq!(event.transport_request_id, 42);
+        assert_eq!(event.transport_request_operation, "read_dynamic_did:F300");
+        assert_eq!(event.transport_request_age_ms, 3119);
+        assert_eq!(event.transport_retry_count, 1);
+        assert_eq!(event.transport_socket_state, "connected");
+        assert_eq!(
+            event.transport_recovery_action,
+            "tcp_reconnect_and_reidentify"
+        );
+        assert_eq!(event.transport_recovery_result, "telemetry_resumed");
     }
 }

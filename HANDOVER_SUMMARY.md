@@ -1,4 +1,91 @@
-# BimmerScope `1.1.5-experimental.1+47` handover
+# BimmerScope `1.1.7-experimental.1+49` handover
+
+## Current v1.1.7 state — 18 September 2026
+
+- Workspace: `C:\Users\alper\Desktop\v1.1.7`
+- Branch: `codex/experimental-v1.1.7`
+- Version: `1.1.7-experimental.1+49`
+- Created from the complete v1.1.6 working tree, including its intentional
+  uncommitted Flutter, Rust, diagnostics, safety, and UI changes.
+- Generated `build` and `.dart_tool` directories were not copied initially;
+  they were regenerated during verification. The v1.1.7 APK has not been
+  installed on a phone.
+- Fresh v1.1.7 verification: Flutter analysis passed and Flutter tests passed
+  46/46. Rust tests were not rerun during workspace creation.
+- The latest physical-phone installation remains v1.1.6 build 48 on device
+  `HS621L001389`; its existing application data was preserved during install.
+- Current UI baseline includes the unified status system, restored Clear DTCs
+  availability after completed scans, and original flap controls with only a
+  selected Open position highlighted orange.
+- Header connection status is intentionally glanceable: the right-side chip
+  uses a readable label, semantic icon, stronger contrast, and a compact pill
+  rather than a dot-only indicator.
+- Tune debug APK: `build\app\outputs\flutter-apk\BimmerScope-v1.1.7-experimental.1+49-tune-debug.apk`
+- APK SHA-256: `6AF02A6CC7AED84A5A87419D2D7F81EF7ED4390C9D392DDA1326AC8078769F73`
+- No ECU flashing, unlocking, coding, or calibration writing is enabled.
+
+## v1.1.6 source baseline — 17 September 2026
+
+- Workspace: `C:\Users\alper\Desktop\v1.1.6`
+- Branch: `codex/experimental-v1.1.6`
+- App diagnostics capture levels now control both Flutter session records and
+  Rust ENET/HSFZ transport records when the next session starts.
+- Normal records transport lifecycle, retries, errors, and timeouts. Detailed
+  adds request/response metadata and correlation. Trace additionally records
+  raw payload hex.
+- Transport records include request ID, addressing, service, identifier,
+  timing, correlation status, queue depth, and socket lifecycle information.
+- Live telemetry now enforces a define/read/clear transaction state machine.
+  Responses must match the expected HSFZ message type, ECU source, tester
+  destination, UDS service, dynamic identifier, and transaction stage. Late,
+  unrelated, echoed, and out-of-order frames are logged and ignored.
+- ECU identity, DTC, calibration-read, and standalone flap response readers
+  also enforce the requested ECU source and expected response prefix.
+- Telemetry-gap records include the previous successful channel and timestamp,
+  correlated poll transaction and age, reconnect count, socket state,
+  per-channel sample ages, recovery action, and recovery result.
+- Vehicle I/O now has one process-wide diagnostic owner. A live session and a
+  standalone DTC, identity, calibration-read, or flap service can no longer
+  open competing ENET sockets.
+- Service handoff stops the live worker and waits up to five seconds for its
+  socket and ownership lease to be released; the previous fixed delay is gone.
+- Standalone services freshly read VIN and DME identity at address `0x12`
+  immediately before proceeding and reject a mismatch with the active binding.
+  Live flap position commands remain serialized through the live worker.
+- The offline Rust programming boundary now requires sampled supply voltage,
+  ignition state, and profile-required current evidence before mutation. It
+  rejects missing, unstable, out-of-range, or stale evidence and journals the
+  accepted sample count and measured ranges. No production hardware source or
+  approved S55 write profile exists, so real writing remains disabled.
+- Diagnostics now derives disconnected, discovering, connected, scanning,
+  results, interrupted, and unsupported presentation from one view-state
+  model. Monitoring and degraded live sessions correctly remain scan-capable,
+  and empty-state instructions no longer contradict the connection status.
+- The Diagnostics header now matches the shared centered BimmerScope mark,
+  leading menu, and compact trailing connection-status pattern used elsewhere.
+  Connection details and the read-only label sit with the scan task.
+- Status colors now follow one semantic system across shared connection and
+  Diagnostics UI: green means connected or verified, amber means degraded or
+  incomplete, red means failure or unsafe, blue means active work, and grey
+  means unavailable or not started. Statuses pair color with text and an icon;
+  selectable connection controls no longer use success green.
+- Clear DTCs remains available after every completed scan, including a clean
+  result, and is disabled only while a clear request is already in progress.
+- Flap controls retain their original layout and styling, except the selected
+  Open position uses orange for quick recognition while driving.
+- Bottom navigation now uses the standardized `Vehicle`, `Monitor`, `Diagnose`,
+  `Logs`, and conditional `Tune` labels. Inactive items have higher contrast,
+  selected items use a tinted shape indicator plus color and weight, and Tune
+  remains available only in the Tune edition.
+- Capture is bounded at 8 MiB for the Rust transport journal and 12 MiB for
+  high-volume Flutter Trace records. Saved diagnostics retain at most 64 MiB
+  overall and ten raw transport archives.
+- Verification: Flutter analysis passed, Flutter tests passed 46/46, Rust
+  tests passed 63/63, and the Tune debug APK rebuilt successfully.
+- Last v1.1.6 APK: `C:\Users\alper\Desktop\v1.1.6\build\app\outputs\flutter-apk\BimmerScope-v1.1.6-experimental.1+48-tune-debug.apk`
+- APK SHA-256: `5BFD3C237EE6556D86C580D2A114817392A255951D57E57F3500E9B9A8907C18`
+- The APK has not been installed on a phone or tested against a vehicle.
+- No ECU flashing, unlocking, coding, or calibration writing was added.
 
 ## Current v1.1.5 state — 16 September 2026
 

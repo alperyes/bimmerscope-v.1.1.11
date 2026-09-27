@@ -1,11 +1,22 @@
 import 'package:bmw_app/app.dart';
 import 'dart:convert';
 import 'package:bmw_app/dashboard/dashboard_screen.dart';
+import 'package:bmw_app/design/app_palette.dart';
+import 'package:bmw_app/diagnostics/diagnostics_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('connection labels use the shared semantic status tones', () {
+    expect(AppPalette.connectionTone('Connected'), AppStatusTone.success);
+    expect(AppPalette.connectionTone('Connecting'), AppStatusTone.active);
+    expect(AppPalette.connectionTone('Reconnecting'), AppStatusTone.active);
+    expect(AppPalette.connectionTone('Recovering'), AppStatusTone.warning);
+    expect(AppPalette.connectionTone('Error'), AppStatusTone.danger);
+    expect(AppPalette.connectionTone('Connection'), AppStatusTone.neutral);
+  });
+
   testWidgets('restores saved layout styles and migrates channel presets', (
     tester,
   ) async {
@@ -77,7 +88,7 @@ void main() {
 
     await tester.tap(find.text('Diagnostics'));
     await tester.pumpAndSettle();
-    expect(find.text('Scan'), findsOneWidget);
+    expect(find.text('Scan vehicle'), findsOneWidget);
 
     await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
@@ -96,5 +107,56 @@ void main() {
 
     expect(find.text('Engine RPM'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('diagnostics state and scan action follow the live connection', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    Widget diagnostics(String connectionLabel) => MaterialApp(
+      home: Scaffold(
+        drawer: const Drawer(),
+        body: DiagnosticsScreen(
+          isDark: true,
+          onToggleTheme: () {},
+          onShowGuide: () {},
+          connectionLabel: connectionLabel,
+          vin: '',
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(diagnostics('Connection'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connect vehicle'), findsWidgets);
+    expect(
+      find.text('Connect the ENET cable and switch the ignition on.'),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('diagnostics-scan-button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.pumpWidget(diagnostics('Monitoring'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ready to scan'), findsWidgets);
+    expect(
+      find.text('Connect the ENET cable and switch the ignition on.'),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('diagnostics-scan-button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
   });
 }

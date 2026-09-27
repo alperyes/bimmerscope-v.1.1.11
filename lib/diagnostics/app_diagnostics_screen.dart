@@ -94,6 +94,10 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppPalette.red,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Delete all'),
           ),
         ],
@@ -128,7 +132,38 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       future: files,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                decoration: BoxDecoration(
+                  color: AppPalette.surface(widget.isDark),
+                  borderRadius: BorderRadius.circular(appCardRadius),
+                  border: Border.all(
+                    color: AppPalette.separator(
+                      widget.isDark,
+                    ).withValues(alpha: .42),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Loading app diagnostics',
+                      style: TextStyle(
+                        color: AppPalette.secondary(widget.isDark),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                ),
+              ),
+            ),
+          );
         }
         final entries = snapshot.data!;
         final query = searchController.text.trim().toLowerCase();
@@ -156,6 +191,14 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
               const SizedBox(height: 14),
               _captureSettings(),
               const SizedBox(height: 14),
+              Semantics(
+                header: true,
+                child: const Text(
+                  'Archive filters',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              const SizedBox(height: 6),
               TextField(
                 controller: searchController,
                 onChanged: (_) => setState(() {}),
@@ -175,16 +218,20 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'all', label: Text('All')),
-                  ButtonSegment(value: 'sessions', label: Text('Sessions')),
-                  ButtonSegment(value: 'transport', label: Text('Transport')),
-                  ButtonSegment(value: 'exports', label: Text('Exports')),
-                ],
-                selected: {filter},
-                onSelectionChanged: (value) =>
-                    setState(() => filter = value.first),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'all', label: Text('All')),
+                    ButtonSegment(value: 'sessions', label: Text('Sessions')),
+                    ButtonSegment(value: 'transport', label: Text('Transport')),
+                    ButtonSegment(value: 'exports', label: Text('Exports')),
+                  ],
+                  selected: {filter},
+                  onSelectionChanged: (value) =>
+                      setState(() => filter = value.first),
+                ),
               ),
               const SizedBox(height: 14),
               if (entries.isEmpty)
@@ -193,14 +240,20 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        '${filtered.length} matching file${filtered.length == 1 ? '' : 's'}',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          '${filtered.length} matching file${filtered.length == 1 ? '' : 's'}',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
                       ),
                     ),
                     TextButton(
                       onPressed: clearAll,
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppPalette.red,
+                      ),
                       child: const Text('Clear all'),
                     ),
                     IconButton(
@@ -212,13 +265,55 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                 ),
                 const SizedBox(height: 4),
                 if (filtered.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 32),
-                    child: Text(
-                      'No files match this filter.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppPalette.secondary(widget.isDark),
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                    decoration: BoxDecoration(
+                      color: AppPalette.surface(widget.isDark),
+                      borderRadius: BorderRadius.circular(appCardRadius),
+                      border: Border.all(
+                        color: AppPalette.separator(
+                          widget.isDark,
+                        ).withValues(alpha: .42),
+                      ),
+                    ),
+                    child: Semantics(
+                      container: true,
+                      label:
+                          'No matching diagnostics. Clear the search or choose All to see every archive.',
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.filter_alt_off_rounded,
+                            size: 34,
+                            color: AppPalette.secondary(widget.isDark),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'No matching diagnostics',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'Clear the search or choose All to see every archive.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppPalette.secondary(widget.isDark),
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: () => setState(() {
+                              filter = 'all';
+                              searchController.clear();
+                            }),
+                            child: const Text('Show all diagnostics'),
+                          ),
+                        ],
                       ),
                     ),
                   )
@@ -248,35 +343,56 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
         const Icon(Icons.archive_outlined, color: AppPalette.blue, size: 22),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            count == 0
-                ? 'Sessions will be captured here automatically when you connect.'
-                : 'Every connection is kept as an append-only session journal. Open one to inspect the timeline or share it with support.',
-            style: const TextStyle(height: 1.4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Session archive',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                count == 0
+                    ? 'Sessions will be captured here automatically when you connect.'
+                    : 'Every connection is kept as an append-only session journal. Open one to inspect the timeline or share it with support.',
+                style: const TextStyle(height: 1.4),
+              ),
+            ],
           ),
         ),
       ],
     ),
   );
 
-  Widget _captureSettings() => Card(
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
+  Widget _captureSettings() => Container(
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+    decoration: BoxDecoration(
+      color: AppPalette.surface(widget.isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+      border: Border.all(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
             'Capture level',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 4),
-          Text(
-            diagnosticsLevel.description,
-            style: TextStyle(color: AppPalette.secondary(widget.isDark)),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<AppDiagnosticsLevel>(
+        ),
+        const SizedBox(height: 4),
+        Text(
+          diagnosticsLevel.description,
+          style: TextStyle(color: AppPalette.secondary(widget.isDark)),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<AppDiagnosticsLevel>(
+            showSelectedIcon: false,
             segments: [
               for (final level in AppDiagnosticsLevel.values)
                 ButtonSegment(value: level, label: Text(level.title)),
@@ -284,39 +400,51 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
             selected: {diagnosticsLevel},
             onSelectionChanged: (values) => _setDiagnosticsLevel(values.first),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Normal is recommended for everyday driving. Trace may increase storage and processing overhead.',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppPalette.secondary(widget.isDark),
-            ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Normal is recommended for everyday driving. Trace may increase storage and processing overhead.',
+          style: TextStyle(
+            fontSize: 12,
+            color: AppPalette.secondary(widget.isDark),
           ),
-        ],
-      ),
+        ),
+      ],
     ),
   );
 
-  Widget _emptyState() => Padding(
-    padding: const EdgeInsets.only(top: 58),
-    child: Column(
-      children: [
-        Icon(
-          Icons.description_outlined,
-          size: 48,
-          color: AppPalette.secondary(widget.isDark),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'No archived sessions',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          'Connect once and the full app timeline will appear here.',
-          style: TextStyle(color: AppPalette.secondary(widget.isDark)),
-        ),
-      ],
+  Widget _emptyState() => Container(
+    padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
+    decoration: BoxDecoration(
+      color: AppPalette.surface(widget.isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+      border: Border.all(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .42),
+      ),
+    ),
+    child: Semantics(
+      container: true,
+      label:
+          'No archived sessions. Connect once and the full app timeline will appear here.',
+      child: Column(
+        children: [
+          Icon(
+            Icons.description_outlined,
+            size: 42,
+            color: AppPalette.secondary(widget.isDark),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'No archived sessions',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            'Connect once and the full app timeline will appear here.',
+            style: TextStyle(color: AppPalette.secondary(widget.isDark)),
+          ),
+        ],
+      ),
     ),
   );
 
@@ -324,36 +452,59 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     future: _summary(file),
     builder: (context, snapshot) {
       final summary = snapshot.data;
-      return Material(
-        color: AppPalette.surface(widget.isDark),
-        borderRadius: BorderRadius.circular(16),
-        child: ListTile(
-          contentPadding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
-          leading: const Icon(Icons.timeline_rounded, color: AppPalette.blue),
-          title: Text(
-            summary?.title ?? 'Reading session…',
-            style: const TextStyle(fontWeight: FontWeight.w800),
+      return Semantics(
+        button: true,
+        label:
+            '${summary?.title ?? 'Reading session'}, ${summary?.subtitle ?? file.path.split(Platform.pathSeparator).last}',
+        child: Material(
+          color: AppPalette.surface(widget.isDark),
+          borderRadius: BorderRadius.circular(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
+            ),
           ),
-          subtitle: Text(
-            summary?.subtitle ?? file.path.split(Platform.pathSeparator).last,
-          ),
-          trailing: PopupMenuButton<String>(
-            tooltip: 'Session actions',
-            onSelected: (value) async {
-              if (value == 'share') await share(file);
-              if (value == 'delete') await delete(file);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'share', child: Text('Share session')),
-              PopupMenuItem(value: 'delete', child: Text('Delete session')),
-            ],
-          ),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AppDiagnosticDetailScreen(
-                file: file,
-                isDark: widget.isDark,
-                onShare: () => share(file),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            contentPadding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+            leading: const Icon(Icons.timeline_rounded, color: AppPalette.blue),
+            title: Text(
+              summary?.title ?? 'Reading session…',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              summary?.subtitle ?? file.path.split(Platform.pathSeparator).last,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: PopupMenuButton<String>(
+              tooltip: 'Session actions',
+              onSelected: (value) async {
+                if (value == 'share') await share(file);
+                if (value == 'delete') await delete(file);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'share',
+                  child: Text('Share session'),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text(
+                    'Delete session',
+                    style: TextStyle(color: AppPalette.red),
+                  ),
+                ),
+              ],
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AppDiagnosticDetailScreen(
+                  file: file,
+                  isDark: widget.isDark,
+                  onShare: () => share(file),
+                ),
               ),
             ),
           ),
@@ -473,18 +624,48 @@ class AppDiagnosticDetailScreen extends StatelessWidget {
               ),
             );
           }
-          return const Center(child: CircularProgressIndicator());
+          return Center(
+            child: Container(
+              width: 220,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+              decoration: BoxDecoration(
+                color: AppPalette.surface(isDark),
+                borderRadius: BorderRadius.circular(appCardRadius),
+                border: Border.all(
+                  color: AppPalette.separator(isDark).withValues(alpha: .42),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Loading archive',
+                    style: TextStyle(
+                      color: AppPalette.secondary(isDark),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const LinearProgressIndicator(minHeight: 3),
+                ],
+              ),
+            ),
+          );
         }
         final content = snapshot.data!;
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
-            Text(
-              file.path.split(Platform.pathSeparator).last,
-              style: TextStyle(
-                color: AppPalette.secondary(isDark),
-                fontFamily: 'Geist Mono',
-                fontSize: 10,
+            Semantics(
+              header: true,
+              label: 'Session archive',
+              child: Text(
+                file.path.split(Platform.pathSeparator).last,
+                style: TextStyle(
+                  color: AppPalette.secondary(isDark),
+                  fontFamily: 'Geist Mono',
+                  fontSize: 10,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -518,6 +699,9 @@ class AppDiagnosticDetailScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppPalette.surface(isDark),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppPalette.separator(isDark).withValues(alpha: .55),
+                ),
               ),
               child: SelectableText(
                 content.text,

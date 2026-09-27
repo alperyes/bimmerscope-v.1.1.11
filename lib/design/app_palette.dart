@@ -5,6 +5,8 @@ const appCardRadius = 18.0;
 const appSheetRadius = 24.0;
 const appCardPadding = EdgeInsets.all(16);
 
+enum AppStatusTone { success, warning, danger, active, neutral }
+
 abstract final class AppPalette {
   // Performance accents sit on neutral black and graphite surfaces.  Green is
   // deliberately reserved for a connected/live state.
@@ -26,4 +28,34 @@ abstract final class AppPalette {
 
   static Color separator(bool dark) =>
       dark ? const Color(0xFF38383A) : const Color(0xFFD1D1D6);
+
+  static Color status(AppStatusTone tone, bool dark) => switch (tone) {
+    AppStatusTone.success => green,
+    AppStatusTone.warning => orange,
+    AppStatusTone.danger => red,
+    AppStatusTone.active => blue,
+    AppStatusTone.neutral => secondary(dark),
+  };
+
+  static IconData statusIcon(AppStatusTone tone) => switch (tone) {
+    AppStatusTone.success => Icons.check_rounded,
+    AppStatusTone.warning => Icons.priority_high_rounded,
+    AppStatusTone.danger => Icons.close_rounded,
+    AppStatusTone.active => Icons.sync_rounded,
+    AppStatusTone.neutral => Icons.remove_rounded,
+  };
+
+  static AppStatusTone connectionTone(String label) {
+    return switch (label.trim().toLowerCase()) {
+      'connected' || 'monitoring' => AppStatusTone.success,
+      'connecting' ||
+      'searching' ||
+      'identifying' ||
+      'discovering' ||
+      'reconnecting' => AppStatusTone.active,
+      'degraded' || 'recovering' => AppStatusTone.warning,
+      'error' || 'failed' => AppStatusTone.danger,
+      _ => AppStatusTone.neutral,
+    };
+  }
 }

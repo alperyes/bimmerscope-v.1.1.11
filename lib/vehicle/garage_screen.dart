@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:bmw_app/design/app_palette.dart';
 import 'vehicle_garage.dart';
 
 class GarageScreen extends StatefulWidget {
@@ -40,15 +41,62 @@ class _GarageScreenState extends State<GarageScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                vehicle.vin,
-                style: Theme.of(dialogContext).textTheme.bodySmall,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppPalette.blue.withValues(alpha: .07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppPalette.blue.withValues(alpha: .22),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.fingerprint_rounded,
+                      color: AppPalette.blue,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Semantics(
+                        label: 'Vehicle identification number',
+                        child: Text(
+                          vehicle.vin,
+                          style: TextStyle(
+                            fontFamily: 'Geist Mono',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(
+                              dialogContext,
+                            ).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Read only',
+                      style: TextStyle(
+                        color: Theme.of(
+                          dialogContext,
+                        ).colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: nickname,
                 decoration: const InputDecoration(labelText: 'Nickname'),
               ),
+              const SizedBox(height: 10),
               TextField(
                 controller: mileage,
                 keyboardType: const TextInputType.numberWithOptions(
@@ -56,6 +104,7 @@ class _GarageScreenState extends State<GarageScreen> {
                 ),
                 decoration: const InputDecoration(labelText: 'Mileage (km)'),
               ),
+              const SizedBox(height: 10),
               TextField(
                 controller: modifications,
                 decoration: const InputDecoration(
@@ -63,6 +112,7 @@ class _GarageScreenState extends State<GarageScreen> {
                   hintText: 'Intake, charge pipes, fuel…',
                 ),
               ),
+              const SizedBox(height: 10),
               TextField(
                 controller: notes,
                 maxLines: 3,
@@ -122,6 +172,7 @@ class _GarageScreenState extends State<GarageScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: AppPalette.red),
             child: const Text('Remove'),
           ),
         ],
@@ -137,52 +188,125 @@ class _GarageScreenState extends State<GarageScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Vehicle garage')),
     body: vehicles.isEmpty
-        ? const Center(
-            child: Padding(
-              padding: EdgeInsets.all(28),
-              child: Text(
-                'No vehicles saved yet. Connect a vehicle, then save its identity from Tune.',
-                textAlign: TextAlign.center,
+        ? Center(
+            child: Container(
+              margin: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(appCardRadius),
+                border: Border.all(
+                  color: Theme.of(context).dividerColor.withValues(alpha: .5),
+                ),
               ),
-            ),
-          )
-        : ListView.builder(
-            itemCount: vehicles.length,
-            itemBuilder: (_, index) {
-              final vehicle = vehicles[index];
-              return ListTile(
-                leading: const Icon(Icons.directions_car_outlined),
-                title: Text(
-                  vehicle.nickname.isEmpty ? vehicle.label : vehicle.nickname,
-                ),
-                subtitle: Text(
-                  '${vehicle.vin}\n'
-                  '${vehicle.mileageKm == null ? 'Mileage not recorded' : '${vehicle.mileageKm!.toStringAsFixed(0)} km'} · '
-                  '${vehicle.modifications.isEmpty ? 'No modifications recorded' : vehicle.modifications.join(', ')}'
-                  '${vehicle.notes.trim().isEmpty ? '' : '\n${vehicle.notes.trim()}'}',
-                ),
-                isThreeLine: true,
-                trailing: Row(
+              child: Semantics(
+                container: true,
+                label:
+                    'Vehicle garage is empty. Connect a vehicle, then save its identity from Tune.',
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      tooltip: 'Edit vehicle',
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _editVehicle(vehicle),
+                    const Icon(
+                      Icons.directions_car_outlined,
+                      color: AppPalette.blue,
+                      size: 42,
                     ),
-                    IconButton(
-                      tooltip: 'Remove vehicle',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmRemove(vehicle),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No vehicles saved yet',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Connect a vehicle, then save its identity from Tune.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
-                onTap: widget.onSelect == null
-                    ? null
-                    : () {
-                        widget.onSelect!(vehicle);
-                        Navigator.of(context).pop(vehicle);
-                      },
+              ),
+            ),
+          )
+        : ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: vehicles.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, index) {
+              final vehicle = vehicles[index];
+              return Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(appCardRadius),
+                  border: Border.all(
+                    color: Theme.of(context).dividerColor.withValues(alpha: .5),
+                  ),
+                ),
+                child: Semantics(
+                  container: true,
+                  label:
+                      '${vehicle.nickname.isEmpty ? vehicle.label : vehicle.nickname}. VIN ${vehicle.vin}. ${vehicle.mileageKm == null ? 'Mileage not recorded' : '${vehicle.mileageKm!.toStringAsFixed(0)} kilometres'}. ${vehicle.modifications.isEmpty ? 'No modifications recorded' : vehicle.modifications.join(', ')}.',
+                  child: ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppPalette.blue.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.directions_car_outlined,
+                        color: AppPalette.blue,
+                      ),
+                    ),
+                    title: Text(
+                      vehicle.nickname.isEmpty
+                          ? vehicle.label
+                          : vehicle.nickname,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${vehicle.vin}\n'
+                      '${vehicle.mileageKm == null ? 'Mileage not recorded' : '${vehicle.mileageKm!.toStringAsFixed(0)} km'} · '
+                      '${vehicle.modifications.isEmpty ? 'No modifications recorded' : vehicle.modifications.join(', ')}'
+                      '${vehicle.notes.trim().isEmpty ? '' : '\n${vehicle.notes.trim()}'}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    isThreeLine: true,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Edit vehicle',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _editVehicle(vehicle),
+                        ),
+                        IconButton(
+                          tooltip: 'Remove vehicle',
+                          color: AppPalette.red,
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _confirmRemove(vehicle),
+                        ),
+                      ],
+                    ),
+                    onTap: widget.onSelect == null
+                        ? null
+                        : () {
+                            widget.onSelect!(vehicle);
+                            Navigator.of(context).pop(vehicle);
+                          },
+                  ),
+                ),
               );
             },
           ),

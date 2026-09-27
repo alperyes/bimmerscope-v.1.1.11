@@ -126,6 +126,21 @@ and inject truncation; physical power-loss testing remains outstanding.
   exists. This is tested at the gate and actual diagnostic API entry points.
   There is no programming owner yet, no automatic polling suspension, and no
   cross-process protection against another diagnostic application.
+- The Rust programming target contract now requires electrical samples while
+  the exclusive programming owner is held. Each approved support profile must
+  define minimum/maximum voltage, maximum sample span, sample count, ignition
+  requirement, and whether measured current is mandatory with its permitted
+  range. Missing, stale/non-monotonic, unstable, out-of-range, ignition-off,
+  or required-current-unavailable evidence is rejected before mutation.
+- Accepted voltage/current minima and maxima, sample count, and ignition state
+  are durably journaled before `preflight-accepted`. The restart inspector
+  validates this evidence record. The synthetic target and fault tests cover
+  valid evidence, unavailable measurements, unstable voltage, ignition-off,
+  missing current, and journal failures at the shifted recovery boundaries.
+- No production S55 target exists yet, so no hardware voltage/current source
+  is wired in. A future adapter must acquire these measurements rather than
+  accepting caller assertions; the empty production support registry still
+  prevents this scaffolding from authorizing a real write.
 - Requests now compare all recorded fingerprint fields against preflight and
   preflight compares the fingerprint against the exact resolved profile.
   Fresh acquisition, session provenance and artifact-byte binding remain open.
@@ -150,8 +165,9 @@ future real Rust backend must require durable operation evidence itself.
 The preparation goal remains incomplete. The Dart prototype is separate from
 the Rust runner; there is no app integration or production programming adapter.
 Backend descriptor validation is descriptive metadata, not an enforced support
-registry. Power, signature and recovery preflight fields are caller assertions,
-not measurements or cryptographic/recovery evidence. Persistent journals are
+registry. The Rust target now requires measured electrical samples, but no
+production hardware source implements that contract. Signature and recovery
+preflight fields remain assertions rather than cryptographic/recovery evidence. Persistent journals are
 optional in the Dart prototype. No exact S55 write profile or recovery executor
 has been implemented or verified.
 

@@ -2,22 +2,21 @@
 
 ## APK naming
 
-The version source and APK naming rules are defined in [VERSIONING.md](VERSIONING.md). For this recovered source line, the version is `1.1.0-dev+24`.
+The version source and APK naming rules are defined in [VERSIONING.md](VERSIONING.md). This workspace is `1.1.8-experimental.1+53`.
 
-Cross-platform Flutter dashboard with a Rust vehicle-protocol core for BMW F-series ENET live data. This `1.1.4+1` build is an experimental Tune release built on the previous known-good foundation. It remains intentionally read-only for calibration and is not a BM3 replacement yet.
+Cross-platform Flutter dashboard with a Rust vehicle-protocol core for BMW F-series ENET live data. This is an experimental Tune workspace. Calibration flashing and writing remain disabled; BimmerScope is not a BM3 replacement.
 
 ## Release status
 
-The repository contains the v1.1.4 experimental baseline and its follow-up
-work. See [HANDOVER_SUMMARY.md](HANDOVER_SUMMARY.md) and
+This repository contains the v1.1.8 experimental workspace snapshot. See [HANDOVER_SUMMARY.md](HANDOVER_SUMMARY.md) and
 [BIMMERSCOPE_PRODUCT_ROADMAP.md](BIMMERSCOPE_PRODUCT_ROADMAP.md) for evidence,
 scope, and limits.
 
 ## Current features
 
-Latest verified Android Tune build: `1.1.4+1` (debug). Emulator and simulator checks do not constitute full-app or real-vehicle acceptance. See `BIMMERSCOPE_CONTEXT.md` for verification limits.
+The v1.1.8 APK has not been built yet. Build and software tests do not constitute full-app or real-vehicle acceptance. Flap command completion waits for a positive DME acknowledgement; vehicle validation is still pending. See `BIMMERSCOPE_CONTEXT.md` and `HANDOVER_SUMMARY.md` for verification limits.
 
-Recent Tune and reliability work includes VIN-scoped requests and logs, persistent drafts, immutable hash-traceable stock backups, complete tuner-package attachments, simulator DME-state parsing, session-provenance log metadata, a persistent vehicle garage, and timestamp-aware log charts. Flutter and Rust test suites currently pass; the Windows debug build is available under `build/windows/x64/runner/Debug/bmw_app.exe`.
+Recent Tune and reliability work includes VIN-scoped requests and logs, persistent drafts, immutable hash-traceable stock backups, complete tuner-package attachments, simulator DME-state parsing, session-provenance log metadata, a persistent vehicle garage, and timestamp-aware log charts. See the handover summary for the latest test evidence and known limitations.
 
 Android build note: the project retains `shared_preferences_android` 2.4.18 as its verified dependency baseline. Use the unmodified pub.dev package, including its string-list deserialization guard. The earlier local `ObjectInputStream` workaround was removed; both examined upstream versions contain the guard source. Legacy JNI packaging remains enabled, and the Tune build was verified with Gradle limited to one worker.
 
@@ -42,9 +41,9 @@ No ECU coding, flashing, or calibration-write commands are implemented. Diagnost
 
 The production direction is direct BMW ENET/HSFZ, not generic ELM327/OBD-II or an ENET Wi-Fi bridge. Vgate iCar2 support was removed after hardware testing because it did not provide the BMW ECU transport required by the app. Wi-Fi adapter support is postponed. The Tune edition currently provides preparation and review workflows only; no flashing commands are implemented.
 
-The latest connection work restores the last known stable startup behavior, keeps discovery Ethernet-only, and adds route diagnostics that distinguish a missing Ethernet interface from an unreachable BMW gateway. The current known-good Tune milestone caps live telemetry at four active gauges and serializes flap actuator traffic with sensor polling. The Tune debug APK was installed successfully on physical device `HS621L001389`.
+Connection diagnostics distinguish local network-route failures from vehicle-session failures. Live telemetry is capped at four active gauges, and flap actuator traffic is serialized with sensor polling. An Android foreground service is used to preserve the vehicle session with the screen off; confirm behavior on the target phone and vehicle before relying on it.
 
-The Diagnostics area includes a dedicated Flap Control page with experimental Open, Auto, Close, and cyclic service-test controls. Open/Closed state persists across transient reconnects and is refreshed through the shared live session until Auto or Disconnect.
+The Diagnostics area includes a dedicated Flap Control page with experimental Open, Auto, and Close controls. Open/Closed state persists across transient reconnects and is refreshed through the shared live session until Auto or Disconnect. The UI reports a command as successful only after a positive DME acknowledgement.
 
 The standalone simulator is at `C:\Users\alper\Desktop\BimmerScope Simulator`. It provides F-generation vehicle selection, publishes the selected profile to BimmerScope, and exposes test DME states: Unknown, Unlocked, Locked, and Bench unlock required. Its GUI uses the native Tkinter theme.
 

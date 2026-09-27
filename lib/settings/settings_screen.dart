@@ -62,7 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          Text('Appearance', style: Theme.of(context).textTheme.labelLarge),
+          _sectionHeading('Appearance'),
           const SizedBox(height: 8),
           _section(
             context,
@@ -77,19 +77,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Switch to ${isDark ? 'light' : 'dark'} appearance',
                   style: TextStyle(color: muted),
                 ),
-                trailing: Switch(
-                  value: isDark,
-                  onChanged: (_) => widget.onToggleTheme(),
+                trailing: Semantics(
+                  label: 'Appearance',
+                  value: isDark ? 'Dark' : 'Light',
+                  child: Switch(
+                    value: isDark,
+                    onChanged: (_) => widget.onToggleTheme(),
+                  ),
                 ),
                 onTap: widget.onToggleTheme,
               ),
             ],
           ),
           const SizedBox(height: 22),
-          Text(
-            'Session defaults',
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
+          _sectionHeading('Session defaults'),
           const SizedBox(height: 8),
           _section(
             context,
@@ -122,9 +123,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'manual' => 'Wait for you to tap Retry',
                   _ => 'Recover transient ENET gaps automatically',
                 }, style: TextStyle(color: muted)),
-                trailing: DropdownButtonHideUnderline(
+                trailing: _dropdownFrame(
                   child: DropdownButton<String>(
                     value: reconnectPolicy,
+                    isDense: true,
+                    dropdownColor: AppPalette.surface(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                    style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF172033),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                     items: const [
                       DropdownMenuItem(value: 'automatic', child: Text('Auto')),
                       DropdownMenuItem(value: 'prompt', child: Text('Prompt')),
@@ -143,25 +153,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 indent: 56,
                 color: AppPalette.separator(isDark).withValues(alpha: .45),
               ),
-              ListTile(
-                leading: const Icon(
-                  Icons.lock_outline_rounded,
-                  color: AppPalette.orange,
-                ),
-                title: const Text('Read-only protection'),
-                subtitle: Text(
-                  'No flashing, unlocking, coding, or calibration writes are available.',
-                  style: TextStyle(color: muted),
-                ),
-                trailing: const Icon(
-                  Icons.verified_user_outlined,
-                  color: AppPalette.orange,
+              Semantics(
+                container: true,
+                label:
+                    'Read-only protection enabled. No flashing, unlocking, coding, or calibration writes are available.',
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppPalette.orange,
+                  ),
+                  title: const Text('Read-only protection'),
+                  subtitle: Text(
+                    'No flashing, unlocking, coding, or calibration writes are available.',
+                    style: TextStyle(color: muted),
+                  ),
+                  trailing: const Icon(
+                    Icons.verified_user_outlined,
+                    color: AppPalette.orange,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 22),
-          Text('Data and units', style: Theme.of(context).textTheme.labelLarge),
+          _sectionHeading('Data and units'),
           const SizedBox(height: 8),
           _section(
             context,
@@ -176,9 +191,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   units == 'imperial' ? '°F, psi, mph' : '°C, bar, km/h',
                   style: TextStyle(color: muted),
                 ),
-                trailing: DropdownButtonHideUnderline(
+                trailing: _dropdownFrame(
                   child: DropdownButton<String>(
                     value: units,
+                    isDense: true,
+                    dropdownColor: AppPalette.surface(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                    style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF172033),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                     items: const [
                       DropdownMenuItem(value: 'metric', child: Text('Metric')),
                       DropdownMenuItem(
@@ -212,9 +236,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : 'Delete logs older than $retentionDays days',
                   style: TextStyle(color: muted),
                 ),
-                trailing: DropdownButtonHideUnderline(
+                trailing: _dropdownFrame(
                   child: DropdownButton<int>(
                     value: retentionDays,
+                    isDense: true,
+                    dropdownColor: AppPalette.surface(isDark),
+                    borderRadius: BorderRadius.circular(12),
+                    icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                    style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF172033),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                     items: const [
                       DropdownMenuItem(value: 7, child: Text('7 days')),
                       DropdownMenuItem(value: 30, child: Text('30 days')),
@@ -232,7 +265,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 22),
-          Text('Connection', style: Theme.of(context).textTheme.labelLarge),
+          _sectionHeading('Connection'),
           const SizedBox(height: 8),
           _section(
             context,
@@ -253,9 +286,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 22),
-          Text(
-            'Vehicle operations remain read-only in this build.',
-            style: TextStyle(color: muted, fontSize: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: AppPalette.blue.withValues(alpha: isDark ? .08 : .06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppPalette.blue.withValues(alpha: .24)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: AppPalette.blue,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Read-only build',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Vehicle operations remain read-only in this build.',
+                        style: TextStyle(
+                          color: muted,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -264,6 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _section(BuildContext context, {required List<Widget> children}) =>
       Container(
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: AppPalette.surface(widget.isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
@@ -273,4 +342,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         child: Column(children: children),
       );
+
+  Widget _dropdownFrame({required Widget child}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    decoration: BoxDecoration(
+      color: AppPalette.blue.withValues(alpha: widget.isDark ? .10 : .06),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppPalette.blue.withValues(alpha: .22)),
+    ),
+    child: DropdownButtonHideUnderline(child: child),
+  );
+
+  Widget _sectionHeading(String title) => Semantics(
+    header: true,
+    child: Text(
+      title,
+      style: TextStyle(
+        color: AppPalette.blue,
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+        letterSpacing: .2,
+      ),
+    ),
+  );
 }

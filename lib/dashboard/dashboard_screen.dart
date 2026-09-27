@@ -34,12 +34,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 const maxDiagnosticEvents = 100000;
+const maxTraceSessionBytes = 12 * 1024 * 1024;
 const maxConnectionTimelineEntries = 10000;
 
 const dashboardHorizontalPadding = 16.0;
 const maxLiveSensors = 4;
 const floatingConnectionPanelClearance = 96.0;
 const _androidNetworkChannel = MethodChannel('bimmerscope/android_network');
+
+void _startAndroidVehicleSessionService() {
+  if (!Platform.isAndroid) return;
+  unawaited(
+    _androidNetworkChannel
+        .invokeMethod<bool>('startVehicleSessionService')
+        .catchError((_) => false),
+  );
+}
+
+void _stopAndroidVehicleSessionService() {
+  if (!Platform.isAndroid) return;
+  unawaited(
+    _androidNetworkChannel
+        .invokeMethod<bool>('stopVehicleSessionService')
+        .catchError((_) => false),
+  );
+}
 
 String _statusLabelForPhase(String phase) => switch (phase) {
   'connected' => 'Connected',
@@ -81,6 +100,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   IOSink? _diagnosticsSink;
   Timer? _diagnosticsFlushTimer;
   final _pendingDiagnostics = <Map<String, Object?>>[];
+  int _diagnosticsBytesWritten = 0;
+  bool _diagnosticsTruncated = false;
   String? _activeDiagnosticsSessionId;
   bool _diagnosticsArmed = false;
   DateTime? firstSessionStartedAt;
@@ -137,6 +158,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   Timer? _layoutSaveTimer;
   DateTime? lastTelemetryAt;
   DateTime? _lastSensorSampleAt;
+  final Map<String, DateTime> _lastSensorAtById = {};
+  String? _lastSuccessfulSensorId;
+  DateTime? _lastSuccessfulSensorAt;
   int telemetryGapCount = 0;
   int maxTelemetryGapMs = 0;
   bool telemetryDegraded = false;
@@ -172,7 +196,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         kind == 'poll_retry' ||
         kind == 'reconnecting' ||
         kind == 'error' ||
-        kind == 'warning';
+        kind == 'warning' ||
+        (type == 'action' &&
+            (record['message'] as String?)?.startsWith('Flap command ') ==
+                true);
     if (_diagnosticsLevel == AppDiagnosticsLevel.normal && !important) {
       return;
     }
@@ -185,6 +212,32 @@ class _DashboardScreenState extends State<DashboardScreen>
       'timestamp': DateTime.now().toIso8601String(),
       ...record,
     };
+    final encoded = jsonEncode(complete);
+    if (_diagnosticsLevel == AppDiagnosticsLevel.trace &&
+        _diagnosticsBytesWritten + encoded.length + 1 > maxTraceSessionBytes &&
+        !important) {
+      if (!_diagnosticsTruncated) {
+        _diagnosticsTruncated = true;
+        final truncated = jsonEncode({
+          'timestamp': DateTime.now().toIso8601String(),
+          'type': 'diagnostics_truncated',
+          'limitBytes': maxTraceSessionBytes,
+          'message':
+              'High-volume Trace records were stopped at the session size limit.',
+        });
+        _diagnosticsBytesWritten += truncated.length + 1;
+        final sink = _diagnosticsSink;
+        if (sink == null) {
+          _pendingDiagnostics.add(
+            jsonDecode(truncated) as Map<String, Object?>,
+          );
+        } else {
+          sink.writeln(truncated);
+        }
+      }
+      return;
+    }
+    _diagnosticsBytesWritten += encoded.length + 1;
     final sink = _diagnosticsSink;
     if (sink == null) {
       if (_pendingDiagnostics.length < maxDiagnosticEvents) {
@@ -192,7 +245,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       }
       return;
     }
-    sink.writeln(jsonEncode(complete));
+    sink.writeln(encoded);
   }
 
   Future<void> _startDiagnosticsSession({
@@ -203,6 +256,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     await _finishDiagnosticsSession();
     _diagnosticsLevel = await appDiagnosticsStore.level();
     _diagnosticsArmed = true;
+    _diagnosticsBytesWritten = 0;
+    _diagnosticsTruncated = false;
     diagnosticSessionCount++;
     firstSessionStartedAt ??= startedAt;
     try {
@@ -678,7 +733,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (age < const Duration(seconds: 30)) return;
     logUserAction('Telemetry became stale; ending the session');
     unawaited(_finishDiagnosticsSession());
-    stopSession();
+    _stopVehicleSession();
     setState(() {
       clearVehicleIdentity();
       values.clear();
@@ -709,7 +764,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       'Ignition-off signature detected; ending session '
       '(RPM ${rpm.toStringAsFixed(0)}, battery ${battery.toStringAsFixed(2)} V)',
     );
-    stopSession();
+    _stopVehicleSession();
     subscription?.cancel();
     connectionStatus.dispose();
     subscription = null;
@@ -735,7 +790,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     unawaited(logger.dispose());
     unawaited(_finishDiagnosticsSession());
     if (!widget.previewMode) {
-      stopSession();
+      _stopVehicleSession();
     }
     super.dispose();
   }
@@ -756,6 +811,13 @@ class _DashboardScreenState extends State<DashboardScreen>
         unawaited(_persistFlapPreference(vin, mode));
       }
       logUserAction('Flap command acknowledged: $mode');
+    } catch (error) {
+      logUserAction('Flap command failed: $mode; $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Flap command not confirmed: $error')),
+        );
+      }
     } finally {
       flapCommandInFlight = false;
     }
@@ -778,13 +840,6 @@ class _DashboardScreenState extends State<DashboardScreen>
           isDark: widget.isDark,
           connectionStatus: connectionStatus,
           initialMode: flapMode,
-          onRunTest: () async {
-            if (demoActive) {
-              await Future<void>.delayed(const Duration(milliseconds: 350));
-              return;
-            }
-            await experimentalExhaustFlapServiceTest();
-          },
           onSetMode: setFlapMode,
           autoApply: flapAutoApply,
           onAutoApplyChanged: (enabled) {
@@ -859,9 +914,12 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (mounted) setState(() => landscape = next);
   }
 
-  void connect({bool demo = false, bool simulator = false}) {
+  Future<void> connect({bool demo = false, bool simulator = false}) async {
     if (widget.previewMode) return;
-    if (active) return disconnect();
+    if (active) {
+      disconnect();
+      return;
+    }
     // A new source/session must never append to the previous recording.
     if (logger.isRecording) unawaited(stopLogging());
     HapticFeedback.selectionClick();
@@ -889,6 +947,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       lastConnectionHealthAt = null;
       lastTelemetryAt = null;
       _lastSensorSampleAt = null;
+      _lastSensorAtById.clear();
+      _lastSuccessfulSensorId = null;
+      _lastSuccessfulSensorAt = null;
       telemetryGapCount = 0;
       maxTelemetryGapMs = 0;
       telemetryDegraded = false;
@@ -904,16 +965,18 @@ class _DashboardScreenState extends State<DashboardScreen>
           ? 'Starting simulated vehicle'
           : 'Searching for your vehicle';
     });
-    unawaited(
-      previousDiagnostics.then(
-        (_) => _startDiagnosticsSession(
-          id: newSessionId,
-          source: source,
-          startedAt: startedAt,
-        ),
-      ),
+    await previousDiagnostics;
+    await _startDiagnosticsSession(
+      id: newSessionId,
+      source: source,
+      startedAt: startedAt,
+    );
+    configureTransportDiagnostics(
+      level: _diagnosticsLevel.name,
+      sessionId: newSessionId,
     );
     if (!demo && !simulator) {
+      _startAndroidVehicleSessionService();
       unawaited(
         _androidNetworkChannel
             .invokeMethod<bool>('bindEthernet')
@@ -937,11 +1000,16 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
+  void _stopVehicleSession() {
+    _stopAndroidVehicleSessionService();
+    stopSession();
+  }
+
   void _handleSessionStreamError(Object error, int generation) {
     if (!mounted || generation != _sessionGeneration) return;
     logUserAction('Session stream error: $error');
     unawaited(_finishDiagnosticsSession());
-    stopSession();
+    _stopVehicleSession();
     if (logger.isRecording) unawaited(stopLogging());
     setState(() {
       sessionResumeInProgress = false;
@@ -1006,7 +1074,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (logger.isRecording) unawaited(stopLogging());
     logUserAction('Clicked Disconnect');
     unawaited(_finishDiagnosticsSession());
-    stopSession();
+    _stopVehicleSession();
     subscription?.cancel();
     subscription = null;
     setState(() {
@@ -1041,12 +1109,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> pauseLiveSessionForScan() async {
     if (!live || simulatorActive) return;
     logUserAction('Paused live session for diagnostic scan');
-    stopSession();
+    _stopVehicleSession();
     await subscription?.cancel();
     subscription = null;
-    // Give the Rust session worker and ENET gateway time to finish closing
-    // before the diagnostic scan opens a fresh TCP session.
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    await stopSessionAndWait(timeoutMs: BigInt.from(5000));
     if (mounted) setState(() => phase = 'offline');
   }
 
@@ -1328,7 +1394,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       logUserAction('Automatic recovery paused by reconnect setting');
       unawaited(_finishDiagnosticsSession());
       if (logger.isRecording) unawaited(stopLogging());
-      stopSession();
+      _stopVehicleSession();
       setState(() {
         phase = 'error';
         detail = 'Connection paused. Tap Retry when the adapter is ready.';
@@ -1347,6 +1413,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       'rawValue': event.rawValue,
       'vin': event.vin,
       'ecuAddress': event.ecuAddress,
+      'transportRequestId': event.transportRequestId.toString(),
+      'transportRequestOperation': event.transportRequestOperation,
+      'transportRequestAgeMs': event.transportRequestAgeMs.toInt(),
+      'transportRetryCount': event.transportRetryCount,
+      'transportSocketState': event.transportSocketState,
+      'transportRecoveryAction': event.transportRecoveryAction,
+      'transportRecoveryResult': event.transportRecoveryResult,
     });
     if (event.kind == 'sensor') {
       final now = DateTime.now();
@@ -1357,15 +1430,47 @@ class _DashboardScreenState extends State<DashboardScreen>
         if (gapMs > 1500) {
           telemetryGapCount++;
           if (gapMs > maxTelemetryGapMs) maxTelemetryGapMs = gapMs;
+          final channelAges = <String, Object?>{
+            for (final sensorId in visibleSensorIds)
+              sensorId: _lastSensorAtById[sensorId] == null
+                  ? null
+                  : now.difference(_lastSensorAtById[sensorId]!).inMilliseconds,
+          };
           _writeDiagnosticRecord({
             'type': 'telemetry_gap',
             'gapMs': gapMs,
             'sensorId': event.sensorId,
             'gapCount': telemetryGapCount,
+            'lastSuccessfulChannel': _lastSuccessfulSensorId,
+            'lastSuccessfulTimestamp': _lastSuccessfulSensorAt
+                ?.toIso8601String(),
+            'outstandingRequest': {
+              'id': event.transportRequestId == BigInt.zero
+                  ? null
+                  : event.transportRequestId.toString(),
+              'operation': event.transportRequestOperation.isEmpty
+                  ? null
+                  : event.transportRequestOperation,
+              'ageMs': event.transportRequestAgeMs.toInt(),
+            },
+            'retryCount': event.transportRetryCount,
+            'socketState': event.transportSocketState.isEmpty
+                ? phase
+                : event.transportSocketState,
+            'perChannelSampleAgeMs': channelAges,
+            'recoveryAction': event.transportRecoveryAction.isEmpty
+                ? 'none_recorded'
+                : event.transportRecoveryAction,
+            'recoveryResult': event.transportRecoveryResult.isEmpty
+                ? 'not_recorded'
+                : event.transportRecoveryResult,
           });
         }
       }
       _lastSensorSampleAt = now;
+      _lastSensorAtById[event.sensorId] = now;
+      _lastSuccessfulSensorId = event.sensorId;
+      _lastSuccessfulSensorAt = now;
       if (telemetryDegraded) telemetryDegraded = false;
       final sensor = sensorsById[event.sensorId];
       if (sensor?.id == 'engine_rpm' && !_acceptRpmSample(event.value)) {
@@ -1486,6 +1591,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           telemetryDegraded = false;
           lastTelemetryAt = null;
           _lastSensorSampleAt = null;
+          _lastSensorAtById.clear();
+          _lastSuccessfulSensorId = null;
+          _lastSuccessfulSensorAt = null;
           if (logger.isRecording) unawaited(stopLogging());
         }
         connectionStatus.value = connectionStageLabel;
@@ -1508,6 +1616,9 @@ class _DashboardScreenState extends State<DashboardScreen>
           engineEcuDetected = false;
           lastTelemetryAt = null;
           _lastSensorSampleAt = null;
+          _lastSensorAtById.clear();
+          _lastSuccessfulSensorId = null;
+          _lastSuccessfulSensorAt = null;
           telemetryDegraded = false;
           monitoringActive = false;
           engineEcuIdentity = null;
@@ -1692,7 +1803,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
           duration: const Duration(seconds: 2),
           action: SnackBarAction(
-            label: 'LOGS',
+            label: 'Logs',
             onPressed: () => setState(() => selectedTab = 3),
           ),
         ),
@@ -1974,7 +2085,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       backgroundColor: background,
       clipBehavior: Clip.antiAlias,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(38)),
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
       ),
       child: SafeArea(
         bottom: false,
@@ -2015,12 +2126,19 @@ class _DashboardScreenState extends State<DashboardScreen>
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      '${BuildInfo.version} · ${ProductConfig.editionName}',
-                      style: const TextStyle(
-                        color: Color(0xFFDAE9FF),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w400,
+                    SizedBox(
+                      width: double.infinity,
+                      child: FittedBox(
+                        alignment: Alignment.centerLeft,
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${BuildInfo.version} · ${ProductConfig.editionName}',
+                          style: const TextStyle(
+                            color: Color(0xFFDAE9FF),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -2218,69 +2336,78 @@ class _DashboardScreenState extends State<DashboardScreen>
     return Padding(
       padding: EdgeInsets.fromLTRB(20, topPadding, 18, bottomPadding),
       child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 66,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: iconBackground == null
-                        ? Icon(icon, color: activeColor, size: 27)
-                        : Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: iconBackground,
-                              shape: BoxShape.circle,
+        color: selected
+            ? AppPalette.blue.withValues(alpha: .10)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: subtitle == null ? title : '$title, $subtitle',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 66,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: iconBackground == null
+                          ? Icon(icon, color: activeColor, size: 27)
+                          : Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: iconBackground,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                icon,
+                                color: iconColor ?? activeColor,
+                                size: 29,
+                              ),
                             ),
-                            child: Icon(
-                              icon,
-                              color: iconColor ?? activeColor,
-                              size: 29,
-                            ),
-                          ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: selected ? AppPalette.blue : foreground,
-                            fontSize: subtitle == null ? 18 : 20,
-                            fontWeight: subtitle == null
-                                ? FontWeight.w400
-                                : FontWeight.w500,
-                            letterSpacing: subtitle == null ? -.15 : -.35,
-                          ),
-                        ),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            subtitle,
-                            style: TextStyle(
-                              color: muted,
-                              fontSize: 13,
-                              height: 1.25,
-                            ),
-                          ),
-                        ],
-                      ],
                     ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              color: selected ? AppPalette.blue : foreground,
+                              fontSize: subtitle == null ? 18 : 20,
+                              fontWeight: subtitle == null
+                                  ? FontWeight.w400
+                                  : FontWeight.w500,
+                              letterSpacing: subtitle == null ? -.15 : -.35,
+                            ),
+                          ),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                color: muted,
+                                fontSize: 13,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -2290,11 +2417,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget connectionStatusPill() {
     final label = connectionStageLabel;
-    final color = live
-        ? AppPalette.green
-        : active
-        ? AppPalette.orange
-        : AppPalette.red;
+    final tone = AppPalette.connectionTone(label);
+    final color = AppPalette.status(tone, widget.isDark);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppPalette.surface(widget.isDark),
@@ -2313,11 +2437,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
+            Icon(AppPalette.statusIcon(tone), size: 14, color: color),
             const SizedBox(width: 7),
             Text(
               label,
@@ -2335,10 +2455,12 @@ class _DashboardScreenState extends State<DashboardScreen>
         phase == 'identifying' ||
         phase == 'discovering' ||
         phase == 'reconnecting';
-    final color = connecting
-        ? AppPalette.orange
-        : active
-        ? AppPalette.green
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final backgroundColor = active
+        ? AppPalette.surface(widget.isDark)
+        : AppPalette.blue;
+    final foregroundColor = active
+        ? Theme.of(context).colorScheme.onSurface
         : Colors.white;
     return SizedBox(
       key: const Key('vehicle-connect-button'),
@@ -2347,12 +2469,13 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: FilledButton.icon(
         onPressed: _handleConnectTap,
         style: FilledButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: connecting || active
-              ? Colors.white
-              : const Color(0xFF123B86),
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          side: active
+              ? BorderSide(color: AppPalette.separator(widget.isDark))
+              : BorderSide.none,
         ),
-        icon: connecting
+        icon: connecting && !reduceMotion
             ? const SizedBox(
                 width: 18,
                 height: 18,
@@ -2362,7 +2485,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               )
             : Icon(
-                active
+                connecting
+                    ? Icons.sync_rounded
+                    : active
                     ? Icons.check_circle_outline_rounded
                     : Icons.radar_rounded,
               ),
@@ -2377,11 +2502,10 @@ class _DashboardScreenState extends State<DashboardScreen>
         phase == 'identifying' ||
         phase == 'discovering' ||
         phase == 'reconnecting';
-    final color = connecting
-        ? AppPalette.orange
-        : active
-        ? AppPalette.green
-        : AppPalette.blue;
+    // This is an action control, not a status indicator. Its status is shown
+    // separately by connectionStatusPill, so the action remains primary blue.
+    const color = AppPalette.blue;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Column(
       children: [
         Semantics(
@@ -2410,7 +2534,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ],
               ),
               child: Center(
-                child: connecting
+                child: connecting && !reduceMotion
                     ? SizedBox(
                         width: 24,
                         height: 24,
@@ -2420,7 +2544,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ),
                       )
                     : Icon(
-                        active ? Icons.link_rounded : Icons.link_off_rounded,
+                        connecting
+                            ? Icons.sync_rounded
+                            : active
+                            ? Icons.link_rounded
+                            : Icons.link_off_rounded,
                         color: color,
                         size: 26,
                       ),
@@ -2532,7 +2660,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                             child: ConnectionStatusChip(
                               label: _statusLabelForPhase(phase),
                               isDark: widget.isDark,
-                              compact: true,
+                              iconOnly: true,
                             ),
                           ),
                         ],
@@ -2546,74 +2674,84 @@ class _DashboardScreenState extends State<DashboardScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          live && vin != 'Not identified' ? vin : 'Your car',
-                          style: TextStyle(
-                            color: widget.isDark
-                                ? const Color(0xFF8E98A8)
-                                : const Color(0xFF6E6E73),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2,
+                        SizedBox(
+                          height: 12,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              live && vin != 'Not identified'
+                                  ? vin
+                                  : 'Your car',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: widget.isDark
+                                    ? const Color(0xFF8E98A8)
+                                    : const Color(0xFF6E6E73),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: .4,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 5),
-                        if (live && vin != 'Not identified')
-                          RichText(
-                            text: TextSpan(
-                              style: TextStyle(
-                                color: widget.isDark
-                                    ? Colors.white
-                                    : const Color(0xFF1C1C1E),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: -0.45,
-                              ),
-                              children: [
-                                const TextSpan(text: 'BMW '),
-                                TextSpan(
-                                  text:
-                                      '${identifyVehicle(vin)?.chassis ?? 'F-series'} '
-                                      '${identifyVehicle(vin)?.model ?? ''}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          const Text(
-                            'Not identified',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.45,
-                            ),
-                          ),
                         SizedBox(
-                          height: 38,
-                          child: live && vin != 'Not identified'
-                              ? Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: TextButton.icon(
-                                    onPressed: showVehicleDetails,
-                                    icon: const Icon(
-                                      Icons.arrow_forward_rounded,
-                                      size: 15,
-                                    ),
-                                    label: const Text('More'),
-                                    style: TextButton.styleFrom(
-                                      minimumSize: const Size(96, 38),
-                                      alignment: Alignment.centerLeft,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
+                          height: 34,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              layoutBuilder: (currentChild, previousChildren) =>
+                                  Stack(
+                                    alignment: Alignment.centerLeft,
+                                    children: [
+                                      ...previousChildren,
+                                      if (currentChild != null) currentChild,
+                                    ],
+                                  ),
+                              child: live && vin != 'Not identified'
+                                  ? RichText(
+                                      key: const ValueKey('identified-vehicle'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      text: TextSpan(
+                                        style: TextStyle(
+                                          color: widget.isDark
+                                              ? Colors.white
+                                              : const Color(0xFF1C1C1E),
+                                          fontSize: 28,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: -0.45,
+                                        ),
+                                        children: [
+                                          const TextSpan(text: 'BMW '),
+                                          TextSpan(
+                                            text:
+                                                '${identifyVehicle(vin)?.chassis ?? 'F-series'} '
+                                                '${identifyVehicle(vin)?.model ?? ''}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Not identified',
+                                      key: ValueKey('unidentified-vehicle'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.45,
                                       ),
                                     ),
-                                  ),
-                                )
-                              : null,
+                            ),
+                          ),
                         ),
+                        SizedBox(height: 38, child: const SizedBox.shrink()),
                       ],
                     ),
                   ),
@@ -2698,36 +2836,34 @@ class _DashboardScreenState extends State<DashboardScreen>
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        vertical: 14,
+                        vertical: 8,
                         horizontal: 4,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              vehicleQuickAction(
-                                Icons.speed_rounded,
-                                'Monitor',
-                                () => selectTab(1),
-                              ),
                               vehicleQuickAction(
                                 Icons.settings_remote_rounded,
                                 'Flap',
                                 (_flapControlAvailable || demoActive)
                                     ? showFlapControl
                                     : null,
+                                accentColor: flapMode == 'open'
+                                    ? AppPalette.orange
+                                    : flapMode == 'closed'
+                                    ? AppPalette.red
+                                    : null,
                               ),
+                              const SizedBox(width: 12),
                               vehicleQuickAction(
-                                Icons.health_and_safety_rounded,
-                                'Diagnostics',
-                                () => selectTab(2),
-                              ),
-                              vehicleQuickAction(
-                                Icons.show_chart_rounded,
-                                'Logs',
-                                () => selectTab(3),
+                                Icons.directions_car_rounded,
+                                'Details',
+                                live && vin != 'Not identified'
+                                    ? showVehicleDetails
+                                    : null,
                               ),
                             ],
                           ),
@@ -2751,7 +2887,13 @@ class _DashboardScreenState extends State<DashboardScreen>
               left: 16,
               right: 16,
               bottom: 12,
-              child: compactConnectionPanel(),
+              child: SizedBox(
+                height: 92,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: compactConnectionPanel(),
+                ),
+              ),
             ),
           ],
         ),
@@ -2770,11 +2912,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         phase == 'identifying' ||
         phase == 'discovering' ||
         phase == 'reconnecting';
-    final color = connecting
-        ? AppPalette.orange
-        : active
-        ? AppPalette.green
-        : AppPalette.blue;
+    final tone = AppPalette.connectionTone(connectionStageLabel);
+    final color = AppPalette.status(tone, widget.isDark);
     final icon = connecting
         ? Icons.sync_rounded
         : active
@@ -2907,58 +3046,68 @@ class _DashboardScreenState extends State<DashboardScreen>
     required String title,
     required String subtitle,
     required VoidCallback onTap,
-  }) => Material(
-    color: Theme.of(context).colorScheme.surface,
-    borderRadius: BorderRadius.circular(appCardRadius),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(appCardRadius),
-      child: Padding(
-        padding: appCardPadding,
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(14),
+  }) => Semantics(
+    button: true,
+    label: '$title, $subtitle',
+    child: Material(
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(appCardRadius),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: .72),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: Padding(
+          padding: appCardPadding,
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  icon,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 21,
+                ),
               ),
-              child: Icon(
-                icon,
-                color: Theme.of(context).colorScheme.primary,
-                size: 21,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right_rounded),
-          ],
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
         ),
       ),
     ),
@@ -3092,7 +3241,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ConnectionStatusChip(
                       label: _statusLabelForPhase(phase),
                       isDark: widget.isDark,
-                      compact: true,
+                      iconOnly: true,
                     ),
                   ],
                 ),
@@ -3162,15 +3311,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                           connectionOrb(),
                         ],
                       ),
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: ConnectionStatusChip(
-                          label: _statusLabelForPhase(phase),
-                          isDark: widget.isDark,
-                          compact: true,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -3179,13 +3319,16 @@ class _DashboardScreenState extends State<DashboardScreen>
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 9),
               sliver: SliverToBoxAdapter(
-                child: Text(
-                  'Tools',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    height: 1.05,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -.45,
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Tools',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      height: 1.05,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -.45,
+                    ),
                   ),
                 ),
               ),
@@ -3221,11 +3364,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                   hubAction(
                     icon: Icons.settings_remote_rounded,
                     title: 'Flap control',
-                    subtitle: demoActive ? 'Demo' : 'Validated vehicle',
+                    subtitle: demoActive
+                        ? 'Demo'
+                        : _flapControlAvailable
+                        ? 'Validated vehicle'
+                        : 'Available after validation',
                     surface: surface,
                     border: border,
                     muted: muted,
                     onTap: showFlapControl,
+                    enabled: _flapControlAvailable || demoActive,
                   ),
                   hubAction(
                     icon: logger.isRecording
@@ -3271,9 +3419,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Before you connect',
-                              style: TextStyle(fontWeight: FontWeight.w800),
+                            Semantics(
+                              header: true,
+                              child: Text(
+                                'Before you connect',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -3379,35 +3530,43 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget vehicleQuickAction(IconData icon, String label, VoidCallback? onTap) =>
-      SizedBox(
-        width: 64,
-        child: Column(
-          children: [
-            SizedBox(
-              width: 48,
-              height: 48,
-              child: IconButton.filledTonal(
-                onPressed: onTap,
-                icon: Icon(icon, size: 19),
-                tooltip: label,
-                style: IconButton.styleFrom(
-                  foregroundColor: onTap == null
-                      ? AppPalette.secondary(widget.isDark)
-                      : AppPalette.blue,
-                  backgroundColor: AppPalette.blue.withValues(alpha: .12),
-                  overlayColor: AppPalette.blue.withValues(alpha: .16),
-                ),
+  Widget vehicleQuickAction(
+    IconData icon,
+    String label,
+    VoidCallback? onTap, {
+    Color? accentColor,
+  }) => SizedBox(
+    width: 84,
+    child: Column(
+      children: [
+        SizedBox(
+          width: 64,
+          height: 64,
+          child: IconButton.filledTonal(
+            onPressed: onTap,
+            icon: Icon(icon, size: 24),
+            tooltip: label,
+            style: IconButton.styleFrom(
+              foregroundColor: onTap == null
+                  ? AppPalette.secondary(widget.isDark)
+                  : accentColor ?? AppPalette.blue,
+              backgroundColor: (accentColor ?? AppPalette.blue).withValues(
+                alpha: .12,
+              ),
+              overlayColor: (accentColor ?? AppPalette.blue).withValues(
+                alpha: .16,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
-            ),
-          ],
+          ),
         ),
-      );
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
+  );
 
   String get _modelYearLabel {
     return '${identifyVehicle(vin)?.modelYear ?? '-'}';
@@ -3491,58 +3650,80 @@ class _DashboardScreenState extends State<DashboardScreen>
     required Color border,
     required Color muted,
     required VoidCallback onTap,
-  }) => Material(
-    color: surface,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(20),
-      side: BorderSide(color: border.withValues(alpha: .55)),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                icon,
-                color: Theme.of(context).colorScheme.primary,
-                size: 29,
-              ),
+    bool enabled = true,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final tileSurface = enabled
+        ? surface
+        : Color.alphaBlend(scheme.onSurface.withValues(alpha: .035), surface);
+    final tileBorder = enabled
+        ? border.withValues(alpha: .55)
+        : border.withValues(alpha: .3);
+    final tileIcon = enabled
+        ? scheme.primary
+        : scheme.onSurfaceVariant.withValues(alpha: .6);
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: enabled
+          ? 'Open $title. $subtitle'
+          : '$title unavailable. $subtitle',
+      child: Material(
+        color: tileSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: tileBorder),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: tileIcon.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, color: tileIcon, size: 29),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: enabled ? null : scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: enabled ? muted : scheme.onSurfaceVariant,
+                    fontSize: 10,
+                    height: 1.15,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 7),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted, fontSize: 9),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget fullscreenDashboard() => Scaffold(
     backgroundColor: Colors.black,
@@ -3669,7 +3850,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget activeGaugeAlertsCard() {
     final alerts = _activeGaugeAlerts;
     final hasDanger = alerts.any((alert) => alert.danger);
-    final color = hasDanger ? AppPalette.red : Colors.orange;
+    final color = hasDanger ? AppPalette.red : AppPalette.orange;
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
@@ -4138,9 +4319,12 @@ class _DashboardScreenState extends State<DashboardScreen>
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
           children: [
-            Text(
-              'Saved layouts',
-              style: Theme.of(context).textTheme.titleLarge,
+            Semantics(
+              header: true,
+              child: Text(
+                'Saved layouts',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -4148,7 +4332,37 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             const SizedBox(height: 10),
             if (customDashboardPresets.isEmpty)
-              const ListTile(title: Text('No saved layouts yet')),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppPalette.surface(
+                    Theme.of(context).brightness == Brightness.dark,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppPalette.separator(
+                      Theme.of(context).brightness == Brightness.dark,
+                    ),
+                  ),
+                ),
+                child: Semantics(
+                  container: true,
+                  label:
+                      'No saved layouts yet. Save the current dashboard to reuse it later.',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.dashboard_customize_outlined,
+                        color: AppPalette.secondary(
+                          Theme.of(context).brightness == Brightness.dark,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('No saved layouts yet')),
+                    ],
+                  ),
+                ),
+              ),
             for (final name in customDashboardPresets.keys.toList())
               ListTile(
                 leading: const Icon(Icons.bookmark_outline_rounded),
@@ -4178,6 +4392,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                           FilledButton(
                             onPressed: () => Navigator.pop(context, true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppPalette.red,
+                            ),
                             child: const Text('Remove'),
                           ),
                         ],
@@ -4254,7 +4471,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         TextButton.icon(
           onPressed: chooseGauges,
           icon: const Icon(Icons.add_rounded),
-          label: const Text('GAUGES'),
+          label: const Text('Gauges'),
         ),
       ],
     ),
@@ -4508,7 +4725,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 54),
                   backgroundColor: monitoringActive
-                      ? const Color(0xFFB42318)
+                      ? AppPalette.red
                       : Colors.white,
                   foregroundColor: monitoringActive
                       ? Colors.white
@@ -4585,7 +4802,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: ConnectionStatusChip(
             label: _statusLabelForPhase(phase),
             isDark: widget.isDark,
-            compact: true,
+            iconOnly: true,
           ),
         ),
       ],
@@ -4609,7 +4826,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           style: FilledButton.styleFrom(
             minimumSize: const Size(0, 38),
             backgroundColor: monitoringActive
-                ? const Color(0xFFB42318)
+                ? AppPalette.red
                 : AppPalette.blue,
             foregroundColor: Colors.white,
           ),
@@ -4629,6 +4846,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           IconButton(
             tooltip: 'Add log marker',
             onPressed: addLogMarker,
+            color: AppPalette.orange,
             icon: const Icon(Icons.flag_outlined),
           ),
         IconButton(
@@ -4640,6 +4858,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   (live && monitoringActive && !widget.previewMode)
               ? toggleLogging
               : null,
+          color: logger.isRecording ? AppPalette.red : null,
           icon: Icon(
             logger.isRecording
                 ? Icons.stop_rounded
@@ -4659,16 +4878,37 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget eventPanel() => ExpansionTile(
     collapsedBackgroundColor: AppPalette.surface(widget.isDark),
     backgroundColor: AppPalette.surface(widget.isDark),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+    childrenPadding: const EdgeInsets.only(bottom: 8),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
+      ),
+    ),
     collapsedShape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
+      side: BorderSide(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
+      ),
     ),
-    title: const Text(
-      'SESSION EVENTS',
+    leading: const Icon(Icons.timeline_rounded, size: 20),
+    title: Semantics(
+      header: true,
+      child: const Text(
+        'Session events',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .2,
+        ),
+      ),
+    ),
+    subtitle: Text(
+      events.isEmpty ? 'No events captured' : '${events.length} recent events',
       style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
+        fontSize: 11,
+        color: AppPalette.secondary(widget.isDark),
       ),
     ),
     children: [
@@ -4680,25 +4920,47 @@ class _DashboardScreenState extends State<DashboardScreen>
             ? const Color(0xFF0A0E13)
             : const Color(0xFFF6F8FB),
         child: events.isEmpty
-            ? Text(
-                'No events yet',
-                style: TextStyle(
-                  color: widget.isDark ? Color(0xFF697586) : Color(0xFF64748B),
+            ? Semantics(
+                container: true,
+                label:
+                    'No session events yet. Connection and monitoring activity will appear here.',
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.hourglass_empty_rounded,
+                        size: 18,
+                        color: AppPalette.secondary(widget.isDark),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'No events yet',
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
             : ListView(
                 children: events
                     .map(
-                      (text) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          text,
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            color: widget.isDark
-                                ? Color(0xFF9AA7B8)
-                                : Color(0xFF475569),
+                      (text) => Semantics(
+                        container: true,
+                        label: 'Session event: $text',
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            text,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              color: widget.isDark
+                                  ? Color(0xFF9AA7B8)
+                                  : Color(0xFF475569),
+                            ),
                           ),
                         ),
                       ),
@@ -4764,17 +5026,18 @@ class VehicleDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final secondary = isDark
-        ? const Color(0xFF98989F)
-        : const Color(0xFF6E6E73);
+    final secondary = AppPalette.secondary(isDark);
     return Scaffold(
       appBar: AppBar(title: const Text('Vehicle details')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          Text(
-            identity?.displayLabel ?? 'Vehicle',
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          Semantics(
+            header: true,
+            child: Text(
+              identity?.displayLabel ?? 'Vehicle',
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -4782,29 +5045,54 @@ class VehicleDetailsScreen extends StatelessWidget {
             style: TextStyle(color: secondary, fontSize: 13, letterSpacing: .4),
           ),
           const SizedBox(height: 24),
-          _detail('Chassis', identity?.chassis ?? '-', secondary),
-          _detail('Model', identity?.model ?? '-', secondary),
-          _detail('Model year', '${identity?.modelYear ?? '-'}', secondary),
-          _detail(
-            'Mileage',
-            mileageKm == null ? '-' : '${mileageKm!.round()} km',
-            secondary,
-          ),
-          _detail('Engine', identity?.engine ?? '-', secondary),
-          _detail('Transmission', identity?.transmission ?? '-', secondary),
-          _detail(
-            'Engine ECU',
-            engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
-            secondary,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: AppPalette.surface(isDark),
+              borderRadius: BorderRadius.circular(appCardRadius),
+              border: Border.all(
+                color: AppPalette.separator(isDark).withValues(alpha: .5),
+              ),
+            ),
+            child: Column(
+              children: [
+                _detail('Chassis', identity?.chassis ?? '-', secondary),
+                _detail('Model', identity?.model ?? '-', secondary),
+                _detail(
+                  'Model year',
+                  '${identity?.modelYear ?? '-'}',
+                  secondary,
+                ),
+                _detail(
+                  'Mileage',
+                  mileageKm == null ? '-' : '${mileageKm!.round()} km',
+                  secondary,
+                ),
+                _detail('Engine', identity?.engine ?? '-', secondary),
+                _detail(
+                  'Transmission',
+                  identity?.transmission ?? '-',
+                  secondary,
+                ),
+                _detail(
+                  'Engine ECU',
+                  engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
+                  secondary,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'DME identification',
-            style: TextStyle(
-              color: secondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: .5,
+          Semantics(
+            header: true,
+            child: Text(
+              'DME identification',
+              style: TextStyle(
+                color: secondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .5,
+              ),
             ),
           ),
           _detail('Hardware number', _value(engineEcuHardware), secondary),
@@ -4854,13 +5142,16 @@ class VehicleDetailsScreen extends StatelessWidget {
             secondary,
           ),
           const SizedBox(height: 12),
-          Text(
-            'BMW routine 0205',
-            style: TextStyle(
-              color: secondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: .5,
+          Semantics(
+            header: true,
+            child: Text(
+              'BMW routine 0205',
+              style: TextStyle(
+                color: secondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: .5,
+              ),
             ),
           ),
           _detail(
@@ -4899,54 +5190,65 @@ class VehicleDetailsScreen extends StatelessWidget {
     String value,
     Color secondary, {
     bool identifier = false,
-  }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    child: identifier
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: TextStyle(color: secondary, fontSize: 13)),
-              const SizedBox(height: 5),
-              SizedBox(
-                width: double.infinity,
-                child: FittedBox(
-                  alignment: Alignment.centerRight,
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    value,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .2,
+  }) => Semantics(
+    container: true,
+    label: '$label: $value',
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: AppPalette.separator(isDark).withValues(alpha: .42),
+          ),
+        ),
+      ),
+      child: identifier
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(color: secondary, fontSize: 13)),
+                const SizedBox(height: 5),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    alignment: Alignment.centerRight,
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: .2,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          )
-        : Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(color: secondary, fontSize: 13),
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(color: secondary, fontSize: 13),
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    ),
   );
 }
 
@@ -5034,7 +5336,7 @@ class Header extends StatelessWidget {
                   child: ConnectionStatusChip(
                     label: _statusLabelForPhase(phase),
                     isDark: isDark,
-                    compact: true,
+                    iconOnly: true,
                   ),
                 ),
               ],

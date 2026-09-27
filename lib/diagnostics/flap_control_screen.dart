@@ -9,7 +9,6 @@ class FlapControlScreen extends StatefulWidget {
     required this.isDark,
     required this.connectionStatus,
     this.initialMode = 'auto',
-    required this.onRunTest,
     required this.onSetMode,
     required this.autoApply,
     required this.onAutoApplyChanged,
@@ -17,7 +16,6 @@ class FlapControlScreen extends StatefulWidget {
   final bool isDark;
   final ValueListenable<String> connectionStatus;
   final String initialMode;
-  final Future<void> Function() onRunTest;
   final Future<void> Function(String mode) onSetMode;
   final bool autoApply;
   final ValueChanged<bool> onAutoApplyChanged;
@@ -51,20 +49,6 @@ class _FlapControlScreenState extends State<FlapControlScreen> {
     }
   }
 
-  Future<void> runTest() async {
-    if (busy || !_controlsEnabled) return;
-    setState(() => busy = true);
-    try {
-      await widget.onRunTest();
-    } finally {
-      if (mounted) {
-        setState(() {
-          busy = false;
-        });
-      }
-    }
-  }
-
   bool get _controlsEnabled => const {
     'connected',
     'monitoring',
@@ -72,52 +56,6 @@ class _FlapControlScreenState extends State<FlapControlScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final landscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final controls = landscape
-        ? Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _positionButton(
-                  'open',
-                  'Open',
-                  Icons.arrow_upward_rounded,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _positionButton(
-                  'auto',
-                  'Auto',
-                  Icons.autorenew_rounded,
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _positionButton(
-                  'closed',
-                  'Close',
-                  Icons.arrow_downward_rounded,
-                  compact: true,
-                ),
-              ),
-            ],
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _positionButton('open', 'Open', Icons.arrow_upward_rounded),
-              const SizedBox(height: 10),
-              _positionButton('auto', 'Auto', Icons.autorenew_rounded),
-              const SizedBox(height: 10),
-              _positionButton('closed', 'Close', Icons.arrow_downward_rounded),
-            ],
-          );
-
     return AnimatedBuilder(
       animation: widget.connectionStatus,
       builder: (context, _) {
@@ -134,54 +72,140 @@ class _FlapControlScreenState extends State<FlapControlScreen> {
                   child: ConnectionStatusChip(
                     label: connectionLabel,
                     isDark: widget.isDark,
-                    compact: true,
+                    iconOnly: true,
                   ),
                 ),
               ),
             ],
           ),
-          body: Padding(
-            padding: EdgeInsets.fromLTRB(20, 12, 20, landscape ? 16 : 24),
-            child: Column(
-              children: [
-                Expanded(child: Center(child: controls)),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Auto-apply saved setting'),
-                  subtitle: Text(
-                    widget.autoApply
-                        ? 'Apply ${mode == 'open'
-                              ? 'Open'
-                              : mode == 'closed'
-                              ? 'Closed'
-                              : 'Auto'} when this VIN connects'
-                        : 'Ask before changing the flap on connect',
-                  ),
-                  value: widget.autoApply,
-                  onChanged: _controlsEnabled
-                      ? widget.onAutoApplyChanged
-                      : null,
-                ),
-                SizedBox(
-                  height: landscape ? 46 : 52,
-                  child: FilledButton.icon(
-                    onPressed: busy || !_controlsEnabled ? null : runTest,
-                    style: FilledButton.styleFrom(
-                      foregroundColor: Colors.white,
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final landscape = constraints.maxWidth > constraints.maxHeight;
+              final controls = landscape
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _positionButton(
+                            'open',
+                            'Open',
+                            Icons.arrow_upward_rounded,
+                            compact: true,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _positionButton(
+                            'auto',
+                            'Auto',
+                            Icons.autorenew_rounded,
+                            compact: true,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _positionButton(
+                            'closed',
+                            'Close',
+                            Icons.arrow_downward_rounded,
+                            compact: true,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _positionButton(
+                          'open',
+                          'Open',
+                          Icons.arrow_upward_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _positionButton(
+                          'auto',
+                          'Auto',
+                          Icons.autorenew_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        _positionButton(
+                          'closed',
+                          'Close',
+                          Icons.arrow_downward_rounded,
+                        ),
+                      ],
+                    );
+
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      12,
+                      20,
+                      landscape ? 16 : 24,
                     ),
-                    icon: const Icon(Icons.sync_rounded, size: 20),
-                    label: const Text(
-                      'Run cyclic service test',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Auto-apply saved setting',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      widget.autoApply
+                                          ? 'Apply ${mode == 'open'
+                                                ? 'Open'
+                                                : mode == 'closed'
+                                                ? 'Closed'
+                                                : 'Auto'} when this VIN connects'
+                                          : 'Ask before changing on connect',
+                                      style: TextStyle(
+                                        color: AppPalette.secondary(
+                                          widget.isDark,
+                                        ),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Switch.adaptive(
+                                value: widget.autoApply,
+                                onChanged: _controlsEnabled
+                                    ? widget.onAutoApplyChanged
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        controls,
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -198,30 +222,62 @@ class _FlapControlScreenState extends State<FlapControlScreen> {
     final child = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        Icon(icon, size: compact ? 24 : 30),
+        SizedBox(width: compact ? 9 : 12),
         Text(
-          label.toUpperCase(),
-          style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+          label,
+          style: TextStyle(
+            fontSize: compact ? 26 : 30,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ],
     );
     final style = ButtonStyle(
       minimumSize: WidgetStatePropertyAll(Size.fromHeight(compact ? 104 : 148)),
+      padding: WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: compact ? 12 : 20, vertical: 16),
+      ),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
+      side: WidgetStatePropertyAll(
+        BorderSide(
+          color: selected
+              ? value == 'open'
+                    ? AppPalette.orange
+                    : value == 'closed'
+                    ? AppPalette.red
+                    : AppPalette.blue
+              : AppPalette.separator(widget.isDark).withValues(alpha: .75),
+          width: 1,
+        ),
+      ),
     );
-    return selected
-        ? FilledButton(
-            onPressed: _controlsEnabled && !busy ? () => choose(value) : null,
-            style: style.copyWith(
-              foregroundColor: const WidgetStatePropertyAll(Colors.white),
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Flap position $label',
+      child: selected
+          ? FilledButton(
+              onPressed: _controlsEnabled && !busy ? () => choose(value) : null,
+              style: style.copyWith(
+                backgroundColor: value == 'open'
+                    ? const WidgetStatePropertyAll(AppPalette.orange)
+                    : value == 'closed'
+                    ? const WidgetStatePropertyAll(AppPalette.red)
+                    : const WidgetStatePropertyAll(AppPalette.blue),
+                foregroundColor: WidgetStatePropertyAll(
+                  value == 'open' ? const Color(0xFF211600) : Colors.white,
+                ),
+              ),
+              child: child,
+            )
+          : OutlinedButton(
+              onPressed: _controlsEnabled && !busy ? () => choose(value) : null,
+              style: style,
+              child: child,
             ),
-            child: child,
-          )
-        : OutlinedButton(
-            onPressed: _controlsEnabled && !busy ? () => choose(value) : null,
-            style: style,
-            child: child,
-          );
+    );
   }
 }

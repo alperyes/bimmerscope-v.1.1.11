@@ -206,8 +206,8 @@ class _LoggingScreenState extends State<LoggingScreen> {
                       const Spacer(),
                       Text(
                         '${filteredFiles.length} ${filteredFiles.length == 1 ? 'session' : 'sessions'}',
-                        style: const TextStyle(
-                          color: Color(0xFF7A8597),
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
@@ -223,22 +223,57 @@ class _LoggingScreenState extends State<LoggingScreen> {
               ),
             ),
           if (loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              sliver: SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  decoration: BoxDecoration(
+                    color: AppPalette.surface(widget.isDark),
+                    borderRadius: BorderRadius.circular(appCardRadius),
+                    border: Border.all(
+                      color: AppPalette.separator(
+                        widget.isDark,
+                      ).withValues(alpha: .42),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Loading saved sessions',
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(),
+                    ],
+                  ),
+                ),
+              ),
             )
           else if (files.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(28),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              sliver: SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 30),
+                  decoration: BoxDecoration(
+                    color: AppPalette.surface(widget.isDark),
+                    borderRadius: BorderRadius.circular(appCardRadius),
+                    border: Border.all(
+                      color: AppPalette.separator(
+                        widget.isDark,
+                      ).withValues(alpha: .42),
+                    ),
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.insert_chart_outlined_rounded,
-                        size: 44,
+                        size: 42,
                         color: AppPalette.blue,
                       ),
                       const SizedBox(height: 13),
@@ -249,8 +284,8 @@ class _LoggingScreenState extends State<LoggingScreen> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      if (widget.canRecord)
+                      if (widget.canRecord) ...[
+                        const SizedBox(height: 6),
                         Text(
                           'Start a recording to create your first session.',
                           textAlign: TextAlign.center,
@@ -259,18 +294,62 @@ class _LoggingScreenState extends State<LoggingScreen> {
                             fontSize: 11,
                           ),
                         ),
+                      ],
                     ],
                   ),
                 ),
               ),
             )
           else if (filteredFiles.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Text(
-                  'No logs match this search.',
-                  style: TextStyle(color: AppPalette.secondary(widget.isDark)),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              sliver: SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  decoration: BoxDecoration(
+                    color: AppPalette.surface(widget.isDark),
+                    borderRadius: BorderRadius.circular(appCardRadius),
+                    border: Border.all(
+                      color: AppPalette.separator(
+                        widget.isDark,
+                      ).withValues(alpha: .42),
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 34,
+                        color: AppPalette.secondary(widget.isDark),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'No matching sessions',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Try a different filename or clear the search.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppPalette.secondary(widget.isDark),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () {
+                          searchController.clear();
+                          setState(() {});
+                        },
+                        child: const Text('Clear search'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
@@ -341,7 +420,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
             child: ConnectionStatusChip(
               label: widget.connectionLabel,
               isDark: widget.isDark,
-              compact: true,
+              iconOnly: true,
             ),
           ),
         ],
@@ -349,198 +428,241 @@ class _LoggingScreenState extends State<LoggingScreen> {
     ),
   );
 
-  Widget recorderPanel() => Container(
-    padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-    decoration: BoxDecoration(
-      color: AppPalette.surface(widget.isDark),
-      borderRadius: BorderRadius.circular(appCardRadius),
-      border: Border.all(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
-      ),
-    ),
-    child: Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: (widget.isRecording ? AppPalette.red : AppPalette.blue)
-                .withValues(alpha: .13),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(
-            widget.isRecording
-                ? Icons.fiber_manual_record_rounded
-                : Icons.show_chart_rounded,
-            color: widget.isRecording ? AppPalette.red : AppPalette.blue,
-            size: 22,
+  Widget recorderPanel() {
+    final recorderDetail = widget.isRecording
+        ? '${formatDuration(widget.elapsed)} · ${widget.sampleCount} samples'
+        : !widget.canRecord
+        ? 'Connect to record live telemetry'
+        : widget.telemetryDegraded
+        ? 'Connection degraded · waiting for fresh samples'
+        : widget.telemetryGapCount == 0
+        ? 'CSV logs · no gaps recorded'
+        : 'CSV logs · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms';
+    final recorderLabel = widget.isRecording
+        ? 'Recording. $recorderDetail'
+        : 'Data recorder. $recorderDetail';
+    return Semantics(
+      container: true,
+      label: recorderLabel,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        decoration: BoxDecoration(
+          color: AppPalette.surface(widget.isDark),
+          borderRadius: BorderRadius.circular(appCardRadius),
+          border: Border.all(
+            color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.isRecording ? 'Recording' : 'Data recorder',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                widget.isRecording
-                    ? '${formatDuration(widget.elapsed)} · ${widget.sampleCount} samples'
-                    : widget.telemetryDegraded
-                    ? 'Connection degraded · waiting for fresh samples'
-                    : widget.telemetryGapCount == 0
-                    ? 'CSV logs · no gaps recorded'
-                    : 'CSV logs · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppPalette.secondary(widget.isDark),
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        FilledButton(
-          onPressed: widget.isRecording || widget.canRecord
-              ? () async {
-                  await widget.onToggleRecording();
-                  await loadLogs();
-                }
-              : null,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(78, 44),
-            backgroundColor: widget.isRecording
-                ? AppPalette.red
-                : AppPalette.blue,
-          ),
-          child: Text(widget.isRecording ? 'Stop' : 'Record'),
-        ),
-      ],
-    ),
-  );
-
-  Widget autoLogPanel() => Container(
-    padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-    decoration: BoxDecoration(
-      color: AppPalette.surface(widget.isDark),
-      borderRadius: BorderRadius.circular(appCardRadius),
-      border: Border.all(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
-      ),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Automatic pull logging'),
-          subtitle: const Text(
-            'Start at throttle threshold; stop 3 seconds after release.',
-          ),
-          value: widget.autoLogEnabled,
-          onChanged: widget.canRecord
-              ? (enabled) async => widget.onAutoLogChanged(enabled)
-              : null,
-        ),
-        if (widget.autoLogEnabled) ...[
-          Text(
-            'Start threshold: ${widget.autoLogThreshold.round()}% throttle',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          Slider(
-            value: widget.autoLogThreshold,
-            min: 30,
-            max: 95,
-            divisions: 13,
-            label: '${widget.autoLogThreshold.round()}%',
-            onChanged: widget.canRecord
-                ? (value) => widget.onAutoLogThresholdChanged(value)
-                : null,
-          ),
-        ],
-      ],
-    ),
-  );
-
-  Widget logTile(File file) {
-    final stat = file.statSync();
-    final name = file.uri.pathSegments.last;
-    return Container(
-      padding: appCardPadding,
-      decoration: BoxDecoration(
-        color: AppPalette.surface(widget.isDark),
-        borderRadius: BorderRadius.circular(appCardRadius),
-        border: Border.all(
-          color: AppPalette.separator(widget.isDark).withValues(alpha: .55),
-        ),
-      ),
-      child: InkWell(
-        onTap: () => showPlot(file),
-        borderRadius: BorderRadius.circular(appCardRadius),
         child: Row(
           children: [
-            const Icon(Icons.description_outlined, color: AppPalette.blue),
-            const SizedBox(width: 11),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: (widget.isRecording ? AppPalette.red : AppPalette.blue)
+                    .withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                widget.isRecording
+                    ? Icons.fiber_manual_record_rounded
+                    : Icons.show_chart_rounded,
+                color: widget.isRecording ? AppPalette.red : AppPalette.blue,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    widget.isRecording ? 'Recording' : 'Data recorder',
                     style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
-                    '${formatDate(stat.modified)} · ${formatBytes(stat.size)}',
-                    style: const TextStyle(
-                      color: Color(0xFF7A8597),
-                      fontSize: 10,
+                    recorderDetail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppPalette.secondary(widget.isDark),
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
             ),
-            IconButton(
-              tooltip: 'Save CSV log as…',
-              onPressed: () => saveLog(file),
-              icon: const Icon(Icons.save_alt_rounded),
-            ),
-            IconButton(
-              tooltip: 'Share CSV log',
-              onPressed: () async {
-                final sidecar = File('${file.path}.sha256');
-                final metadata = File('${file.path}.metadata.json');
-                await SharePlus.instance.share(
-                  ShareParams(
-                    files: [
-                      XFile(file.path, mimeType: 'text/csv'),
-                      if (await sidecar.exists())
-                        XFile(sidecar.path, mimeType: 'text/plain'),
-                      if (await metadata.exists())
-                        XFile(metadata.path, mimeType: 'application/json'),
-                    ],
-                    subject: 'BimmerScope data log',
-                    text: 'BimmerScope vehicle live-data log',
-                  ),
-                );
-              },
-              icon: const Icon(Icons.ios_share_rounded),
+            const SizedBox(width: 10),
+            FilledButton(
+              onPressed: widget.isRecording || widget.canRecord
+                  ? () async {
+                      await widget.onToggleRecording();
+                      await loadLogs();
+                    }
+                  : null,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(78, 44),
+                backgroundColor: widget.isRecording
+                    ? AppPalette.red
+                    : AppPalette.blue,
+              ),
+              child: Text(widget.isRecording ? 'Stop' : 'Record'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget autoLogPanel() {
+    final detail = widget.canRecord
+        ? 'Start at throttle threshold; stop 3 seconds after release.'
+        : 'Connect to enable automatic pull logging.';
+    return Semantics(
+      container: true,
+      label: 'Automatic pull logging. $detail',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        decoration: BoxDecoration(
+          color: AppPalette.surface(widget.isDark),
+          borderRadius: BorderRadius.circular(appCardRadius),
+          border: Border.all(
+            color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              visualDensity: const VisualDensity(vertical: -2),
+              title: const Text('Automatic pull logging'),
+              subtitle: Text(detail),
+              value: widget.autoLogEnabled,
+              onChanged: widget.canRecord
+                  ? (enabled) async => widget.onAutoLogChanged(enabled)
+                  : null,
+            ),
+            if (widget.autoLogEnabled) ...[
+              Text(
+                'Start threshold: ${widget.autoLogThreshold.round()}% throttle',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Slider(
+                value: widget.autoLogThreshold,
+                min: 30,
+                max: 95,
+                divisions: 13,
+                label: '${widget.autoLogThreshold.round()}%',
+                onChanged: widget.canRecord
+                    ? (value) => widget.onAutoLogThresholdChanged(value)
+                    : null,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget logTile(File file) {
+    final stat = file.statSync();
+    final name = file.uri.pathSegments.last;
+    final metadataLabel =
+        '${formatDate(stat.modified)} · ${formatBytes(stat.size)}';
+    return Semantics(
+      button: true,
+      label: 'Open $name for inspection. $metadataLabel',
+      child: Container(
+        padding: appCardPadding,
+        decoration: BoxDecoration(
+          color: AppPalette.surface(widget.isDark),
+          borderRadius: BorderRadius.circular(appCardRadius),
+          border: Border.all(
+            color: AppPalette.separator(widget.isDark).withValues(alpha: .55),
+          ),
+        ),
+        child: InkWell(
+          onTap: () => showPlot(file),
+          borderRadius: BorderRadius.circular(appCardRadius),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppPalette.blue.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.description_outlined,
+                  color: AppPalette.blue,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      metadataLabel,
+                      style: TextStyle(
+                        color: AppPalette.secondary(widget.isDark),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Save CSV log as…',
+                onPressed: () => saveLog(file),
+                icon: const Icon(Icons.save_alt_rounded),
+              ),
+              IconButton(
+                tooltip: 'Share CSV log',
+                onPressed: () async {
+                  final sidecar = File('${file.path}.sha256');
+                  final metadata = File('${file.path}.metadata.json');
+                  await SharePlus.instance.share(
+                    ShareParams(
+                      files: [
+                        XFile(file.path, mimeType: 'text/csv'),
+                        if (await sidecar.exists())
+                          XFile(sidecar.path, mimeType: 'text/plain'),
+                        if (await metadata.exists())
+                          XFile(metadata.path, mimeType: 'application/json'),
+                      ],
+                      subject: 'BimmerScope data log',
+                      text: 'BimmerScope vehicle live-data log',
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.ios_share_rounded),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -964,6 +1086,11 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppPalette.separator(
+                Theme.of(context).brightness == Brightness.dark,
+              ).withValues(alpha: .5),
+            ),
           ),
           child: Row(
             children: [
@@ -989,9 +1116,12 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           ),
         ),
         const SizedBox(height: 14),
-        Text(
-          widget.fileName,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        Semantics(
+          header: true,
+          child: Text(
+            widget.fileName,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
         ),
         const SizedBox(height: 16),
         _sessionSummary(),
@@ -1017,24 +1147,47 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           _healthFindingsCard(analyzeLog(widget.points)),
         ],
         const SizedBox(height: 16),
-        _plotModeSelector(),
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 4,
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: Theme.of(context).dividerColor.withValues(alpha: .5),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final channel in widget.points.keys)
-                FilterChip(
-                  label: Text(channel),
-                  selected: _visibleChannels.contains(channel),
-                  onSelected: (selected) => setState(
-                    () => selected
-                        ? _visibleChannels.add(channel)
-                        : _visibleChannels.remove(channel),
-                  ),
+              _plotModeSelector(),
+              const SizedBox(height: 14),
+              Semantics(
+                header: true,
+                child: const Text(
+                  'Visible channels',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                 ),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final channel in widget.points.keys)
+                      FilterChip(
+                        label: Text(channel),
+                        selected: _visibleChannels.contains(channel),
+                        onSelected: (selected) => setState(
+                          () => selected
+                              ? _visibleChannels.add(channel)
+                              : _visibleChannels.remove(channel),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -1087,41 +1240,61 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     child: ExpansionTile(
       initiallyExpanded: true,
       leading: const Icon(Icons.flag_outlined),
-      title: const Text(
-        'Log markers',
-        style: TextStyle(fontWeight: FontWeight.w800),
+      title: Semantics(
+        header: true,
+        child: const Text(
+          'Log markers',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
       ),
       subtitle: Text(
         '${widget.markers.length} marked event${widget.markers.length == 1 ? '' : 's'}',
       ),
       children: widget.markers
           .map(
-            (marker) => ListTile(
-              dense: true,
-              leading: const Icon(Icons.bookmark_outline_rounded, size: 18),
-              title: Text(marker),
+            (marker) => Semantics(
+              container: true,
+              label: 'Log marker: $marker',
+              child: ListTile(
+                dense: true,
+                leading: const Icon(Icons.bookmark_outline_rounded, size: 18),
+                title: Text(marker),
+              ),
             ),
           )
           .toList(),
     ),
   );
 
-  Widget _plotModeSelector() => SegmentedButton<bool>(
-    segments: const [
-      ButtonSegment(
-        value: true,
-        icon: Icon(Icons.layers_rounded),
-        label: Text('Shared plot'),
+  Widget _plotModeSelector() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Semantics(
+        header: true,
+        child: Text(
+          'Chart layout',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
       ),
-      ButtonSegment(
-        value: false,
-        icon: Icon(Icons.view_agenda_rounded),
-        label: Text('Separate plots'),
+      const SizedBox(height: 6),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(
+            value: true,
+            icon: Icon(Icons.layers_rounded),
+            label: Text('Shared plot'),
+          ),
+          ButtonSegment(
+            value: false,
+            icon: Icon(Icons.view_agenda_rounded),
+            label: Text('Separate plots'),
+          ),
+        ],
+        selected: {_sharedPlot},
+        onSelectionChanged: (selection) =>
+            setState(() => _sharedPlot = selection.first),
       ),
     ],
-    selected: {_sharedPlot},
-    onSelectionChanged: (selection) =>
-        setState(() => _sharedPlot = selection.first),
   );
 
   Widget _sharedPlotCard() => Container(
@@ -1137,9 +1310,12 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'All channels',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        Semantics(
+          header: true,
+          child: const Text(
+            'All channels',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -1215,32 +1391,40 @@ class _LogPlotPageState extends State<_LogPlotPage> {
       child: ExpansionTile(
         initiallyExpanded: false,
         leading: const Icon(Icons.analytics_outlined),
-        title: const Text(
-          'Session summary',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Semantics(
+          header: true,
+          child: const Text(
+            'Session summary',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
         ),
         subtitle: Text('${rows.length} channels · min / average / max'),
         children: rows
             .map(
-              (row) => Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        row.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              (row) => Semantics(
+                container: true,
+                label:
+                    '${row.label}: minimum ${row.minimum.toStringAsFixed(1)}, average ${row.average.toStringAsFixed(1)}, maximum ${row.maximum.toStringAsFixed(1)}',
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          row.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${row.minimum.toStringAsFixed(1)}  /  ${row.average.toStringAsFixed(1)}  /  ${row.maximum.toStringAsFixed(1)}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                      Text(
+                        '${row.minimum.toStringAsFixed(1)}  /  ${row.average.toStringAsFixed(1)}  /  ${row.maximum.toStringAsFixed(1)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             )
@@ -1271,9 +1455,12 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                 size: 19,
               ),
               const SizedBox(width: 8),
-              Text(
-                ready ? 'Ready for tuner review' : 'Review before sending',
-                style: TextStyle(fontWeight: FontWeight.w800, color: color),
+              Semantics(
+                header: true,
+                child: Text(
+                  ready ? 'Ready for tuner review' : 'Review before sending',
+                  style: TextStyle(fontWeight: FontWeight.w800, color: color),
+                ),
               ),
             ],
           ),
@@ -1286,9 +1473,12 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           ),
           if (quality.channelQuality.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text(
-              'Observed channel sampling',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            Semantics(
+              header: true,
+              child: const Text(
+                'Observed channel sampling',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
             for (final entry in quality.channelQuality.entries)
               Padding(
@@ -1308,7 +1498,7 @@ class _LogPlotPageState extends State<_LogPlotPage> {
 
   Widget _provenanceCard() {
     final status = widget.provenance;
-    final color = status.matchesCsv ? AppPalette.green : Colors.orange;
+    final color = status.matchesCsv ? AppPalette.green : AppPalette.orange;
     final title = status.matchesCsv
         ? 'Capture metadata verified'
         : status.metadataPresent
@@ -1353,13 +1543,21 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: AppPalette.separator(
+          Theme.of(context).brightness == Brightness.dark,
+        ).withValues(alpha: .5),
+      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Review flags',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        Semantics(
+          header: true,
+          child: Text(
+            'Review flags',
+            style: TextStyle(fontWeight: FontWeight.w800),
+          ),
         ),
         const SizedBox(height: 8),
         for (final finding in findings)
@@ -1369,7 +1567,7 @@ class _LogPlotPageState extends State<_LogPlotPage> {
               '• ${finding.message}',
               style: TextStyle(
                 color: finding.severity == LogFindingSeverity.warning
-                    ? Colors.orange
+                    ? AppPalette.orange
                     : null,
               ),
             ),
