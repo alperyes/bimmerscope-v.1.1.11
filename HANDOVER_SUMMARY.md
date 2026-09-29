@@ -1,4 +1,37 @@
-# BimmerScope `1.1.8-experimental.1+73` handover
+# BimmerScope `1.1.9-experimental.1+74` handover
+
+## Current v1.1.9 state — 29 September 2026
+
+- Workspace: `C:\Users\alper\Desktop\v1.1.9`.
+- Branch: `codex/experimental-v1.1.9`, based on v1.1.8 commit `80c15e1`.
+- GitHub repository: `https://github.com/alperyes/bimmerscope-v1.1.9`.
+- Version: `1.1.9-experimental.1+74`; Tune Android package remains
+  `com.bmwenet.bmw_app.tune`. This is a source baseline, not a validated APK.
+- Read `AGENTS.md`, `BIMMERSCOPE_CONTEXT.md`, and
+  `BimmerScope-review-2026-09-05.md` before changes. The review is historical
+  evidence to verify against current source, not a list of automatic tasks.
+- The v1.1.8 source was pushed to GitHub before this checkout was made. It
+  includes the recent Monitor, Diagnostics, Logs, Tune, Connection guide, Help,
+  and flap-control experiments. The v1.1.9 checkout excludes generated build
+  outputs. Do not assume a v1.1.9 APK has been built or installed.
+- Last v1.1.8 Tune APK was installed on the Pixel 10a over wireless debugging;
+  the installed package reported version `1.1.8-experimental.1+73`. The prior
+  handover below predates this installation and contains stale test/APK status.
+- At the v1.1.8 baseline, `flutter analyze --no-pub` passed and Rust tests
+  passed 68/68. `flutter test --no-pub` passed 49 tests and failed one existing
+  dashboard-shell width assertion at `test/widget_test.dart:112`: Scan measured
+  736 px while Connect measured 734 px. No v1.1.9 validation has run yet.
+- Physical flap-control behavior on the F82 is not established. The UI exposes
+  periodic `0A FF`, periodic `FA FF`, and captured BM3-style one-shot Open
+  experiments; do not equate DME acknowledgement with physical valve response.
+  Initial connections, screen-off drops, and reconnection remain worth testing
+  with timestamped app diagnostics and two-direction traffic captures.
+- The N20 bench is separate from the user's stock 2014 F82 M4/DCT. Its DME
+  identification and observed third-party unlock result do not establish the
+  F82's DME software, unlock state, or flash compatibility.
+- No ECU flashing, unlocking, coding, or calibration writing is enabled.
+
+## Historical v1.1.8 notes
 
 ## Current v1.1.8 state — 28 September 2026
 
