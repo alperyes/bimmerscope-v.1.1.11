@@ -40,7 +40,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _progressRail(),
-                    SizedBox(height: page == 0 ? 88 : 32),
+                    const SizedBox(height: 32),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 220),
                       child: page == 0 ? overview() : stepPage(page),
@@ -110,105 +110,23 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
   Widget overview() => Column(
     children: [
       hero(),
-      const SizedBox(height: 28),
+      const SizedBox(height: 22),
       infoCard(
         icon: Icons.directions_car_filled_rounded,
         color: AppPalette.blue,
         title: 'Compatibility',
         body: 'BMW F-series (2012–2019)',
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 8),
       infoCard(
         icon: Icons.cable_rounded,
         color: AppPalette.babyBlue,
         title: 'Supported adapters',
         body: 'Direct ENET cable only.',
       ),
-      const SizedBox(height: 22),
-      setupSummary(),
-      const SizedBox(height: 14),
-      troubleshootingCard(),
-      const SizedBox(height: 18),
+      const SizedBox(height: 16),
       safetyCard(),
     ],
-  );
-
-  Widget setupSummary() => Container(
-    padding: const EdgeInsets.fromLTRB(20, 19, 20, 18),
-    decoration: BoxDecoration(
-      color: AppPalette.blue.withValues(alpha: widget.isDark ? .10 : .07),
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: AppPalette.blue.withValues(alpha: .32)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.cable_rounded, color: AppPalette.blue, size: 25),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'The quick path',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
-              ),
-            ),
-            Text(
-              '4 steps',
-              style: TextStyle(
-                color: AppPalette.secondary(widget.isDark),
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Cable in → ignition on → Ethernet enabled → Find vehicle. BimmerScope reads the car; it does not code or flash it.',
-          style: TextStyle(
-            color: AppPalette.secondary(widget.isDark),
-            fontSize: 15,
-            height: 1.35,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget troubleshootingCard() => Container(
-    padding: const EdgeInsets.fromLTRB(20, 19, 20, 18),
-    decoration: BoxDecoration(
-      color: AppPalette.orange.withValues(alpha: widget.isDark ? .10 : .08),
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(color: AppPalette.orange.withValues(alpha: .38)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.timer_outlined, color: AppPalette.orange, size: 25),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'If it drops after a few minutes',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Before driving, set BimmerScope to Unrestricted battery use in Android settings. This keeps the ENET session active while the screen is off.',
-          style: TextStyle(
-            color: AppPalette.secondary(widget.isDark),
-            fontSize: 15,
-            height: 1.35,
-          ),
-        ),
-      ],
-    ),
   );
 
   Widget stepPage(int index) {
@@ -218,11 +136,27 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
       'Join the ENET network',
       'Find the vehicle',
     ];
-    const bodies = [
-      'Find the port in the driver footwell, then push the OBD2 end in until it is fully seated. Connect the ENET end to the phone or adapter.',
-      'Press the Start/Stop button without pressing the brake or clutch. The dash should wake up; leave the engine off.',
-      'Turn off Wi‑Fi and mobile data. On Android, enable Share via Ethernet / Ethernet tethering. On POCO/Xiaomi: Settings → Portable hotspot → Share via Ethernet.',
-      'Return to Vehicle and tap Connect. Wait for Identifying to finish before opening Monitor or Diagnostics.',
+    const items = [
+      [
+        'Find the OBD2 port in the driver footwell.',
+        'Push the OBD2 end in until it is fully seated.',
+        'Connect the ENET end to the phone or adapter.',
+      ],
+      [
+        'Press Start/Stop without pressing the brake or clutch.',
+        'Check that the dash wakes up.',
+        'Leave the engine off.',
+      ],
+      [
+        'Turn off Wi‑Fi and mobile data.',
+        'On Android, enable Share via Ethernet / Ethernet tethering.',
+        'On POCO/Xiaomi: Settings → Portable hotspot → Share via Ethernet.',
+      ],
+      [
+        'Return to Vehicle and tap Connect.',
+        'Wait for Identifying to finish.',
+        'Then open Monitor or Diagnostics.',
+      ],
     ];
     return Column(
       children: [
@@ -238,7 +172,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        step(index, titles[index - 1], bodies[index - 1], last: true),
+        step(index, titles[index - 1], last: true, items: items[index - 1]),
         if (index == 3) ...[
           const SizedBox(height: 10),
           Align(
@@ -458,8 +392,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     child: Column(
       children: [
         Container(
-          width: 132,
-          height: 132,
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: const RadialGradient(
@@ -468,8 +402,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             boxShadow: [
               BoxShadow(
                 color: AppPalette.blue.withValues(alpha: .33),
-                blurRadius: 34,
-                offset: Offset(0, 14),
+                blurRadius: 22,
+                offset: Offset(0, 8),
               ),
             ],
           ),
@@ -477,7 +411,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             child: Image.asset('assets/branding/bimmerscope_icon.png'),
           ),
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 16),
         const FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -486,20 +420,10 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             maxLines: 1,
             softWrap: false,
             style: TextStyle(
-              fontSize: 42,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 1.4,
+              fontSize: 28,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.1,
             ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Live telemetry, diagnostics, and logging',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppPalette.secondary(widget.isDark),
-            fontSize: 15,
-            height: 1.45,
           ),
         ),
       ],
@@ -536,29 +460,24 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     required String title,
     required String body,
   }) => Container(
-    padding: const EdgeInsets.all(20),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     decoration: BoxDecoration(
       color: widget.isDark ? const Color(0xFF121620) : Colors.white,
-      borderRadius: BorderRadius.circular(24),
-      border: Border.all(
-        color: widget.isDark
-            ? const Color(0xFF242B39)
-            : const Color(0xFFE3E8F1),
-      ),
+      borderRadius: BorderRadius.circular(18),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 56,
-          height: 56,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: color.withValues(alpha: .12),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: color, size: 29),
+          child: Icon(icon, color: color, size: 22),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,17 +487,17 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 3),
               Text(
                 body,
                 style: TextStyle(
                   color: AppPalette.secondary(widget.isDark),
-                  fontSize: 15,
+                  fontSize: 13,
                   height: 1.3,
                 ),
               ),
@@ -589,72 +508,94 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     ),
   );
 
-  Widget step(int number, String title, String body, {bool last = false}) =>
-      IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: 36,
-              child: Column(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(
-                      color: AppPalette.blue,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$number',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+  Widget step(
+    int number,
+    String title, {
+    bool last = false,
+    required List<String> items,
+  }) => IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 36,
+          child: Column(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppPalette.blue,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
                   ),
-                  if (!last)
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        color: AppPalette.blue.withValues(alpha: .2),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: last ? 0 : 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      body,
-                      style: TextStyle(
-                        color: AppPalette.secondary(widget.isDark),
-                        fontSize: 11,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-          ],
+              if (!last)
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: AppPalette.blue.withValues(alpha: .2),
+                  ),
+                ),
+            ],
+          ),
         ),
-      );
+        const SizedBox(width: 10),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: last ? 0 : 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                for (final item in items)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '•  ',
+                          style: TextStyle(
+                            color: AppPalette.secondary(widget.isDark),
+                            fontSize: 12,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: TextStyle(
+                              color: AppPalette.secondary(widget.isDark),
+                              fontSize: 11,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget safetyCard() => Semantics(
     container: true,
@@ -665,7 +606,6 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
       decoration: BoxDecoration(
         color: AppPalette.orange.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppPalette.orange.withValues(alpha: .3)),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,

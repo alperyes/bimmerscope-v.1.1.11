@@ -411,9 +411,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     decoration: BoxDecoration(
       color: AppPalette.surface(widget.isDark),
       borderRadius: BorderRadius.circular(appCardRadius),
-      border: Border.all(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
-      ),
     ),
     child: Column(
       children: [
@@ -463,6 +460,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         const SizedBox(height: 4),
         SizedBox(
           width: double.infinity,
+          height: 48,
           child: FilledButton.icon(
             key: const Key('diagnostics-scan-button'),
             onPressed: scanning || !_vehicleAvailable ? null : () => scan(),
@@ -1095,7 +1093,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       decoration: BoxDecoration(
         color: AppPalette.red.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppPalette.red.withValues(alpha: .3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1123,9 +1120,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       decoration: BoxDecoration(
         color: AppPalette.surface(widget.isDark),
         borderRadius: BorderRadius.circular(appCardRadius),
-        border: Border.all(
-          color: AppPalette.separator(widget.isDark).withValues(alpha: .58),
-        ),
       ),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),

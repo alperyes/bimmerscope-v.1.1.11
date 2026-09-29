@@ -143,11 +143,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                 decoration: BoxDecoration(
                   color: AppPalette.surface(widget.isDark),
                   borderRadius: BorderRadius.circular(appCardRadius),
-                  border: Border.all(
-                    color: AppPalette.separator(
-                      widget.isDark,
-                    ).withValues(alpha: .42),
-                  ),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -273,11 +268,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                     decoration: BoxDecoration(
                       color: AppPalette.surface(widget.isDark),
                       borderRadius: BorderRadius.circular(appCardRadius),
-                      border: Border.all(
-                        color: AppPalette.separator(
-                          widget.isDark,
-                        ).withValues(alpha: .42),
-                      ),
                     ),
                     child: Semantics(
                       container: true,
@@ -337,7 +327,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     decoration: BoxDecoration(
       color: AppPalette.blue.withValues(alpha: widget.isDark ? .13 : .08),
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: AppPalette.blue.withValues(alpha: .24)),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,9 +360,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     decoration: BoxDecoration(
       color: AppPalette.surface(widget.isDark),
       borderRadius: BorderRadius.circular(appCardRadius),
-      border: Border.all(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
-      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -420,9 +406,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     decoration: BoxDecoration(
       color: AppPalette.surface(widget.isDark),
       borderRadius: BorderRadius.circular(appCardRadius),
-      border: Border.all(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .42),
-      ),
     ),
     child: Semantics(
       container: true,
@@ -462,9 +445,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
           color: AppPalette.surface(widget.isDark),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(
-              color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
-            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: ListTile(
@@ -632,9 +612,6 @@ class AppDiagnosticDetailScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppPalette.surface(isDark),
                 borderRadius: BorderRadius.circular(appCardRadius),
-                border: Border.all(
-                  color: AppPalette.separator(isDark).withValues(alpha: .42),
-                ),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -676,9 +653,6 @@ class AppDiagnosticDetailScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppPalette.orange.withValues(alpha: .12),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppPalette.orange.withValues(alpha: .28),
-                  ),
                 ),
                 child: const Row(
                   children: [
@@ -700,9 +674,6 @@ class AppDiagnosticDetailScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppPalette.surface(isDark),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppPalette.separator(isDark).withValues(alpha: .55),
-                ),
               ),
               child: SelectableText(
                 content.text,

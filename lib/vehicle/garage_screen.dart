@@ -50,9 +50,6 @@ class _GarageScreenState extends State<GarageScreen> {
                 decoration: BoxDecoration(
                   color: AppPalette.blue.withValues(alpha: .07),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppPalette.blue.withValues(alpha: .22),
-                  ),
                 ),
                 child: Row(
                   children: [
@@ -195,9 +192,6 @@ class _GarageScreenState extends State<GarageScreen> {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(appCardRadius),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor.withValues(alpha: .5),
-                ),
               ),
               child: Semantics(
                 container: true,
@@ -244,9 +238,6 @@ class _GarageScreenState extends State<GarageScreen> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(appCardRadius),
-                  border: Border.all(
-                    color: Theme.of(context).dividerColor.withValues(alpha: .5),
-                  ),
                 ),
                 child: Semantics(
                   container: true,

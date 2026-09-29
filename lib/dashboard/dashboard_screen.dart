@@ -15,6 +15,7 @@ import 'package:bmw_app/logging/data_logger.dart';
 import 'package:bmw_app/logging/auto_log_trigger.dart';
 import 'package:bmw_app/logging/logging_screen.dart';
 import 'package:bmw_app/onboarding/connection_guide_screen.dart';
+import 'package:bmw_app/help/help_screen.dart';
 import 'package:bmw_app/product/product_config.dart';
 import 'package:bmw_app/about/about_screen.dart';
 import 'package:bmw_app/app/build_info.dart';
@@ -38,7 +39,7 @@ const maxTraceSessionBytes = 12 * 1024 * 1024;
 const maxConnectionTimelineEntries = 10000;
 
 const dashboardHorizontalPadding = 16.0;
-const maxLiveSensors = 4;
+const maxLiveSensors = 6;
 const floatingConnectionPanelClearance = 96.0;
 const _androidNetworkChannel = MethodChannel('bimmerscope/android_network');
 
@@ -170,6 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Duration loggingElapsed = Duration.zero;
   bool autoLogEnabled = false;
   double autoLogThreshold = 70;
+  int autoLogReleaseDelaySeconds = 3;
   bool _autoLogRecording = false;
   bool _autoLogStartInProgress = false;
   final _autoLogTrigger = AutoLogTrigger();
@@ -484,6 +486,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         autoLogThreshold =
             (preferences.getDouble('bimmerscope.auto_log_threshold') ?? 70)
                 .clamp(30, 95);
+        autoLogReleaseDelaySeconds =
+            (preferences.getInt('bimmerscope.auto_log_release_delay') ?? 3)
+                .clamp(1, 10);
         _restoreDashboardLayout(storedLayout);
         _restoreCustomPresets(storedPresets);
         favoriteSensorIds
@@ -498,7 +503,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     } catch (_) {}
   }
 
-  Future<void> setAutoLogEnabled(bool enabled) async {
+  Future<bool> setAutoLogEnabled(bool enabled) async {
     if (enabled && !visibleSensorIds.contains('throttle_angle')) {
       if (visibleSensorIds.length >= maxLiveSensors) {
         if (mounted) {
@@ -510,7 +515,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           );
         }
-        return;
+        return false;
       }
       setState(() => visibleSensorIds.add('throttle_angle'));
       _scheduleLayoutSave();
@@ -519,6 +524,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => autoLogEnabled = enabled);
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool('bimmerscope.auto_log_enabled', enabled);
+    return true;
   }
 
   Future<void> setAutoLogThreshold(double threshold) async {
@@ -526,6 +532,13 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() => autoLogThreshold = next);
     final preferences = await SharedPreferences.getInstance();
     await preferences.setDouble('bimmerscope.auto_log_threshold', next);
+  }
+
+  Future<void> setAutoLogReleaseDelay(int seconds) async {
+    final next = seconds.clamp(1, 10);
+    setState(() => autoLogReleaseDelaySeconds = next);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setInt('bimmerscope.auto_log_release_delay', next);
   }
 
   void _restoreCustomPresets(String? encoded) {
@@ -651,8 +664,15 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (!mounted || vin != vehicleVin) return;
       setState(() {
         if (stored != null &&
-            const {'auto', 'open', 'closed'}.contains(stored)) {
-          flapMode = stored;
+            const {
+              'auto',
+              'open',
+              'open_legacy',
+              'open_periodic',
+              'open_bm3',
+              'closed',
+            }.contains(stored)) {
+          flapMode = stored == 'open' ? 'open_periodic' : stored;
         }
         flapAutoApply = autoApply ?? false;
       });
@@ -691,7 +711,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   Future<void> _applySavedFlapPreferenceIfEnabled() async {
     if (!flapAutoApply ||
         !live ||
-        !const {'open', 'closed'}.contains(flapMode)) {
+        !const {
+          'open',
+          'open_legacy',
+          'open_periodic',
+          'closed',
+        }.contains(flapMode)) {
       return;
     }
     await setFlapMode(flapMode);
@@ -1763,6 +1788,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       automaticRecording: _autoLogRecording,
       throttlePercent: event.value,
       startThreshold: autoLogThreshold,
+      releaseDelay: Duration(seconds: autoLogReleaseDelaySeconds),
       now: DateTime.now(),
     );
     switch (decision) {
@@ -1962,8 +1988,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                     onToggleRecording: toggleLogging,
                     autoLogEnabled: autoLogEnabled,
                     autoLogThreshold: autoLogThreshold,
+                    autoLogReleaseDelaySeconds: autoLogReleaseDelaySeconds,
                     onAutoLogChanged: setAutoLogEnabled,
                     onAutoLogThresholdChanged: setAutoLogThreshold,
+                    onAutoLogReleaseDelayChanged: setAutoLogReleaseDelay,
                     telemetryDegraded: telemetryDegraded,
                     telemetryGapCount: telemetryGapCount,
                     maxTelemetryGapMs: maxTelemetryGapMs,
@@ -2060,47 +2088,53 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ],
           ),
-          bottomNavigationBar: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(
-                  color: AppPalette.separator(widget.isDark),
-                  width: 1,
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selectedTab == 1) monitorPrimaryAction(),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: AppPalette.separator(widget.isDark),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: NavigationBar(
+                  selectedIndex: selectedTab,
+                  onDestinationSelected: selectTab,
+                  destinations: [
+                    NavigationDestination(
+                      icon: Icon(Icons.directions_car_outlined),
+                      selectedIcon: Icon(Icons.directions_car_filled),
+                      label: 'Vehicle',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.speed_outlined),
+                      selectedIcon: Icon(Icons.speed_rounded),
+                      label: 'Monitor',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.health_and_safety_outlined),
+                      selectedIcon: Icon(Icons.health_and_safety_rounded),
+                      label: 'Diagnostics',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.show_chart_outlined),
+                      selectedIcon: Icon(Icons.show_chart_rounded),
+                      label: 'Logs',
+                    ),
+                    if (ProductConfig.tuningEnabled)
+                      const NavigationDestination(
+                        icon: Icon(Icons.tune_outlined),
+                        selectedIcon: Icon(Icons.tune_rounded),
+                        label: 'Tune',
+                      ),
+                  ],
                 ),
               ),
-            ),
-            child: NavigationBar(
-              selectedIndex: selectedTab,
-              onDestinationSelected: selectTab,
-              destinations: [
-                NavigationDestination(
-                  icon: Icon(Icons.directions_car_outlined),
-                  selectedIcon: Icon(Icons.directions_car_filled),
-                  label: 'Vehicle',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.speed_outlined),
-                  selectedIcon: Icon(Icons.speed_rounded),
-                  label: 'Monitor',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.health_and_safety_outlined),
-                  selectedIcon: Icon(Icons.health_and_safety_rounded),
-                  label: 'Diagnostics',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.show_chart_outlined),
-                  selectedIcon: Icon(Icons.show_chart_rounded),
-                  label: 'Logs',
-                ),
-                if (ProductConfig.tuningEnabled)
-                  const NavigationDestination(
-                    icon: Icon(Icons.tune_outlined),
-                    selectedIcon: Icon(Icons.tune_rounded),
-                    label: 'Tune',
-                  ),
-              ],
-            ),
+            ],
           ),
         );
 
@@ -2262,6 +2296,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                 onTap: () {
                   Navigator.pop(context);
                   showConnectionGuide();
+                },
+              ),
+              _drawerItem(
+                icon: Icons.help_outline_rounded,
+                title: 'Help',
+                foreground: foreground,
+                muted: muted,
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => HelpScreen(isDark: widget.isDark),
+                    ),
+                  );
                 },
               ),
               _drawerItem(
@@ -2847,7 +2895,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 (_flapControlAvailable || demoActive)
                                     ? showFlapControl
                                     : null,
-                                accentColor: flapMode == 'open'
+                                accentColor: flapMode.startsWith('open')
                                     ? AppPalette.orange
                                     : flapMode == 'closed'
                                     ? AppPalette.red
@@ -2880,8 +2928,8 @@ class _DashboardScreenState extends State<DashboardScreen>
               ],
             ),
             Positioned(
-              left: 16,
-              right: 16,
+              left: 33,
+              right: 33,
               bottom: 12,
               child: SizedBox(
                 height: 92,
@@ -2950,7 +2998,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
-            height: 44,
+            height: 48,
             child: Material(
               color: buttonColor,
               elevation: widget.isDark ? 8 : 4,
@@ -3052,9 +3100,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(appCardRadius),
-        side: BorderSide(
-          color: Theme.of(context).dividerColor.withValues(alpha: .72),
-        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -3192,9 +3237,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         ? const Color(0xFF9AA4B7)
         : const Color(0xFF667085);
     final surface = widget.isDark ? const Color(0xFF151A24) : Colors.white;
-    final border = widget.isDark
-        ? const Color(0xFF292F3C)
-        : const Color(0xFFE3E7EF);
     final connected = live;
     return Container(
       decoration: BoxDecoration(
@@ -3347,7 +3389,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     title: 'Monitor',
                     subtitle: '${visibleSensorIds.length} active gauges',
                     surface: surface,
-                    border: border,
                     muted: muted,
                     onTap: () => selectTab(1),
                   ),
@@ -3356,7 +3397,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     title: 'Diagnostics',
                     subtitle: 'Read engine faults',
                     surface: surface,
-                    border: border,
                     muted: muted,
                     onTap: () => selectTab(2),
                   ),
@@ -3369,7 +3409,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ? 'Validated vehicle'
                         : 'Available after validation',
                     surface: surface,
-                    border: border,
                     muted: muted,
                     onTap: showFlapControl,
                     enabled: _flapControlAvailable || demoActive,
@@ -3383,7 +3422,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                         ? '${logger.sampleCount} samples recorded'
                         : 'Record and share CSV',
                     surface: surface,
-                    border: border,
                     muted: muted,
                     onTap: () => selectTab(3),
                   ),
@@ -3392,7 +3430,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     title: 'Connection guide',
                     subtitle: 'Cable, ignition and setup',
                     surface: surface,
-                    border: border,
                     muted: muted,
                     onTap: showConnectionGuide,
                   ),
@@ -3406,7 +3443,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: surface,
-                    border: Border.all(color: border),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -3459,7 +3495,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       decoration: BoxDecoration(
         color: surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: separator.withValues(alpha: .55)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3646,7 +3681,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     required String title,
     required String subtitle,
     required Color surface,
-    required Color border,
     required Color muted,
     required VoidCallback onTap,
     bool enabled = true,
@@ -3655,9 +3689,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     final tileSurface = enabled
         ? surface
         : Color.alphaBlend(scheme.onSurface.withValues(alpha: .035), surface);
-    final tileBorder = enabled
-        ? border.withValues(alpha: .55)
-        : border.withValues(alpha: .3);
     final tileIcon = enabled
         ? scheme.primary
         : scheme.onSurfaceVariant.withValues(alpha: .6);
@@ -3669,10 +3700,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           : '$title unavailable. $subtitle',
       child: Material(
         color: tileSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: tileBorder),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: enabled ? onTap : null,
@@ -3861,7 +3889,6 @@ class _DashboardScreenState extends State<DashboardScreen>
               decoration: BoxDecoration(
                 color: AppPalette.surface(widget.isDark),
                 borderRadius: BorderRadius.circular(appCardRadius),
-                border: Border.all(color: AppPalette.separator(widget.isDark)),
               ),
               child: Column(
                 children: [
@@ -4279,11 +4306,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                     Theme.of(context).brightness == Brightness.dark,
                   ),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppPalette.separator(
-                      Theme.of(context).brightness == Brightness.dark,
-                    ),
-                  ),
                 ),
                 child: Semantics(
                   container: true,
@@ -4391,9 +4413,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.primary.withValues(alpha: .1),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: .25),
-      ),
     ),
     child: Row(
       children: [
@@ -4509,7 +4528,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ScaffoldMessenger.of(this.context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    'Select up to 4 live gauges at a time.',
+                                    'Select up to 6 live gauges at a time.',
                                   ),
                                 ),
                               );
@@ -4749,69 +4768,128 @@ class _DashboardScreenState extends State<DashboardScreen>
     ),
   );
 
+  Widget monitorControl({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    Color? accent,
+    bool highlighted = false,
+  }) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    icon: Icon(icon, size: 23),
+    style: IconButton.styleFrom(
+      fixedSize: const Size(44, 44),
+      padding: EdgeInsets.zero,
+      foregroundColor: accent ?? AppPalette.secondary(widget.isDark),
+      disabledForegroundColor: AppPalette.secondary(
+        widget.isDark,
+      ).withValues(alpha: .45),
+      backgroundColor: highlighted
+          ? (accent ?? AppPalette.blue).withValues(alpha: .16)
+          : Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+  );
+
   Widget telemetryHeader() => SizedBox(
     height: sectionTitleHeight,
     child: Row(
       children: [
         const Spacer(),
-        FilledButton.icon(
-          onPressed: live && !widget.previewMode ? toggleMonitoring : null,
-          icon: Icon(
-            monitoringActive
-                ? Icons.stop_circle_outlined
-                : Icons.play_circle_outline_rounded,
-            size: 18,
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: AppPalette.surface(widget.isDark),
+            borderRadius: BorderRadius.circular(15),
           ),
-          label: Text(monitoringActive ? 'Stop' : 'Start'),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 38),
-            backgroundColor: monitoringActive
-                ? AppPalette.red
-                : AppPalette.blue,
-            foregroundColor: Colors.white,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              monitorControl(
+                tooltip: 'Add or choose gauges',
+                icon: Icons.add_box_outlined,
+                onPressed: chooseGauges,
+                accent: AppPalette.blue,
+                highlighted: true,
+              ),
+              monitorControl(
+                tooltip: editing ? 'Finish customizing' : 'Customize gauges',
+                icon: editing
+                    ? Icons.check_rounded
+                    : Icons.dashboard_customize_rounded,
+                onPressed: () => setState(() {
+                  editing = !editing;
+                  if (!editing) resizingSensorId = null;
+                }),
+                accent: editing ? AppPalette.blue : null,
+                highlighted: editing,
+              ),
+              if (logger.isRecording)
+                monitorControl(
+                  tooltip: 'Add log marker',
+                  icon: Icons.flag_outlined,
+                  onPressed: addLogMarker,
+                  accent: AppPalette.orange,
+                ),
+              monitorControl(
+                tooltip: logger.isRecording
+                    ? 'Stop data logging'
+                    : 'Start data logging',
+                icon: logger.isRecording
+                    ? Icons.stop_rounded
+                    : Icons.play_circle_outline_rounded,
+                onPressed:
+                    logger.isRecording ||
+                        (live && monitoringActive && !widget.previewMode)
+                    ? toggleLogging
+                    : null,
+                accent: logger.isRecording ? AppPalette.red : null,
+                highlighted: logger.isRecording,
+              ),
+              monitorControl(
+                tooltip: 'Full-screen gauges',
+                icon: Icons.fullscreen_rounded,
+                onPressed: toggleFullscreen,
+              ),
+            ],
           ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          tooltip: editing ? 'Finish customizing' : 'Customize gauges',
-          onPressed: () => setState(() {
-            editing = !editing;
-            if (!editing) resizingSensorId = null;
-          }),
-          icon: Icon(
-            editing ? Icons.check_rounded : Icons.dashboard_customize_rounded,
-          ),
-        ),
-        if (logger.isRecording)
-          IconButton(
-            tooltip: 'Add log marker',
-            onPressed: addLogMarker,
-            color: AppPalette.orange,
-            icon: const Icon(Icons.flag_outlined),
-          ),
-        IconButton(
-          tooltip: logger.isRecording
-              ? 'Stop data logging'
-              : 'Start data logging',
-          onPressed:
-              logger.isRecording ||
-                  (live && monitoringActive && !widget.previewMode)
-              ? toggleLogging
-              : null,
-          color: logger.isRecording ? AppPalette.red : null,
-          icon: Icon(
-            logger.isRecording
-                ? Icons.stop_rounded
-                : Icons.play_circle_outline_rounded,
-          ),
-        ),
-        const SizedBox(width: 4),
-        IconButton(
-          tooltip: 'Full-screen gauges',
-          onPressed: toggleFullscreen,
-          icon: const Icon(Icons.fullscreen_rounded),
         ),
       ],
+    ),
+  );
+
+  Widget monitorPrimaryAction() => SafeArea(
+    top: false,
+    bottom: false,
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1180),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(33, 12, 33, 12),
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              key: const Key('monitor-primary-action'),
+              onPressed: live && !widget.previewMode ? toggleMonitoring : null,
+              icon: Icon(
+                monitoringActive
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outline_rounded,
+              ),
+              label: Text(monitoringActive ? 'Stop' : 'Start'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                backgroundColor: monitoringActive
+                    ? AppPalette.red
+                    : AppPalette.blue,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ),
     ),
   );
 
@@ -4820,17 +4898,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     backgroundColor: AppPalette.surface(widget.isDark),
     tilePadding: const EdgeInsets.symmetric(horizontal: 14),
     childrenPadding: const EdgeInsets.only(bottom: 8),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: BorderSide(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
-      ),
-    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     collapsedShape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(16),
-      side: BorderSide(
-        color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
-      ),
     ),
     leading: const Icon(Icons.timeline_rounded, size: 20),
     title: Semantics(
@@ -4979,137 +5049,131 @@ class VehicleDetailsScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'VIN · ${vin == 'Not identified' ? '-' : vin}',
-            style: TextStyle(color: secondary, fontSize: 13, letterSpacing: .4),
-          ),
           const SizedBox(height: 24),
-          _detail('Chassis', identity?.chassis ?? '-', secondary),
-          _detail('Model', identity?.model ?? '-', secondary),
-          _detail('Model year', '${identity?.modelYear ?? '-'}', secondary),
-          _detail(
-            'Mileage',
-            mileageKm == null ? '-' : '${mileageKm!.round()} km',
-            secondary,
+          _section(
+            icon: Icons.directions_car_outlined,
+            title: 'Vehicle',
+            children: [
+              _detail(
+                'VIN',
+                vin == 'Not identified' ? '-' : vin,
+                secondary,
+                identifier: true,
+              ),
+              _detail('Chassis', identity?.chassis ?? '-', secondary),
+              _detail('Model', identity?.model ?? '-', secondary),
+              _detail('Model year', '${identity?.modelYear ?? '-'}', secondary),
+              _detail(
+                'Mileage',
+                mileageKm == null ? '-' : '${mileageKm!.round()} km',
+                secondary,
+              ),
+              _detail('Engine', identity?.engine ?? '-', secondary),
+              _detail('Transmission', identity?.transmission ?? '-', secondary),
+            ],
           ),
-          _detail('Engine', identity?.engine ?? '-', secondary),
-          _detail('Transmission', identity?.transmission ?? '-', secondary),
-          _detail(
-            'Engine ECU',
-            engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
-            secondary,
-          ),
-          const SizedBox(height: 24),
-          Divider(color: AppPalette.separator(isDark)),
-          const SizedBox(height: 12),
-          Semantics(
-            header: true,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.memory_rounded,
-                  color: AppPalette.blue,
-                  size: 19,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Engine ECU · DME/DDE',
+          const SizedBox(height: 18),
+          _section(
+            icon: Icons.memory_rounded,
+            title: 'Engine ECU · DME/DDE',
+            children: [
+              _detail(
+                'ECU identity',
+                engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
+                secondary,
+              ),
+              _detail('Hardware number', _value(engineEcuHardware), secondary),
+              _detail(
+                'Software ID',
+                _value(engineEcuSoftware),
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'Bootloader ID',
+                _value(engineEcuBootloader),
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'Calibration ID',
+                _value(engineEcuCalibration),
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'Coding ID',
+                _value(engineEcuCodingId),
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'Manufactured',
+                _value(engineEcuManufacturingDate),
+                secondary,
+              ),
+              _detail(
+                'Diagnostic session',
+                _value(engineEcuDiagnosticSession),
+                secondary,
+              ),
+              _detail(
+                'Application software',
+                _value(engineEcuApplicationSoftware),
+                secondary,
+              ),
+              _detail(
+                'Supplier hardware',
+                _value(engineEcuSupplierHardware),
+                secondary,
+              ),
+              _detail(
+                'Supplier software',
+                _value(engineEcuSupplierSoftware),
+                secondary,
+              ),
+              const SizedBox(height: 16),
+              Semantics(
+                header: true,
+                child: Text(
+                  'BMW routine 0205',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+                    color: secondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ],
-            ),
-          ),
-          _detail('DME hardware number', _value(engineEcuHardware), secondary),
-          _detail(
-            'DME software ID',
-            _value(engineEcuSoftware),
-            secondary,
-            identifier: true,
-          ),
-          _detail(
-            'DME bootloader ID',
-            _value(engineEcuBootloader),
-            secondary,
-            identifier: true,
-          ),
-          _detail(
-            'DME calibration ID',
-            _value(engineEcuCalibration),
-            secondary,
-            identifier: true,
-          ),
-          _detail(
-            'DME coding ID',
-            _value(engineEcuCodingId),
-            secondary,
-            identifier: true,
-          ),
-          _detail('DME date', _value(engineEcuManufacturingDate), secondary),
-          _detail(
-            'DME diagnostic session',
-            _value(engineEcuDiagnosticSession),
-            secondary,
-          ),
-          _detail(
-            'DME application software',
-            _value(engineEcuApplicationSoftware),
-            secondary,
-          ),
-          _detail(
-            'DME supplier hardware',
-            _value(engineEcuSupplierHardware),
-            secondary,
-          ),
-          _detail(
-            'DME supplier software',
-            _value(engineEcuSupplierSoftware),
-            secondary,
-          ),
-          const SizedBox(height: 12),
-          Semantics(
-            header: true,
-            child: Text(
-              'DME BMW routine 0205',
-              style: TextStyle(
-                color: secondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .5,
               ),
-            ),
-          ),
-          _detail(
-            'DME routine software',
-            _value(engineEcuBmwRoutine0205Software),
-            secondary,
-            identifier: true,
-          ),
-          _detail(
-            'DME controller family',
-            _value(engineEcuBmwControllerFamily),
-            secondary,
-          ),
-          _detail('DME variant', _value(engineEcuBmwVariant), secondary),
-          _detail(
-            'DME transmission',
-            _value(engineEcuBmwTransmission),
-            secondary,
-          ),
-          _detail('DME emissions', _value(engineEcuBmwEmissions), secondary),
-          _detail(
-            'DME internal token',
-            _value(engineEcuBmwInternalToken),
-            secondary,
-          ),
-          _detail(
-            'DME raw routine data',
-            _value(engineEcuBmwRoutine0205Raw),
-            secondary,
+              const SizedBox(height: 4),
+              _detail(
+                'Routine software',
+                _value(engineEcuBmwRoutine0205Software),
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'Controller family',
+                _value(engineEcuBmwControllerFamily),
+                secondary,
+              ),
+              _detail('Variant', _value(engineEcuBmwVariant), secondary),
+              _detail(
+                'Transmission',
+                _value(engineEcuBmwTransmission),
+                secondary,
+              ),
+              _detail('Emissions', _value(engineEcuBmwEmissions), secondary),
+              _detail(
+                'Internal token',
+                _value(engineEcuBmwInternalToken),
+                secondary,
+              ),
+              _detail(
+                'Raw routine data',
+                _value(engineEcuBmwRoutine0205Raw),
+                secondary,
+              ),
+            ],
           ),
         ],
       ),
@@ -5117,6 +5181,43 @@ class VehicleDetailsScreen extends StatelessWidget {
   }
 
   String _value(String? value) => value == null || value.isEmpty ? '-' : value;
+
+  Widget _section({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) => Container(
+    padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+    decoration: BoxDecoration(
+      color: AppPalette.surface(isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Row(
+            children: [
+              Icon(icon, color: AppPalette.blue, size: 21),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...children,
+      ],
+    ),
+  );
 
   Widget _detail(
     String label,
@@ -5127,45 +5228,19 @@ class VehicleDetailsScreen extends StatelessWidget {
     container: true,
     label: '$label: $value',
     child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: AppPalette.separator(isDark).withValues(alpha: .42),
-          ),
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: TextStyle(color: secondary, fontSize: 13)),
           const SizedBox(height: 5),
-          SizedBox(
-            width: double.infinity,
-            child: identifier
-                ? FittedBox(
-                    alignment: Alignment.centerRight,
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: .2,
-                      ),
-                    ),
-                  )
-                : Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+          SelectableText(
+            value,
+            style: TextStyle(
+              fontFamily: identifier ? 'monospace' : null,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),

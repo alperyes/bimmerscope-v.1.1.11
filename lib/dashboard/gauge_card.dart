@@ -106,11 +106,6 @@ class GaugeCard extends StatelessWidget {
                     )
                   : AppPalette.surface(isDark),
               borderRadius: BorderRadius.circular(appCardRadius),
-              border: Border.all(
-                color: accent.withValues(
-                  alpha: valueColorBackground ? .30 : .16,
-                ),
-              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -352,24 +347,15 @@ class GaugeCard extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(_compact(_minimum), style: _rangeStyle),
-                            Row(
-                              children: [
-                                Container(
-                                  width: 5,
-                                  height: 5,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isLive
-                                        ? AppPalette.green
-                                        : AppPalette.secondary(isDark),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isLive ? 'Live' : 'Idle',
-                                  style: _rangeStyle,
-                                ),
-                              ],
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isLive
+                                    ? AppPalette.green
+                                    : AppPalette.secondary(isDark),
+                              ),
                             ),
                             Text(_compact(_maximum), style: _rangeStyle),
                           ],
@@ -430,9 +416,10 @@ class GaugeCard extends StatelessWidget {
         : const Duration(milliseconds: 260),
     curve: Curves.easeOutCubic,
     builder: (context, animatedFraction, _) => Semantics(
-      label: '${sensor.label}: ${_formattedValue()} $_unit',
+      label:
+          '${sensor.label}: ${_formattedValue()} $_unit, ${isLive ? 'live' : 'idle'}',
       child: ColoredBox(
-        color: const Color(0xFF07090D),
+        color: Colors.black,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
           child: Column(
@@ -447,7 +434,7 @@ class GaugeCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF8B949F),
-                        fontSize: 11,
+                        fontSize: 20,
                         fontWeight: FontWeight.w700,
                         letterSpacing: .2,
                       ),
@@ -466,55 +453,85 @@ class GaugeCard extends StatelessWidget {
                 ],
               ),
               Expanded(
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _formattedValue(),
-                          softWrap: false,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: _fullscreenValueSize,
-                            height: .9,
-                            fontWeight: FontWeight.w300,
-                            letterSpacing: -4,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 10, bottom: 8),
-                          child: Text(
-                            _unit,
-                            style: const TextStyle(
-                              color: Color(0xFF8B949F),
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxHeight < 180;
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  _formattedValue(),
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: compact
+                                        ? 48
+                                        : _fullscreenValueSize,
+                                    height: .9,
+                                    fontWeight: FontWeight.w300,
+                                    letterSpacing: -4,
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 10,
+                                    bottom: 8,
+                                  ),
+                                  child: Text(
+                                    _unit,
+                                    style: TextStyle(
+                                      color: Color(0xFF8B949F),
+                                      fontSize: compact ? 14 : 20,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
+                          SizedBox(height: compact ? 10 : 26),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(99),
+                            child: LinearProgressIndicator(
+                              value: animatedFraction,
+                              minHeight: 8,
+                              backgroundColor: const Color(0xFF20242A),
+                              valueColor: AlwaysStoppedAnimation(accent),
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _compact(_minimum),
+                                style: compact
+                                    ? _fullscreenRangeStyle.copyWith(
+                                        fontSize: 12,
+                                      )
+                                    : _fullscreenRangeStyle,
+                              ),
+                              Text(
+                                _compact(_maximum),
+                                style: compact
+                                    ? _fullscreenRangeStyle.copyWith(
+                                        fontSize: 12,
+                                      )
+                                    : _fullscreenRangeStyle,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              ),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: animatedFraction,
-                  minHeight: 8,
-                  backgroundColor: const Color(0xFF20242A),
-                  valueColor: AlwaysStoppedAnimation(accent),
-                ),
-              ),
-              const SizedBox(height: 7),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_compact(_minimum), style: _fullscreenRangeStyle),
-                  Text(_compact(_maximum), style: _fullscreenRangeStyle),
-                ],
               ),
             ],
           ),
@@ -580,15 +597,14 @@ class GaugeCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    isLive ? 'Live' : 'Idle',
-                    style: TextStyle(
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
                       color: isLive
                           ? AppPalette.green
                           : const Color(0xFF566171),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: .2,
                     ),
                   ),
                 ],

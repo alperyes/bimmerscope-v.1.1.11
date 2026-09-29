@@ -222,8 +222,8 @@ Stream<VehicleEvent> startSimulatorSession({
 
   final sensors = defaultSensors();
   final selectedIds = (activeSensorIds == null || activeSensorIds.isEmpty)
-      ? sensors.take(4).map((sensor) => sensor.id).toSet()
-      : activeSensorIds.take(4).toSet();
+      ? sensors.take(6).map((sensor) => sensor.id).toSet()
+      : activeSensorIds.take(6).toSet();
   while (true) {
     Map<String, dynamic> data;
     try {

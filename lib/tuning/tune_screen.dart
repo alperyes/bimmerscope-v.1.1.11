@@ -20,6 +20,7 @@ import 'package:bmw_app/vehicle/garage_screen.dart';
 import 'package:bmw_app/vehicle/vehicle_garage.dart';
 import 'package:bmw_app/logging/log_quality.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:crypto/crypto.dart';
@@ -96,6 +97,12 @@ class TuneScreen extends StatefulWidget {
 }
 
 class _TuneScreenState extends State<TuneScreen> {
+  bool get _actionsAvailable => const {
+    'Connected',
+    'Monitoring',
+    'Degraded',
+  }.contains(widget.connectionLabel);
+
   File? importedStockFile;
   int? importedStockFileSize;
   String? importedStockFileHash;
@@ -106,6 +113,11 @@ class _TuneScreenState extends State<TuneScreen> {
   final modificationsController = TextEditingController();
   final fuelController = TextEditingController();
   final hardwareController = TextEditingController();
+  final _tunerRequestPanelKey = GlobalKey();
+  final _tunerRequestExpansionController = ExpansibleController();
+  final ValueNotifier<int> _tunerRequestRevision = ValueNotifier(0);
+  Widget? _tunerRequestWorkspace;
+  bool _tunerRequestPageOpen = false;
   Timer? _draftSaveTimer;
   List<File> availableLogs = [];
   final selectedLogs = <String>{};
@@ -174,7 +186,15 @@ class _TuneScreenState extends State<TuneScreen> {
     modificationsController.dispose();
     fuelController.dispose();
     hardwareController.dispose();
+    _tunerRequestExpansionController.dispose();
+    _tunerRequestRevision.dispose();
     super.dispose();
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _tunerRequestRevision.value++;
   }
 
   void _scheduleDraftSave() {
@@ -287,9 +307,6 @@ class _TuneScreenState extends State<TuneScreen> {
                 decoration: BoxDecoration(
                   color: AppPalette.surface(widget.isDark),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppPalette.separator(widget.isDark),
-                  ),
                 ),
                 child: Semantics(
                   container: true,
@@ -355,34 +372,30 @@ class _TuneScreenState extends State<TuneScreen> {
     return (result: result, error: checkError);
   }
 
-  Future<void> showUnlockStatus() async {
+  Future<String> _loadUnlockStatus() async {
     final identity = identifyVehicle(widget.vin);
     final n20Check =
-        widget.connectionLabel == 'Connected' &&
+        _actionsAvailable &&
             !widget.simulatorMode &&
             widget.vin == 'WBA3A52010F360747'
         ? await _readN20UnlockReference()
         : null;
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Unlock requirement'),
-        content: Text(
-          n20Check != null
-              ? n20Check.result == null
-                    ? 'Unable to verify N20 bench DME: ${n20Check.error}'
-                    : '${n20Check.result!.status == 'reference_match' ? 'N20 bench reference matched' : 'Unable to verify'}\n\n${n20Check.result!.detail}\n\nVIN: ${n20Check.result!.vin}'
-              : identity == null
-              ? 'Connect and identify a supported vehicle to check its DME requirements.'
-              : '${identity.displayLabel}\n\nUnlock checks are informational only in this build. No ECU write or flash operation is available.',
+    return n20Check != null
+        ? n20Check.result == null
+              ? 'Unable to verify N20 bench DME: ${n20Check.error}'
+              : '${n20Check.result!.status == 'reference_match' ? 'N20 bench reference matched' : 'Unable to verify'}\n\n${n20Check.result!.detail}\n\nVIN: ${n20Check.result!.vin}'
+        : identity == null
+        ? 'Connect and identify a supported vehicle to check its DME requirements.'
+        : '${identity.displayLabel}\n\nUnlock checks are informational only in this build. No ECU write or flash operation is available.';
+  }
+
+  void showUnlockStatus() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _UnlockStatusPage(
+          isDark: widget.isDark,
+          status: _loadUnlockStatus(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
       ),
     );
   }
@@ -802,13 +815,6 @@ class _TuneScreenState extends State<TuneScreen> {
                               : AppPalette.blue)
                           .withValues(alpha: .10),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color:
-                        (request.status == TunerRequestStatus.readyToSend
-                                ? AppPalette.green
-                                : AppPalette.blue)
-                            .withValues(alpha: .28),
-                  ),
                 ),
                 child: Row(
                   children: [
@@ -1032,6 +1038,74 @@ class _TuneScreenState extends State<TuneScreen> {
       ? '${(bytes / 1024).toStringAsFixed(1)} KB'
       : '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
 
+  void _openFlashMap() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => _TuneActionPage(
+        isDark: widget.isDark,
+        title: 'Flash a map',
+        icon: Icons.map_outlined,
+        message: 'Map flashing is not available in this version.',
+        detail:
+            'BimmerScope does not write calibration data to the ECU. This page is informational; no map will be sent to the vehicle.',
+        products: s55Connected ? s55RemapProducts : null,
+        selectedProduct: selectedProduct,
+        identity: connectedIdentity,
+        onProductSelected: (product) {
+          setState(() => selectedProduct = product);
+          _scheduleDraftSave();
+        },
+      ),
+    ),
+  );
+
+  void _openFlashBackToStock() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => _TuneActionPage(
+        isDark: widget.isDark,
+        title: 'Flash back to stock',
+        icon: Icons.settings_backup_restore_rounded,
+        message: 'Stock restoration is not available in this version.',
+        detail:
+            'A safe restore requires the verified original calibration for this exact ECU and a validated recovery procedure. BimmerScope does not write calibration data.',
+      ),
+    ),
+  );
+
+  void _openDmeIdentity() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => _EcuIdentityPage(
+        isDark: widget.isDark,
+        vin: widget.vin,
+        identity: widget.engineEcuIdentity,
+        hardware: widget.engineEcuHardware,
+        software: widget.engineEcuSoftware,
+        bootloader: widget.engineEcuBootloader,
+        calibration: widget.engineEcuCalibration,
+        manufacturingDate: widget.engineEcuManufacturingDate,
+        codingId: widget.engineEcuCodingId,
+      ),
+    ),
+  );
+
+  Future<void> _openTunerRequestPage() async {
+    if (_tunerRequestPageOpen) return;
+    _tunerRequestExpansionController.expand();
+    setState(() => _tunerRequestPageOpen = true);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => _TunerRequestPage(
+            isDark: widget.isDark,
+            revision: _tunerRequestRevision,
+            workspace: () => _tunerRequestWorkspace ?? const SizedBox.shrink(),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _tunerRequestPageOpen = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppPalette.background(widget.isDark),
@@ -1112,582 +1186,570 @@ class _TuneScreenState extends State<TuneScreen> {
                   connectionLabel: widget.connectionLabel,
                   onCheckVehicle: showTuneReadiness,
                 ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: showUnlockStatus,
-                  icon: const Icon(Icons.lock_open_outlined, size: 18),
-                  label: const Text('Check unlock status'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                ),
                 const SizedBox(height: 12),
-                if (s55Connected) ...[
-                  const _TuneStepLabel(
-                    number: '2',
-                    title: 'Choose a product',
-                    detail:
-                        'Products become available only for validated vehicles.',
-                  ),
-                  const SizedBox(height: 8),
-                  _TuneProductSelector(
-                    isDark: widget.isDark,
-                    products: s55RemapProducts,
-                    selectedProductId: selectedProduct.id,
-                    identity: connectedIdentity,
-                    onSelected: (product) {
-                      setState(() => selectedProduct = product);
-                      _scheduleDraftSave();
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                _TuneActionMenu(
+                  isDark: widget.isDark,
+                  enabled: _actionsAvailable,
+                  items: [
+                    _TuneActionItem(
+                      key: const Key('tune-dme-identity-open'),
+                      title: 'DME identity',
+                      subtitle: 'ECU identifiers',
+                      icon: Icons.memory_rounded,
+                      onTap: _openDmeIdentity,
+                    ),
+                    _TuneActionItem(
+                      key: const Key('tune-check-unlock-open'),
+                      title: 'Check unlock status',
+                      subtitle: 'Read-only DME check',
+                      icon: Icons.lock_open_outlined,
+                      onTap: showUnlockStatus,
+                    ),
+                    _TuneActionItem(
+                      key: const Key('tune-flash-map-open'),
+                      title: 'Flash a map',
+                      subtitle: 'Map options and compatibility',
+                      icon: Icons.map_outlined,
+                      onTap: _openFlashMap,
+                    ),
+                    _TuneActionItem(
+                      key: const Key('tune-flash-stock-open'),
+                      title: 'Flash back to stock',
+                      subtitle: 'Stock restoration information',
+                      icon: Icons.settings_backup_restore_rounded,
+                      onTap: _openFlashBackToStock,
+                    ),
+                    _TuneActionItem(
+                      key: const Key('tune-request-open'),
+                      title: 'Tuner Request',
+                      subtitle: 'Stock files, details, logs and history',
+                      icon: Icons.assignment_outlined,
+                      onTap: _openTunerRequestPage,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Builder(
+                  builder: (context) {
+                    final workspace = Container(
+                      key: _tunerRequestPanelKey,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(appCardRadius),
+                      ),
+                      child: ExpansionTile(
+                        controller: _tunerRequestExpansionController,
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        collapsedShape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        leading: const Icon(Icons.tune_rounded),
+                        title: Semantics(
+                          header: true,
+                          child: const Text('Request workspace'),
+                        ),
+                        subtitle: const Text(
+                          'Stock files, map review, details, and logs',
+                        ),
+                        children: [
+                          ExpansionTile(
+                            tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                            ),
+                            childrenPadding: const EdgeInsets.only(bottom: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            collapsedShape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            leading: const Icon(Icons.map_outlined),
+                            title: Semantics(
+                              header: true,
+                              child: const Text('Optional map review'),
+                            ),
+                            subtitle: const Text(
+                              'Browse, review, and prepare map files',
+                            ),
+                            children: [
+                              if (s55Connected)
+                                ListTile(
+                                  leading: const Icon(
+                                    Icons.storefront_outlined,
+                                  ),
+                                  title: Semantics(
+                                    header: true,
+                                    child: const Text('S55 remap products'),
+                                  ),
+                                  subtitle: const Text(
+                                    'Choose a Competition or CS product track',
+                                  ),
+                                  onTap: _openFlashMap,
+                                ),
+                              ListTile(
+                                leading: const Icon(Icons.tune_outlined),
+                                title: const Text('Review a map file'),
+                                subtitle: const Text(
+                                  'Compare a tuner-provided file safely',
+                                ),
+                                onTap: hasSupportedVehicleProfile
+                                    ? () => chooseMap(original: false)
+                                    : null,
+                              ),
+                              ListTile(
+                                leading: const Icon(Icons.save_outlined),
+                                title: const Text('Review stock backup'),
+                                subtitle: Text(
+                                  importedStockFile == null
+                                      ? 'Import a stock backup first'
+                                      : 'View the verified backup and its history',
+                                ),
+                                onTap: importedStockFile == null
+                                    ? importStockFile
+                                    : showBackupHistory,
+                              ),
+                              Semantics(
+                                enabled: false,
+                                label:
+                                    'Review backend options unavailable until vehicle-specific support is validated.',
+                                child: ListTile(
+                                  leading: const Icon(
+                                    Icons.info_outline_rounded,
+                                  ),
+                                  title: const Text('Review backend options'),
+                                  subtitle: const Text(
+                                    'Unavailable until vehicle-specific support is validated',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Card(
+                            margin: EdgeInsets.zero,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Semantics(
+                                    header: true,
+                                    child: Text(
+                                      'Stock file & backups',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    importedStockFile == null
+                                        ? 'Import a known stock file to keep it with this Tune workspace.'
+                                        : 'Imported: ${importedStockFile!.uri.pathSegments.last}',
+                                  ),
+                                  if (importedStockFile != null &&
+                                      importedStockFileSize != null &&
+                                      importedStockFileHash != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '${_formatFileSize(importedStockFileSize!)} · SHA-256 ${importedStockFileHash!.substring(0, 12)}…',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: importStockFile,
+                                    icon: const Icon(
+                                      Icons.upload_file_outlined,
+                                    ),
+                                    label: Text(
+                                      importedStockFile == null
+                                          ? 'Import stock file'
+                                          : 'Replace stock file',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: readingEcu
+                                        ? null
+                                        : readEcuCalibration,
+                                    icon: readingEcu
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.memory_outlined),
+                                    label: Text(
+                                      readingEcu
+                                          ? 'Reading ECU…'
+                                          : 'Read calibration from ECU',
+                                    ),
+                                  ),
+                                  if (readingEcu) ...[
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      onPressed:
+                                          rust_vehicle.cancelIstaS55Calibration,
+                                      icon: const Icon(
+                                        Icons.stop_circle_outlined,
+                                      ),
+                                      label: const Text('Cancel ECU read'),
+                                    ),
+                                  ],
+                                  if (importedStockFile != null) ...[
+                                    const SizedBox(height: 4),
+                                    TextButton.icon(
+                                      onPressed: showBackupHistory,
+                                      icon: const Icon(Icons.history_rounded),
+                                      label: const Text('View backup history'),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Card(
+                            margin: EdgeInsets.zero,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Semantics(
+                                    header: true,
+                                    child: Text(
+                                      'Read-only map comparison',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Compare file metadata before sending anything to a tuner.',
+                                  ),
+                                  if (!hasSupportedVehicleProfile) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Identify a supported vehicle before comparing map files.',
+                                      style: TextStyle(
+                                        color: AppPalette.orange,
+                                      ),
+                                    ),
+                                  ] else if (!identityAvailable) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Offline review only. Connect to capture live ECU evidence before requesting a calibration read.',
+                                      style: TextStyle(
+                                        color: AppPalette.secondary(
+                                          widget.isDark,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 12),
+                                  _MapSlot(
+                                    label: 'Original / stock',
+                                    file: originalMap,
+                                    metadata: mapMetadata['original'],
+                                    onPressed: hasSupportedVehicleProfile
+                                        ? () => chooseMap(original: true)
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _MapSlot(
+                                    label: 'Comparison map',
+                                    file: comparisonMap,
+                                    metadata: mapMetadata['comparison'],
+                                    onPressed: hasSupportedVehicleProfile
+                                        ? () => chooseMap(original: false)
+                                        : null,
+                                  ),
+                                  if (originalMap != null &&
+                                      comparisonMap != null) ...[
+                                    const SizedBox(height: 12),
+                                    _ComparisonSummary(
+                                      original: mapMetadata['original']!,
+                                      comparison: mapMetadata['comparison']!,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Card(
+                            margin: EdgeInsets.zero,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Semantics(
+                                    header: true,
+                                    child: Text(
+                                      'Tuner request details',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Saved automatically for this vehicle. Add the hardware, fuel, and map notes your tuner needs.',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextField(
+                                    controller: fuelController,
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Fuel',
+                                      hintText:
+                                          'Example: 98 RON / 93 AKI / E30',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: hardwareController,
+                                    textCapitalization:
+                                        TextCapitalization.sentences,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Hardware',
+                                      hintText:
+                                          'Example: stock turbos, intake, charge pipes',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextField(
+                                    controller: modificationsController,
+                                    maxLines: 3,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Modifications and notes',
+                                      hintText:
+                                          'Example: intake, charge pipes, fuel, requested map…',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          ...[
+                            const SizedBox(height: 16),
+                            Card(
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        8,
+                                        16,
+                                        4,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Logs to include',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium,
+                                            ),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                selectedLogs.addAll(
+                                                  availableLogs.map(
+                                                    (log) => log.path,
+                                                  ),
+                                                );
+                                              });
+                                              _scheduleDraftSave();
+                                            },
+                                            child: const Text('Select all'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              setState(selectedLogs.clear);
+                                              _scheduleDraftSave();
+                                            },
+                                            child: const Text('Clear'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        0,
+                                        16,
+                                        4,
+                                      ),
+                                      child: Text(
+                                        'Select saved logs to attach to the tuner package.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ),
+                                    if (availableLogs.isEmpty)
+                                      Container(
+                                        margin: const EdgeInsets.fromLTRB(
+                                          16,
+                                          4,
+                                          16,
+                                          8,
+                                        ),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: AppPalette.surface(
+                                            widget.isDark,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                        child: Semantics(
+                                          container: true,
+                                          label:
+                                              'No saved logs yet. Record a live-data log first, then return here to attach it.',
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(
+                                                Icons.info_outline_rounded,
+                                                color: AppPalette.secondary(
+                                                  widget.isDark,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              const Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'No saved logs yet',
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                    SizedBox(height: 3),
+                                                    Text(
+                                                      'Record a live-data log first, then return here to attach it.',
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    for (final log in availableLogs)
+                                      CheckboxListTile(
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                            ),
+                                        value: selectedLogs.contains(log.path),
+                                        title: Text(log.uri.pathSegments.last),
+                                        onChanged: (value) {
+                                          setState(
+                                            () => value == true
+                                                ? selectedLogs.add(log.path)
+                                                : selectedLogs.remove(log.path),
+                                          );
+                                          _scheduleDraftSave();
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          if (savedRequests.isNotEmpty) ...[
+                            Text(
+                              'Saved tuner requests',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 8),
+                            for (final request in savedRequests.take(5))
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.assignment_outlined),
+                                title: Text(
+                                  request.productLabel ?? request.vehicleLabel,
+                                ),
+                                subtitle: Text(
+                                  '${request.vehicleLabel} · ${requestStatusLabel(request.status)} · ${request.logFiles.length} log(s) · ${request.createdAt.day}/${request.createdAt.month}/${request.createdAt.year}',
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                ),
+                                onTap: () => showRequestDetails(request),
+                              ),
+                            const SizedBox(height: 8),
+                          ],
+                          Card(
+                            margin: EdgeInsets.zero,
+                            color: AppPalette.surface(widget.isDark),
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.lock_outline_rounded, size: 20),
+                                  SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Calibration writing is locked. ${writePreflight.blockingReasons.isEmpty ? 'A validated programming backend is still required.' : writePreflight.blockingReasons.first}.',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                    _tunerRequestWorkspace = workspace;
+                    return _tunerRequestPageOpen
+                        ? const SizedBox.shrink()
+                        : const SizedBox.shrink();
+                  },
+                ),
                 const SizedBox(height: 12),
                 _VehicleSnapshotStrip(
                   isDark: widget.isDark,
                   connectionLabel: widget.connectionLabel,
                   vin: widget.vin,
                   mileageKm: widget.mileageKm,
-                ),
-                const SizedBox(height: 12),
-                if (widget.connectionLabel == 'Connected' &&
-                    widget.engineEcuDetected) ...[
-                  const SizedBox(height: 12),
-                  _EcuIdentityFieldBar(
-                    isDark: widget.isDark,
-                    vin: widget.vin,
-                    identity: widget.engineEcuIdentity,
-                    hardware: widget.engineEcuHardware,
-                    software: widget.engineEcuSoftware,
-                    bootloader: widget.engineEcuBootloader,
-                    calibration: widget.engineEcuCalibration,
-                    manufacturingDate: widget.engineEcuManufacturingDate,
-                    codingId: widget.engineEcuCodingId,
-                  ),
-                ],
-                if (identifyVehicle(widget.vin) case final identity?) ...[
-                  const SizedBox(height: 16),
-                  _ProfileCard(
-                    isDark: widget.isDark,
-                    identity: identity,
-                    vin: widget.vin,
-                    mileageKm: widget.mileageKm,
-                    lastConnectedAt: widget.identityCapturedAt,
-                    evidenceProfile: resolvedEcuProfile,
-                  ),
-                ],
-                if (s55Connected) ...[
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: selectedProductCompatible
-                        ? createTunerPackage
-                        : null,
-                    icon: const Icon(Icons.send_outlined),
-                    label: Text(
-                      'Prepare ${selectedProduct.variantLabel} package',
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(appCardRadius),
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).dividerColor.withValues(alpha: .6),
-                    ),
-                  ),
-                  child: ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-                    childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    collapsedShape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    leading: const Icon(Icons.tune_rounded),
-                    title: Semantics(
-                      header: true,
-                      child: const Text('Prepare a tuner request'),
-                    ),
-                    subtitle: const Text(
-                      'Stock file, notes, logs, and saved requests',
-                    ),
-                    children: [
-                      ExpansionTile(
-                        tilePadding: const EdgeInsets.symmetric(horizontal: 8),
-                        childrenPadding: const EdgeInsets.only(bottom: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        collapsedShape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        leading: const Icon(Icons.map_outlined),
-                        title: Semantics(
-                          header: true,
-                          child: const Text('Optional map review'),
-                        ),
-                        subtitle: const Text(
-                          'Browse, review, and prepare map files',
-                        ),
-                        children: [
-                          if (s55Connected)
-                            ListTile(
-                              leading: const Icon(Icons.storefront_outlined),
-                              title: Semantics(
-                                header: true,
-                                child: const Text('S55 remap products'),
-                              ),
-                              subtitle: const Text(
-                                'Competition and CS product tracks',
-                              ),
-                              onTap: () => showDialog<void>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('S55 remap products'),
-                                  content: const Text(
-                                    'Competition and CS are separate product tracks for the F82 M4 S55. Select the track above before preparing a tuner package.',
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text('Close'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ListTile(
-                            leading: const Icon(Icons.tune_outlined),
-                            title: const Text('Review a map file'),
-                            subtitle: const Text(
-                              'Compare a tuner-provided file safely',
-                            ),
-                            onTap: hasSupportedVehicleProfile
-                                ? () => chooseMap(original: false)
-                                : null,
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.save_outlined),
-                            title: const Text('Review stock backup'),
-                            subtitle: Text(
-                              importedStockFile == null
-                                  ? 'Import a stock backup first'
-                                  : 'View the verified backup and its history',
-                            ),
-                            onTap: importedStockFile == null
-                                ? importStockFile
-                                : showBackupHistory,
-                          ),
-                          Semantics(
-                            enabled: false,
-                            label:
-                                'Review backend options unavailable until vehicle-specific support is validated.',
-                            child: ListTile(
-                              leading: const Icon(Icons.info_outline_rounded),
-                              title: const Text('Review backend options'),
-                              subtitle: const Text(
-                                'Unavailable until vehicle-specific support is validated',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Card(
-                        margin: EdgeInsets.zero,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Semantics(
-                                header: true,
-                                child: Text(
-                                  'Stock file & backups',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                importedStockFile == null
-                                    ? 'Import a known stock file to keep it with this Tune workspace.'
-                                    : 'Imported: ${importedStockFile!.uri.pathSegments.last}',
-                              ),
-                              if (importedStockFile != null &&
-                                  importedStockFileSize != null &&
-                                  importedStockFileHash != null) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  '${_formatFileSize(importedStockFileSize!)} · SHA-256 ${importedStockFileHash!.substring(0, 12)}…',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: importStockFile,
-                                icon: const Icon(Icons.upload_file_outlined),
-                                label: Text(
-                                  importedStockFile == null
-                                      ? 'Import stock file'
-                                      : 'Replace stock file',
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: readingEcu
-                                    ? null
-                                    : readEcuCalibration,
-                                icon: readingEcu
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.memory_outlined),
-                                label: Text(
-                                  readingEcu
-                                      ? 'Reading ECU…'
-                                      : 'Read calibration from ECU',
-                                ),
-                              ),
-                              if (readingEcu) ...[
-                                const SizedBox(height: 8),
-                                TextButton.icon(
-                                  onPressed:
-                                      rust_vehicle.cancelIstaS55Calibration,
-                                  icon: const Icon(Icons.stop_circle_outlined),
-                                  label: const Text('Cancel ECU read'),
-                                ),
-                              ],
-                              if (importedStockFile != null) ...[
-                                const SizedBox(height: 4),
-                                TextButton.icon(
-                                  onPressed: showBackupHistory,
-                                  icon: const Icon(Icons.history_rounded),
-                                  label: const Text('View backup history'),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Card(
-                        margin: EdgeInsets.zero,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Semantics(
-                                header: true,
-                                child: Text(
-                                  'Read-only map comparison',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Compare file metadata before sending anything to a tuner.',
-                              ),
-                              if (!hasSupportedVehicleProfile) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Identify a supported vehicle before comparing map files.',
-                                  style: TextStyle(color: AppPalette.orange),
-                                ),
-                              ] else if (!identityAvailable) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Offline review only. Connect to capture live ECU evidence before requesting a calibration read.',
-                                  style: TextStyle(
-                                    color: AppPalette.secondary(widget.isDark),
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 12),
-                              _MapSlot(
-                                label: 'Original / stock',
-                                file: originalMap,
-                                metadata: mapMetadata['original'],
-                                onPressed: hasSupportedVehicleProfile
-                                    ? () => chooseMap(original: true)
-                                    : null,
-                              ),
-                              const SizedBox(height: 8),
-                              _MapSlot(
-                                label: 'Comparison map',
-                                file: comparisonMap,
-                                metadata: mapMetadata['comparison'],
-                                onPressed: hasSupportedVehicleProfile
-                                    ? () => chooseMap(original: false)
-                                    : null,
-                              ),
-                              if (originalMap != null &&
-                                  comparisonMap != null) ...[
-                                const SizedBox(height: 12),
-                                _ComparisonSummary(
-                                  original: mapMetadata['original']!,
-                                  comparison: mapMetadata['comparison']!,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Card(
-                        margin: EdgeInsets.zero,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Semantics(
-                                header: true,
-                                child: Text(
-                                  'Tuner request details',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Saved automatically for this vehicle. Add the hardware, fuel, and map notes your tuner needs.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: fuelController,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                decoration: const InputDecoration(
-                                  labelText: 'Fuel',
-                                  hintText: 'Example: 98 RON / 93 AKI / E30',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: hardwareController,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                decoration: const InputDecoration(
-                                  labelText: 'Hardware',
-                                  hintText:
-                                      'Example: stock turbos, intake, charge pipes',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: modificationsController,
-                                maxLines: 3,
-                                decoration: const InputDecoration(
-                                  labelText: 'Modifications and notes',
-                                  hintText:
-                                      'Example: intake, charge pipes, fuel, requested map…',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      ...[
-                        const SizedBox(height: 16),
-                        Card(
-                          margin: EdgeInsets.zero,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    8,
-                                    16,
-                                    4,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'Logs to include',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium,
-                                        ),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            selectedLogs.addAll(
-                                              availableLogs.map(
-                                                (log) => log.path,
-                                              ),
-                                            );
-                                          });
-                                          _scheduleDraftSave();
-                                        },
-                                        child: const Text('Select all'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          setState(selectedLogs.clear);
-                                          _scheduleDraftSave();
-                                        },
-                                        child: const Text('Clear'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    0,
-                                    16,
-                                    4,
-                                  ),
-                                  child: Text(
-                                    'Select saved logs to attach to the tuner package.',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ),
-                                if (availableLogs.isEmpty)
-                                  Container(
-                                    margin: const EdgeInsets.fromLTRB(
-                                      16,
-                                      4,
-                                      16,
-                                      8,
-                                    ),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppPalette.surface(widget.isDark),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: AppPalette.separator(
-                                          widget.isDark,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Semantics(
-                                      container: true,
-                                      label:
-                                          'No saved logs yet. Record a live-data log first, then return here to attach it.',
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline_rounded,
-                                            color: AppPalette.secondary(
-                                              widget.isDark,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          const Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  'No saved logs yet',
-                                                  style: TextStyle(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                SizedBox(height: 3),
-                                                Text(
-                                                  'Record a live-data log first, then return here to attach it.',
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                for (final log in availableLogs)
-                                  CheckboxListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    value: selectedLogs.contains(log.path),
-                                    title: Text(log.uri.pathSegments.last),
-                                    onChanged: (value) {
-                                      setState(
-                                        () => value == true
-                                            ? selectedLogs.add(log.path)
-                                            : selectedLogs.remove(log.path),
-                                      );
-                                      _scheduleDraftSave();
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      if (savedRequests.isNotEmpty) ...[
-                        Text(
-                          'Saved tuner requests',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        for (final request in savedRequests.take(5))
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.assignment_outlined),
-                            title: Text(
-                              request.productLabel ?? request.vehicleLabel,
-                            ),
-                            subtitle: Text(
-                              '${request.vehicleLabel} · ${requestStatusLabel(request.status)} · ${request.logFiles.length} log(s) · ${request.createdAt.day}/${request.createdAt.month}/${request.createdAt.year}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => showRequestDetails(request),
-                          ),
-                        const SizedBox(height: 8),
-                      ],
-                      Card(
-                        margin: EdgeInsets.zero,
-                        color: AppPalette.surface(widget.isDark),
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(Icons.lock_outline_rounded, size: 20),
-                              SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Calibration writing is locked. ${writePreflight.blockingReasons.isEmpty ? 'A validated programming backend is still required.' : writePreflight.blockingReasons.first}.',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ),
@@ -1869,9 +1931,6 @@ class _TuneProductCard extends StatelessWidget {
     final muted = AppPalette.secondary(isDark);
     final surface = AppPalette.surface(isDark);
     final statusLabel = compatible ? 'Vehicle match' : identityStatusLabel;
-    final borderColor = selected
-        ? primary.withValues(alpha: .75)
-        : AppPalette.separator(isDark).withValues(alpha: .7);
     return Semantics(
       button: true,
       selected: selected,
@@ -1891,7 +1950,6 @@ class _TuneProductCard extends StatelessWidget {
                   ? primary.withValues(alpha: isDark ? .12 : .07)
                   : surface,
               borderRadius: BorderRadius.circular(appCardRadius),
-              border: Border.all(color: borderColor, width: selected ? 1.4 : 1),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2073,8 +2131,323 @@ class _VehicleSnapshotStrip extends StatelessWidget {
   );
 }
 
-class _EcuIdentityFieldBar extends StatelessWidget {
-  const _EcuIdentityFieldBar({
+class _TuneActionItem {
+  const _TuneActionItem({
+    required this.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final Key key;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+class _TuneActionMenu extends StatelessWidget {
+  const _TuneActionMenu({
+    required this.isDark,
+    required this.enabled,
+    required this.items,
+  });
+
+  final bool isDark;
+  final bool enabled;
+  final List<_TuneActionItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryActions = items.take(4).toList();
+    final requestAction = items.length > 4 ? items[4] : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 640 ? 4 : 2;
+            return GridView.builder(
+              shrinkWrap: true,
+              primary: false,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: primaryActions.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                mainAxisExtent: 152,
+              ),
+              itemBuilder: (context, index) => _TuneActionTile(
+                isDark: isDark,
+                enabled: enabled,
+                item: primaryActions[index],
+              ),
+            );
+          },
+        ),
+        if (requestAction != null) ...[
+          const SizedBox(height: 12),
+          _TuneRequestTile(
+            isDark: isDark,
+            enabled: enabled,
+            item: requestAction,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Color _tuneMenuSurface(bool isDark) =>
+    isDark ? const Color(0xFF292D35) : const Color(0xFFE5EAF2);
+
+class _TuneActionTile extends StatelessWidget {
+  const _TuneActionTile({
+    required this.isDark,
+    required this.enabled,
+    required this.item,
+  });
+
+  final bool isDark;
+  final bool enabled;
+  final _TuneActionItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: Material(
+        color: _tuneMenuSurface(isDark),
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: InkWell(
+          key: item.key,
+          onTap: enabled ? item.onTap : null,
+          borderRadius: BorderRadius.circular(appCardRadius),
+          child: Opacity(
+            opacity: enabled ? 1 : .45,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppPalette.blue.withValues(
+                            alpha: isDark ? .18 : .1,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          item.icon,
+                          color: AppPalette.blue,
+                          size: 21,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 22,
+                        color: AppPalette.secondary(isDark),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppPalette.secondary(isDark),
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TuneRequestTile extends StatelessWidget {
+  const _TuneRequestTile({
+    required this.isDark,
+    required this.enabled,
+    required this.item,
+  });
+
+  final bool isDark;
+  final bool enabled;
+  final _TuneActionItem item;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    enabled: enabled,
+    child: Material(
+      color: _tuneMenuSurface(isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+      child: InkWell(
+        key: item.key,
+        onTap: enabled ? item.onTap : null,
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: Opacity(
+          opacity: enabled ? 1 : .45,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppPalette.blue.withValues(alpha: isDark ? .2 : .12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(item.icon, color: AppPalette.blue, size: 21),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        item.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppPalette.secondary(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.arrow_forward_rounded, color: AppPalette.blue),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _UnlockStatusPage extends StatelessWidget {
+  const _UnlockStatusPage({required this.isDark, required this.status});
+
+  final bool isDark;
+  final Future<String> status;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppPalette.background(isDark),
+    appBar: AppBar(title: const Text('Check unlock status')),
+    body: FutureBuilder<String>(
+      future: status,
+      builder: (context, snapshot) {
+        final muted = isDark
+            ? const Color(0xFF9DA8B8)
+            : const Color(0xFF58677B);
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppPalette.surface(isDark),
+                borderRadius: BorderRadius.circular(appCardRadius),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.lock_open_outlined,
+                    color: AppPalette.blue,
+                    size: 30,
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    snapshot.connectionState != ConnectionState.done
+                        ? 'Checking unlock status…'
+                        : 'Unlock status result',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (snapshot.connectionState != ConnectionState.done)
+                    const LinearProgressIndicator()
+                  else
+                    Text(
+                      snapshot.hasError
+                          ? 'Unable to verify unlock status: ${snapshot.error}'
+                          : snapshot.data ?? 'Unable to verify unlock status.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: muted,
+                        height: 1.45,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppPalette.surface(isDark),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: AppPalette.blue),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'This check is informational only. It does not unlock, write to, or flash the ECU.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _EcuIdentityPage extends StatelessWidget {
+  const _EcuIdentityPage({
     required this.isDark,
     required this.vin,
     required this.identity,
@@ -2095,10 +2468,10 @@ class _EcuIdentityFieldBar extends StatelessWidget {
   final String? calibration;
   final String? manufacturingDate;
   final String? codingId;
+
   @override
   Widget build(BuildContext context) {
     final muted = AppPalette.secondary(isDark);
-    final border = muted.withValues(alpha: .18);
     final fields = <(String, String?)>[
       ('VIN', vin),
       ('Hardware ID', hardware),
@@ -2109,28 +2482,46 @@ class _EcuIdentityFieldBar extends StatelessWidget {
       ('Manufactured', manufacturingDate),
       ('Coding ID', codingId),
     ];
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      decoration: BoxDecoration(
-        color: AppPalette.surface(isDark),
-        borderRadius: BorderRadius.circular(appCardRadius),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'DME identity',
-            style: TextStyle(fontWeight: FontWeight.w800),
+    return Scaffold(
+      backgroundColor: AppPalette.background(isDark),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppPalette.blue.withValues(alpha: isDark ? .16 : .1),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: const Icon(
+                Icons.memory_rounded,
+                color: AppPalette.blue,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text('DME identity'),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(
+            height: 1,
+            color: AppPalette.separator(isDark).withValues(alpha: .65),
           ),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final itemWidth = (constraints.maxWidth - 10) / 2;
-              return Wrap(
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final itemWidth = (constraints.maxWidth - 42) / 2;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Wrap(
                 spacing: 10,
-                runSpacing: 5,
+                runSpacing: 18,
                 children: [
                   for (final field in fields)
                     SizedBox(
@@ -2142,10 +2533,10 @@ class _EcuIdentityFieldBar extends StatelessWidget {
                       ),
                     ),
                 ],
-              );
-            },
-          ),
-        ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -2166,10 +2557,10 @@ class _EcuIdentityField extends StatelessWidget {
   Widget build(BuildContext context) {
     final shown = value?.trim().isNotEmpty == true ? value!.trim() : 'Not read';
     final valueColor = shown == 'Not read'
-        ? muted
+        ? muted.withValues(alpha: .82)
         : Theme.of(context).colorScheme.onSurface;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2177,16 +2568,21 @@ class _EcuIdentityField extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: muted, fontSize: 10),
+            style: TextStyle(
+              color: muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-          const SizedBox(height: 1),
+          const SizedBox(height: 4),
           SelectableText(
             shown,
             maxLines: 1,
             textAlign: TextAlign.start,
             style: TextStyle(
               color: valueColor,
-              fontSize: 11,
+              fontSize: 12,
+              height: 1.1,
               fontWeight: FontWeight.w700,
               fontFamily: 'monospace',
             ),
@@ -2195,140 +2591,6 @@ class _EcuIdentityField extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({
-    required this.isDark,
-    required this.identity,
-    required this.vin,
-    this.mileageKm,
-    this.lastConnectedAt,
-    this.evidenceProfile,
-  });
-  final bool isDark;
-  final VehicleIdentity identity;
-  final String vin;
-  final double? mileageKm;
-  final DateTime? lastConnectedAt;
-  final ResolvedEcuProfile? evidenceProfile;
-
-  @override
-  Widget build(BuildContext context) {
-    final profile = identity.profile;
-    return Card(
-      margin: EdgeInsets.zero,
-      color: AppPalette.surface(isDark),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.verified_outlined, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    profile.label,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Semantics(
-              header: true,
-              child: Text(
-                'Profile capabilities',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final capability in VehicleCapability.values)
-                  _CapabilityLabel(
-                    capability: capability,
-                    enabled: profile.supports(capability),
-                  ),
-              ],
-            ),
-            if (evidenceProfile != null) ...[
-              const SizedBox(height: 16),
-              Semantics(
-                header: true,
-                child: Text(
-                  'Current-session evidence',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _evidenceDetail,
-                style: TextStyle(
-                  color: AppPalette.secondary(isDark),
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final capability in _evidenceCapabilities)
-                    _CapabilityLabel(
-                      capability: capability,
-                      enabled: evidenceProfile!.supports(capability),
-                    ),
-                ],
-              ),
-            ],
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                await VehicleGarageStore().upsert(
-                  GarageVehicle(
-                    vin: vin,
-                    label: identity.displayLabel,
-                    profileId: profile.id,
-                    mileageKm: mileageKm,
-                    lastConnectedAt: lastConnectedAt,
-                  ),
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vehicle saved to garage')),
-                  );
-                }
-              },
-              icon: const Icon(Icons.bookmark_add_outlined),
-              label: const Text('Save vehicle to garage'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static const _evidenceCapabilities = <VehicleCapability>[
-    VehicleCapability.calibrationRead,
-    VehicleCapability.ecuMemoryInventoryRead,
-    VehicleCapability.offlinePackageInspection,
-  ];
-
-  String get _evidenceDetail => switch (evidenceProfile!.confidence) {
-    ProfileConfidence.exact =>
-      'VIN and complete DME fingerprint match. Read-only inspection evidence is available.',
-    ProfileConfidence.familyMatch =>
-      'DME family matches, but the complete VIN-bound fingerprint is not available yet.',
-    ProfileConfidence.unknown =>
-      'This live DME identity does not match the expected vehicle ECU family.',
-    ProfileConfidence.vehicleOnly =>
-      'Vehicle profile identified; ECU evidence has not been matched yet.',
-  };
 }
 
 class _MapSlot extends StatelessWidget {
@@ -2356,9 +2618,6 @@ class _MapSlot extends StatelessWidget {
           context,
         ).colorScheme.surfaceContainerHighest.withValues(alpha: .28),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: .55),
-        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2436,7 +2695,6 @@ class _MapInspectionSummary extends StatelessWidget {
         decoration: BoxDecoration(
           color: color.withValues(alpha: .08),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: .25)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2479,7 +2737,6 @@ class _ComparisonSummary extends StatelessWidget {
         decoration: BoxDecoration(
           color: color.withValues(alpha: .10),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: .35)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2523,73 +2780,6 @@ class _ComparisonSummary extends StatelessWidget {
   String _time(DateTime value) => '${value.day}/${value.month}/${value.year}';
 }
 
-class _CapabilityLabel extends StatelessWidget {
-  const _CapabilityLabel({required this.capability, required this.enabled});
-  final VehicleCapability capability;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: '$_label: ${enabled ? 'available' : 'not available'}',
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: enabled
-            ? AppPalette.green.withValues(alpha: .12)
-            : Colors.transparent,
-        border: Border.all(
-          color: enabled
-              ? AppPalette.green.withValues(alpha: .45)
-              : Theme.of(context).dividerColor,
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              enabled
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.remove_circle_outline_rounded,
-              size: 14,
-              color: enabled
-                  ? AppPalette.green
-                  : Theme.of(context).disabledColor,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              _label,
-              style: TextStyle(
-                fontSize: 12,
-                color: enabled
-                    ? AppPalette.green
-                    : Theme.of(context).disabledColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  String get _label => switch (capability) {
-    VehicleCapability.diagnostics => 'Diagnostics',
-    VehicleCapability.liveData => 'Live data',
-    VehicleCapability.dataLogging => 'Data logging',
-    VehicleCapability.flapControl => 'Flap control',
-    VehicleCapability.calibrationRead => 'Calibration read',
-    VehicleCapability.calibrationWrite => 'Calibration write',
-    VehicleCapability.ecuIdentification => 'ECU identification',
-    VehicleCapability.ecuDtcRead => 'ECU fault read',
-    VehicleCapability.ecuFreezeFrameRead => 'Freeze-frame read',
-    VehicleCapability.ecuSoftwareMetadataRead => 'ECU software metadata',
-    VehicleCapability.ecuMemoryInventoryRead => 'ECU memory inventory',
-    VehicleCapability.ecuBackupEligible => 'ECU backup eligible',
-    VehicleCapability.offlinePackageInspection => 'Offline package inspection',
-  };
-}
-
 class _CheckResult extends StatelessWidget {
   const _CheckResult({
     required this.label,
@@ -2611,56 +2801,6 @@ class _CheckResult extends StatelessWidget {
     title: Text(label),
     subtitle: Text(detail),
   );
-}
-
-class _TuneStepLabel extends StatelessWidget {
-  const _TuneStepLabel({
-    required this.number,
-    required this.title,
-    required this.detail,
-  });
-
-  final String number;
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            number,
-            style: TextStyle(
-              color: theme.colorScheme.onPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 2),
-              Text(detail, style: theme.textTheme.bodySmall),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 class _TuneReadinessPanel extends StatelessWidget {
@@ -2690,7 +2830,7 @@ class _TuneReadinessPanel extends StatelessWidget {
         : muted;
 
     final statusDetail = vin == 'Not identified'
-        ? 'Connect and identify the ECU before preparing a package'
+        ? 'Connect vehicle'
         : connected
         ? 'Connected'
         : 'Waiting for a verified vehicle session';
@@ -2699,13 +2839,10 @@ class _TuneReadinessPanel extends StatelessWidget {
       label: 'Tune. $statusDetail',
       child: Container(
         height: appTopActionCardHeight,
-        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         decoration: BoxDecoration(
           color: AppPalette.surface(isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(isDark).withValues(alpha: .5),
-          ),
         ),
         child: Column(
           children: [
@@ -2777,6 +2914,7 @@ class _TuneReadinessPanel extends StatelessWidget {
               width: double.infinity,
               height: 48,
               child: FilledButton.icon(
+                key: const Key('tune-check-vehicle-button'),
                 onPressed: connected ? onCheckVehicle : null,
                 style: FilledButton.styleFrom(
                   foregroundColor: Colors.white,
@@ -2788,6 +2926,148 @@ class _TuneReadinessPanel extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TunerRequestPage extends StatelessWidget {
+  const _TunerRequestPage({
+    required this.isDark,
+    required this.revision,
+    required this.workspace,
+  });
+
+  final bool isDark;
+  final ValueListenable<int> revision;
+  final Widget Function() workspace;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppPalette.background(isDark),
+    appBar: AppBar(title: const Text('Tuner Request')),
+    body: ValueListenableBuilder<int>(
+      valueListenable: revision,
+      builder: (context, value, _) => SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        child: workspace(),
+      ),
+    ),
+  );
+}
+
+class _TuneActionPage extends StatefulWidget {
+  const _TuneActionPage({
+    required this.isDark,
+    required this.title,
+    required this.icon,
+    required this.message,
+    required this.detail,
+    this.products,
+    this.selectedProduct,
+    this.identity,
+    this.onProductSelected,
+  });
+
+  final bool isDark;
+  final String title;
+  final IconData icon;
+  final String message;
+  final String detail;
+  final List<TuneProduct>? products;
+  final TuneProduct? selectedProduct;
+  final VehicleIdentity? identity;
+  final ValueChanged<TuneProduct>? onProductSelected;
+
+  @override
+  State<_TuneActionPage> createState() => _TuneActionPageState();
+}
+
+class _TuneActionPageState extends State<_TuneActionPage> {
+  TuneProduct? selectedProduct;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedProduct = widget.selectedProduct;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = Theme.of(context).colorScheme.onSurface;
+    final muted = widget.isDark
+        ? const Color(0xFF9DA8B8)
+        : const Color(0xFF58677B);
+    return Scaffold(
+      backgroundColor: AppPalette.background(widget.isDark),
+      appBar: AppBar(title: Text(widget.title)),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppPalette.surface(widget.isDark),
+              borderRadius: BorderRadius.circular(appCardRadius),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(widget.icon, color: AppPalette.blue, size: 30),
+                const SizedBox(height: 18),
+                Text(
+                  widget.message,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  widget.detail,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(color: muted, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+          if (widget.products != null) ...[
+            const SizedBox(height: 20),
+            _TuneProductSelector(
+              isDark: widget.isDark,
+              products: widget.products!,
+              selectedProductId: selectedProduct!.id,
+              identity: widget.identity,
+              onSelected: (product) {
+                setState(() => selectedProduct = product);
+                widget.onProductSelected?.call(product);
+              },
+            ),
+          ],
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppPalette.orange.withValues(
+                alpha: widget.isDark ? .12 : .08,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, color: AppPalette.orange),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'No ECU programming or calibration writing is enabled.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

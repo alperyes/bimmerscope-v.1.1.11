@@ -14,6 +14,7 @@ class AutoLogTrigger {
     required double throttlePercent,
     required double startThreshold,
     required DateTime now,
+    Duration releaseDelay = const Duration(seconds: 3),
   }) {
     if (!enabled || !sessionActive) {
       reset();
@@ -30,7 +31,7 @@ class AutoLogTrigger {
       return AutoLogDecision.none;
     }
     _releasedAt ??= now;
-    if (now.difference(_releasedAt!) < const Duration(seconds: 3)) {
+    if (now.difference(_releasedAt!) < releaseDelay) {
       return AutoLogDecision.none;
     }
     _releasedAt = null;

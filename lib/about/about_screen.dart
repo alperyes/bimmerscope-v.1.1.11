@@ -49,9 +49,6 @@ class AboutScreen extends StatelessWidget {
             decoration: BoxDecoration(
               color: AppPalette.surface(isDark),
               borderRadius: BorderRadius.circular(appCardRadius),
-              border: Border.all(
-                color: AppPalette.separator(isDark).withValues(alpha: .65),
-              ),
             ),
             child: Column(
               children: [
@@ -87,9 +84,6 @@ class AboutScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppPalette.orange.withValues(alpha: isDark ? .10 : .08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppPalette.orange.withValues(alpha: .32),
-                ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,9 +114,6 @@ class AboutScreen extends StatelessWidget {
     decoration: BoxDecoration(
       color: AppPalette.surface(isDark),
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(
-        color: AppPalette.separator(isDark).withValues(alpha: .65),
-      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,

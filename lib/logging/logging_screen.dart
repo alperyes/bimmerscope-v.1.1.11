@@ -88,8 +88,10 @@ class LoggingScreen extends StatefulWidget {
     required this.onToggleRecording,
     required this.autoLogEnabled,
     required this.autoLogThreshold,
+    required this.autoLogReleaseDelaySeconds,
     required this.onAutoLogChanged,
     required this.onAutoLogThresholdChanged,
+    required this.onAutoLogReleaseDelayChanged,
     this.telemetryDegraded = false,
     this.telemetryGapCount = 0,
     this.maxTelemetryGapMs = 0,
@@ -107,8 +109,10 @@ class LoggingScreen extends StatefulWidget {
   final Future<void> Function() onToggleRecording;
   final bool autoLogEnabled;
   final double autoLogThreshold;
-  final Future<void> Function(bool enabled) onAutoLogChanged;
+  final int autoLogReleaseDelaySeconds;
+  final Future<bool> Function(bool enabled) onAutoLogChanged;
   final Future<void> Function(double threshold) onAutoLogThresholdChanged;
+  final Future<void> Function(int seconds) onAutoLogReleaseDelayChanged;
   final bool telemetryDegraded;
   final int telemetryGapCount;
   final int maxTelemetryGapMs;
@@ -194,11 +198,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
                   decoration: BoxDecoration(
                     color: AppPalette.surface(widget.isDark),
                     borderRadius: BorderRadius.circular(appCardRadius),
-                    border: Border.all(
-                      color: AppPalette.separator(
-                        widget.isDark,
-                      ).withValues(alpha: .42),
-                    ),
                   ),
                   child: Column(
                     children: [
@@ -339,11 +338,11 @@ class _LoggingScreenState extends State<LoggingScreen> {
         : widget.telemetryDegraded
         ? 'Connection degraded · waiting for fresh samples'
         : widget.telemetryGapCount == 0
-        ? 'Live telemetry ready · CSV logs · no gaps'
+        ? 'Live telemetry ready'
         : 'Live telemetry ready · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms';
     final recorderLabel = widget.isRecording
         ? 'Recording. $recorderDetail'
-        : 'Data recorder. $recorderDetail';
+        : 'Data Recorder. $recorderDetail';
     return Semantics(
       container: true,
       label: recorderLabel,
@@ -353,9 +352,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
         decoration: BoxDecoration(
           color: AppPalette.surface(widget.isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(widget.isDark).withValues(alpha: .45),
-          ),
         ),
         child: Column(
           children: [
@@ -387,7 +383,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.isRecording ? 'Recording' : 'Data recorder',
+                        widget.isRecording ? 'Recording' : 'Data Recorder',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -450,8 +446,10 @@ class _LoggingScreenState extends State<LoggingScreen> {
         canConfigure: widget.canRecord,
         enabled: widget.autoLogEnabled,
         threshold: widget.autoLogThreshold,
+        releaseDelaySeconds: widget.autoLogReleaseDelaySeconds,
         onEnabledChanged: widget.onAutoLogChanged,
         onThresholdChanged: widget.onAutoLogThresholdChanged,
+        onReleaseDelayChanged: widget.onAutoLogReleaseDelayChanged,
       ),
     ),
   );
@@ -477,11 +475,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(appCardRadius),
-              border: Border.all(
-                color: AppPalette.separator(
-                  widget.isDark,
-                ).withValues(alpha: .45),
-              ),
             ),
             child: Row(
               children: [
@@ -546,9 +539,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
         decoration: BoxDecoration(
           color: AppPalette.surface(widget.isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(widget.isDark).withValues(alpha: .55),
-          ),
         ),
         child: InkWell(
           onTap: () => showPlot(file),
@@ -1109,25 +1099,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           tooltip: 'Session options',
           onSelected: _handlePlotAction,
           itemBuilder: (context) => [
-            PopupMenuItem(
-              value: _PlotAction.zoomOut,
-              enabled: _zoom > 1,
-              child: const Text('Zoom out'),
-            ),
-            PopupMenuItem(
-              value: _PlotAction.zoomIn,
-              enabled: _zoom < 4,
-              child: Text('Zoom in · ${(_zoom * 100).round()}%'),
-            ),
-            const PopupMenuItem(
-              value: _PlotAction.reset,
-              child: Text('Reset view'),
-            ),
-            PopupMenuItem(
-              value: _PlotAction.timeScale,
-              child: Text(_useMinutes ? 'Use seconds' : 'Use minutes'),
-            ),
-            const PopupMenuDivider(),
             const PopupMenuItem(
               value: _PlotAction.rename,
               child: Text('Rename CSV file'),
@@ -1163,41 +1134,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     body: ListView(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: AppPalette.separator(
-                Theme.of(context).brightness == Brightness.dark,
-              ).withValues(alpha: .5),
-            ),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.insights_rounded, size: 18),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  '${widget.points.length} channels · ${widget.points.values.fold<int>(0, (total, values) => math.max(total, values.length))} samples · ${_LoggingScreenState.formatDuration(Duration(seconds: widget.durationSeconds.round()))}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Text(
-                _cursorEnabled ? 'Cursor synced' : 'Charts synced',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
         Semantics(
           header: true,
           child: Text(
@@ -1207,8 +1143,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         ),
         const SizedBox(height: 16),
         _sessionSummary(),
-        const SizedBox(height: 10),
-        _tunerReadinessCard(),
         const SizedBox(height: 10),
         _provenanceCard(),
         if (widget.markers.isNotEmpty) ...[
@@ -1234,9 +1168,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Theme.of(context).dividerColor.withValues(alpha: .5),
-            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1270,6 +1201,42 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Zoom out',
+                    onPressed: _zoom > 1
+                        ? () => _handlePlotAction(_PlotAction.zoomOut)
+                        : null,
+                    icon: const Icon(Icons.remove_rounded),
+                  ),
+                  Text(
+                    '${(_zoom * 100).round()}%',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Zoom in',
+                    onPressed: _zoom < 4
+                        ? () => _handlePlotAction(_PlotAction.zoomIn)
+                        : null,
+                    icon: const Icon(Icons.add_rounded),
+                  ),
+                  IconButton(
+                    tooltip: 'Reset view',
+                    onPressed: () => _handlePlotAction(_PlotAction.reset),
+                    icon: const Icon(Icons.restart_alt_rounded),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => _handlePlotAction(_PlotAction.timeScale),
+                    child: Text(_useMinutes ? 'Minutes' : 'Seconds'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1285,9 +1252,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Theme.of(context).dividerColor.withValues(alpha: .5),
-                  ),
                 ),
                 child: _LogChart(
                   label: indexed.value.key,
@@ -1385,9 +1349,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: Theme.of(context).dividerColor.withValues(alpha: .5),
-      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1480,7 +1441,9 @@ class _LogPlotPageState extends State<_LogPlotPage> {
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
-        subtitle: Text('${rows.length} channels · min / average / max'),
+        subtitle: Text(
+          '${widget.points.values.fold<int>(0, (total, values) => math.max(total, values.length))} samples · ${_LoggingScreenState.formatDuration(Duration(seconds: widget.durationSeconds.round()))}',
+        ),
         children: rows
             .map(
               (row) => Semantics(
@@ -1515,69 +1478,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     );
   }
 
-  Widget _tunerReadinessCard() {
-    final quality = widget.quality;
-    final ready = quality.suitableForTunerReview;
-    final color = ready ? AppPalette.green : AppPalette.orange;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: .28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                ready ? Icons.verified_outlined : Icons.rule_outlined,
-                color: color,
-                size: 19,
-              ),
-              const SizedBox(width: 8),
-              Semantics(
-                header: true,
-                child: Text(
-                  ready ? 'Ready for tuner review' : 'Review before sending',
-                  style: TextStyle(fontWeight: FontWeight.w800, color: color),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            ready
-                ? '${quality.sampleCount} samples · ${_LoggingScreenState.formatDuration(Duration(milliseconds: quality.durationMs))} · ${quality.channels.length} channels'
-                : quality.reasons.join(' '),
-            style: const TextStyle(fontSize: 11),
-          ),
-          if (quality.channelQuality.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Semantics(
-              header: true,
-              child: const Text(
-                'Observed channel sampling',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-            for (final entry in quality.channelQuality.entries)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '${entry.key}: ${entry.value.sampleCount} samples · '
-                  '${entry.value.observedHz?.toStringAsFixed(2) ?? "—"} Hz · '
-                  'largest gap ${(entry.value.maxGapMs / 1000).toStringAsFixed(2)} s',
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _provenanceCard() {
     final status = widget.provenance;
     final color = status.matchesCsv ? AppPalette.green : AppPalette.orange;
@@ -1591,7 +1491,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
       decoration: BoxDecoration(
         color: color.withValues(alpha: .10),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: .28)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1625,11 +1524,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
     decoration: BoxDecoration(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(
-        color: AppPalette.separator(
-          Theme.of(context).brightness == Brightness.dark,
-        ).withValues(alpha: .5),
-      ),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,

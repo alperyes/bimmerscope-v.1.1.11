@@ -235,9 +235,6 @@ class _BmwEnetAppState extends State<BmwEnetApp> {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(appCardRadius),
-          side: BorderSide(
-            color: dark ? const Color(0xFF2A2B2F) : const Color(0xFFE0E3E8),
-          ),
         ),
       ),
       dividerTheme: DividerThemeData(

@@ -291,7 +291,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: BoxDecoration(
               color: AppPalette.blue.withValues(alpha: isDark ? .08 : .06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppPalette.blue.withValues(alpha: .24)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,9 +335,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         decoration: BoxDecoration(
           color: AppPalette.surface(widget.isDark),
           borderRadius: BorderRadius.circular(appCardRadius),
-          border: Border.all(
-            color: AppPalette.separator(widget.isDark).withValues(alpha: .5),
-          ),
         ),
         child: Column(children: children),
       );

@@ -1,29 +1,32 @@
-# BimmerScope `1.1.8-experimental.1+72` handover
+# BimmerScope `1.1.8-experimental.1+73` handover
 
-## Current v1.1.8 state — 27 September 2026
+## Current v1.1.8 state — 28 September 2026
 
 - Workspace: `C:\Users\alper\Desktop\v1.1.8`
 - Branch: `codex/experimental-v1.1.8`
 - GitHub remote: `https://github.com/alperyes/bimmerscope-v1.1.8.git`
-- Version: `1.1.8-experimental.1+72`; Tune package: `com.bmwenet.bmw_app.tune`.
+- Version: `1.1.8-experimental.1+73`; Tune package: `com.bmwenet.bmw_app.tune`.
 - Target vehicle: user's stock 2014 BMW F82 M4 with DCT. Actual DME software
   and unlock state remain unverified.
-- The v1.1.8 Tune debug APK was rebuilt on 27 September 2026 and copied to the
-  USB-connected phone `HS621L001389` at
-  `/sdcard/Download/BimmerScope-v1.1.8-experimental.1+72-tune-debug.apk`.
-  Package metadata was checked and the phone file SHA-256 matched the local
-  build: `7168644d8adcbf6a9cb9100a8483cd2fe5d25160907725ac49a04d5a33a23324`.
-  It was sent, not installed. The mistaken v1.1.3 APK previously sent by error
-  was removed from the phone's Downloads folder.
+- Latest Tune debug APK: `build\app\outputs\flutter-apk\BimmerScope-v1.1.8-experimental.1+73-tune-debug.apk`.
+  Package metadata verified as `com.bmwenet.bmw_app.tune`, version code 73;
+  SHA-256: `3EDC8DCA7F557097283131207AF5068D3964850E8EF9A167C87B7982E195B500`.
+  It has not been copied to or installed on the phone; the user plans to test
+  the revised live Open request later.
 - This update includes Tune and diagnostics layout/content refinements, DME
   identity formatting, the Android hotspot-settings shortcut, a dedicated
-  automatic pull-logging settings page, and safer saved-log rename handling.
+  automatic pull-logging settings page, safer saved-log rename handling, and
+  BM3-captured trailing bytes (`FA FF`) for live exhaust-flap Open requests.
 - Sidebar/About version fallback in `lib/app/build_info.dart` and `pubspec.yaml`
-  now identify build `1.1.8-experimental.1+72`.
+  now identify build `1.1.8-experimental.1+73`.
+- Live Open requests now use the BM3-captured `FA FF` trailing bytes; Close,
+  Auto, and the separate experimental ISTA service-test request are unchanged.
+  This is only protocol matching based on the capture, not confirmed flap
+  behavior on the user's vehicle.
 - Validation: `flutter analyze` passes with no issues; `flutter test` passes
   48/48; `cargo test --manifest-path rust\Cargo.toml` passes 68/68 (two
-  existing dead-code warnings). `git diff --check` is clean. The latest Tune
-  APK build succeeded before these checks.
+  existing dead-code warnings); `git diff --check` is clean. Tune APK build
+  succeeded and its package/version were verified.
 - Physical-vehicle reliability remains unverified. The user previously
   reported intermittent initial connection and flap commands that sometimes
   did not respond until cycling ignition and reconnecting, including an

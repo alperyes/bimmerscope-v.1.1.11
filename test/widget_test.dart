@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:bmw_app/dashboard/dashboard_screen.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/diagnostics/diagnostics_screen.dart';
+import 'package:bmw_app/product/product_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -82,19 +83,95 @@ void main() {
     expect(find.text('BIMMERSCOPE'), findsOneWidget);
     expect(find.text('Connect'), findsOneWidget);
     expect(find.text('Vehicle'), findsWidgets);
+    final connectSize = tester.getSize(
+      find.byKey(const Key('vehicle-connect-button')),
+    );
+    expect(connectSize.height, 48);
     await tester.tap(find.text('Monitor').last);
     await tester.pumpAndSettle();
     expect(find.text('Engine RPM'), findsOneWidget);
+    final monitorAction = find.byKey(const Key('monitor-primary-action'));
+    expect(monitorAction, findsOneWidget);
+    expect(find.text('Start'), findsOneWidget);
+    final startSize = tester.getSize(monitorAction);
+    expect(startSize.height, connectSize.height);
+    expect(startSize.width, connectSize.width);
+    expect(
+      tester.getRect(monitorAction).bottom,
+      lessThanOrEqualTo(tester.getRect(find.byType(NavigationBar)).top),
+    );
 
     await tester.tap(find.text('Diagnostics'));
     await tester.pumpAndSettle();
+    expect(monitorAction, findsNothing);
     expect(find.text('Scan'), findsOneWidget);
+    final scanSize = tester.getSize(
+      find.byKey(const Key('diagnostics-scan-button')),
+    );
+    expect(scanSize.height, connectSize.height);
+    expect(scanSize.width, connectSize.width);
 
     await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
-    expect(find.text('Data recorder'), findsOneWidget);
+    expect(find.text('Data Recorder'), findsOneWidget);
     expect(find.text('Automatic pull logging'), findsOneWidget);
     expect(find.text('No saved logs yet'), findsOneWidget);
+
+    if (ProductConfig.tuningEnabled) {
+      await tester.tap(find.text('Tune').last);
+      await tester.pumpAndSettle();
+      final checkVehicleSize = tester.getSize(
+        find.byKey(const Key('tune-check-vehicle-button')),
+      );
+      expect(checkVehicleSize, connectSize);
+
+      final unlockEntry = find.byKey(const Key('tune-check-unlock-open'));
+      await tester.ensureVisible(unlockEntry);
+      await tester.tap(unlockEntry);
+      await tester.pumpAndSettle();
+      expect(find.text('Unlock status result'), findsOneWidget);
+      expect(find.textContaining('informational only'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final tunerRequestEntry = find.byKey(const Key('tune-request-open'));
+      await tester.ensureVisible(tunerRequestEntry);
+      await tester.drag(find.byType(ListView).first, const Offset(0, -220));
+      await tester.pumpAndSettle();
+      await tester.tap(tunerRequestEntry);
+      await tester.pumpAndSettle();
+      expect(find.text('Tuner Request'), findsOneWidget);
+      expect(find.text('Stock file & backups'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(tunerRequestEntry, findsOneWidget);
+
+      final flashMapButton = find.byKey(const Key('tune-flash-map-open'));
+      await tester.ensureVisible(flashMapButton);
+      await tester.tap(flashMapButton);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Map flashing is not available in this version.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('No ECU programming or calibration writing is enabled.'),
+        findsOneWidget,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final stockButton = find.byKey(const Key('tune-flash-stock-open'));
+      await tester.ensureVisible(stockButton);
+      await tester.tap(stockButton);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Stock restoration is not available in this version.'),
+        findsOneWidget,
+      );
+    }
   });
 
   testWidgets('keeps monitor usable on a narrow layout', (tester) async {

@@ -145,7 +145,6 @@ Widget _statusBanner({required bool isDark}) => Container(
   decoration: BoxDecoration(
     color: AppPalette.blue.withValues(alpha: isDark ? .13 : .08),
     borderRadius: BorderRadius.circular(18),
-    border: Border.all(color: AppPalette.blue.withValues(alpha: .24)),
   ),
   child: const Row(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,7 +197,6 @@ Widget _safetyNote({required bool isDark}) => Container(
   decoration: BoxDecoration(
     color: AppPalette.orange.withValues(alpha: .10),
     borderRadius: BorderRadius.circular(18),
-    border: Border.all(color: AppPalette.orange.withValues(alpha: .22)),
   ),
   child: const Row(
     crossAxisAlignment: CrossAxisAlignment.start,

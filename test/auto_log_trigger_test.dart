@@ -79,4 +79,23 @@ void main() {
       AutoLogDecision.none,
     );
   });
+
+  test('respects a configured release delay', () {
+    final trigger = AutoLogTrigger();
+    final now = DateTime(2026, 9, 29, 12);
+    AutoLogDecision observe(Duration elapsed) => trigger.observe(
+      enabled: true,
+      sessionActive: true,
+      isRecording: true,
+      automaticRecording: true,
+      throttlePercent: 20,
+      startThreshold: 70,
+      releaseDelay: const Duration(seconds: 5),
+      now: now.add(elapsed),
+    );
+
+    expect(observe(Duration.zero), AutoLogDecision.none);
+    expect(observe(const Duration(seconds: 4)), AutoLogDecision.none);
+    expect(observe(const Duration(seconds: 5)), AutoLogDecision.stop);
+  });
 }

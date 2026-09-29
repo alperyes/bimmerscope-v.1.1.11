@@ -689,7 +689,7 @@ fn diagnostic_service(
 const ADDITIONAL_DTC_ECUS: [u8; 3] = [0x10, 0x17, 0x18];
 const DTC_QUERY_TIMEOUT: Duration = Duration::from_millis(1500);
 const OPTIONAL_ECU_SESSION_TIMEOUT: Duration = Duration::from_millis(750);
-const MAX_LIVE_SENSORS: usize = 4;
+const MAX_LIVE_SENSORS: usize = 6;
 
 fn ecu_display_name(address: u8) -> String {
     match address {
@@ -1276,7 +1276,7 @@ fn selected_sensors(all_sensors: &[SensorDefinition]) -> Vec<SensorDefinition> {
 }
 
 /// Sets the live telemetry channels. The transport deliberately caps this at
-/// four channels so sensor polling leaves room for reliable actuator traffic.
+/// six channels; sensor polling still serializes with actuator traffic.
 #[frb(sync)]
 pub fn set_live_sensor_ids(sensor_ids: Vec<String>) {
     let mut sanitized = Vec::new();
@@ -1596,7 +1596,10 @@ pub fn experimental_exhaust_flap_service_test() -> Result<(), String> {
 /// periodic refresh messages; this one-shot API intentionally does not claim
 /// to provide a persistent override.
 pub fn experimental_exhaust_flap_set_position(mode: String) -> Result<(), String> {
-    if !matches!(mode.as_str(), "open" | "closed" | "auto") {
+    if !matches!(
+        mode.as_str(),
+        "open" | "open_legacy" | "open_periodic" | "open_bm3" | "closed" | "auto"
+    ) {
         return Err("Unsupported exhaust flap mode".into());
     }
     if !crate::vehicle_access::vehicle_access().diagnostic_active() {
@@ -1617,7 +1620,7 @@ pub fn experimental_exhaust_flap_set_position(mode: String) -> Result<(), String
         .clone()
         .ok_or_else(|| "No active vehicle session for flap control".to_string())?;
     if let Ok(mut active_mode) = ACTIVE_FLAP_MODE.get_or_init(|| Mutex::new(None)).lock() {
-        *active_mode = (mode != "auto").then_some(mode.clone());
+        *active_mode = (!matches!(mode.as_str(), "auto" | "open_bm3")).then_some(mode.clone());
     }
     let (reply_tx, reply_rx) = mpsc::channel();
     sender
@@ -1649,14 +1652,15 @@ pub fn stop_exhaust_flap_session() {
     }
 }
 
-fn configured_flap_control() -> Option<[u8; 2]> {
+fn configured_flap_control() -> Option<[u8; 8]> {
     ACTIVE_FLAP_MODE
         .get_or_init(|| Mutex::new(None))
         .lock()
         .ok()
         .and_then(|mode| match mode.as_deref() {
-            Some("open") => Some([0x14, 0x7A]),
-            Some("closed") => Some([0xEB, 0x85]),
+            Some("open" | "open_periodic") => flap_request_for_mode("open_periodic"),
+            Some("open_legacy") => flap_request_for_mode("open_legacy"),
+            Some("closed") => flap_request_for_mode("closed"),
             _ => None,
         })
 }
@@ -1670,20 +1674,30 @@ fn apply_flap_command(stream: &mut TcpStream, mode: &str) -> Result<(), String> 
         )?;
         return Ok(());
     }
-    let control = match mode {
-        "open" => [0x14, 0x7A],
-        "closed" => [0xEB, 0x85],
-        _ => return Err("Unsupported exhaust flap mode".into()),
-    };
-    send_uds(
-        stream,
-        EXHAUST_FLAP_DME,
-        &build_exhaust_flap_cycle_request(control),
-    )?;
+    let request =
+        flap_request_for_mode(mode).ok_or_else(|| "Unsupported exhaust flap mode".to_string())?;
+    send_uds(stream, EXHAUST_FLAP_DME, &request)?;
     // Do not synchronously read here: this socket is also carrying the live
     // sensor poller, and a nested read can consume a sensor response before
     // the poll loop sees it. The shared loop owns all incoming frames.
     Ok(())
+}
+
+fn flap_request_for_mode(mode: &str) -> Option<[u8; 8]> {
+    match mode {
+        "open_legacy" => Some(build_exhaust_flap_cycle_request([0x14, 0x7A])),
+        "open" | "open_periodic" | "open_bm3" => {
+            Some(build_live_exhaust_flap_request([0x14, 0x7A]))
+        }
+        "closed" => Some(build_live_exhaust_flap_request([0xEB, 0x85])),
+        _ => None,
+    }
+}
+
+fn periodic_flap_request(mode: &str) -> Option<[u8; 8]> {
+    (mode != "open_bm3")
+        .then(|| flap_request_for_mode(mode))
+        .flatten()
 }
 
 fn identify_engine(
@@ -2756,8 +2770,7 @@ fn poll_connection(
     let mut index = 0usize;
     let mut pending = None::<PendingLivePoll>;
     let mut flap_commands = VecDeque::new();
-    // Preserve the user's selected mode across a transient TCP reconnect.
-    // The DME otherwise expires the actuator override after roughly 20s.
+    // Only periodic modes are restored after a transient TCP reconnect.
     let mut flap_control = configured_flap_control();
     let mut flap_ack_deadline = None::<Instant>;
     // Keep the command's reply open until the DME confirms the IO-control.
@@ -2839,11 +2852,7 @@ fn poll_connection(
             if let Some(FlapCommand::Set { mode, reply }) = flap_commands.pop_front() {
                 let result = apply_flap_command(stream, &mode);
                 if result.is_ok() {
-                    flap_control = match mode.as_str() {
-                        "open" => Some([0x14, 0x7A]),
-                        "closed" => Some([0xEB, 0x85]),
-                        _ => None,
-                    };
+                    flap_control = periodic_flap_request(&mode);
                     next_flap_refresh = Instant::now() + Duration::from_secs(5);
                     flap_ack_deadline = Some(Instant::now() + Duration::from_secs(3));
                     pending_flap_reply.0 = Some(reply);
@@ -2851,13 +2860,9 @@ fn poll_connection(
                     let _ = reply.send(result.clone());
                 }
             }
-            if let Some(control) = flap_control {
+            if let Some(request) = flap_control {
                 if Instant::now() >= next_flap_refresh {
-                    send_uds(
-                        stream,
-                        EXHAUST_FLAP_DME,
-                        &build_exhaust_flap_cycle_request(control),
-                    )?;
+                    send_uds(stream, EXHAUST_FLAP_DME, &request)?;
                     next_flap_refresh = Instant::now() + Duration::from_secs(5);
                     flap_ack_deadline = Some(Instant::now() + Duration::from_secs(3));
                 }
@@ -3002,11 +3007,7 @@ fn poll_connection(
                             {
                                 let result = apply_flap_command(stream, &mode);
                                 if result.is_ok() {
-                                    flap_control = match mode.as_str() {
-                                        "open" => Some([0x14, 0x7A]),
-                                        "closed" => Some([0xEB, 0x85]),
-                                        _ => None,
-                                    };
+                                    flap_control = periodic_flap_request(&mode);
                                     next_flap_refresh = Instant::now() + Duration::from_secs(5);
                                     flap_ack_deadline =
                                         Some(Instant::now() + Duration::from_secs(3));
@@ -3015,13 +3016,9 @@ fn poll_connection(
                                     let _ = reply.send(result.clone());
                                 }
                             }
-                            if let Some(control) = flap_control {
+                            if let Some(request) = flap_control {
                                 if Instant::now() >= next_flap_refresh {
-                                    send_uds(
-                                        stream,
-                                        EXHAUST_FLAP_DME,
-                                        &build_exhaust_flap_cycle_request(control),
-                                    )?;
+                                    send_uds(stream, EXHAUST_FLAP_DME, &request)?;
                                     next_flap_refresh = Instant::now() + Duration::from_secs(5);
                                     flap_ack_deadline =
                                         Some(Instant::now() + Duration::from_secs(3));
@@ -3331,6 +3328,16 @@ fn build_exhaust_flap_cycle_request(control: [u8; 2]) -> [u8; 8] {
         0x0A,
         0xFF,
     ]
+}
+
+fn build_live_exhaust_flap_request(control: [u8; 2]) -> [u8; 8] {
+    if control == [0x14, 0x7A] {
+        // Match the BM3-captured live Open request. Keep the separate
+        // experimental ISTA service-test builder unchanged.
+        [0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0xFA, 0xFF]
+    } else {
+        build_exhaust_flap_cycle_request(control)
+    }
 }
 
 fn build_exhaust_flap_reset_request() -> [u8; 4] {
@@ -3791,11 +3798,24 @@ mod tests {
     #[test]
     fn builds_bm3_observed_flap_position_requests_without_transport() {
         assert_eq!(
-            build_exhaust_flap_cycle_request([0x14, 0x7A]),
-            [0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0x0A, 0xFF]
+            periodic_flap_request("open_legacy"),
+            Some([0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0x0A, 0xFF])
         );
         assert_eq!(
-            build_exhaust_flap_cycle_request([0xEB, 0x85]),
+            periodic_flap_request("open_periodic"),
+            Some([0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0xFA, 0xFF])
+        );
+        assert_eq!(periodic_flap_request("open_bm3"), None);
+        assert_eq!(
+            flap_request_for_mode("open_bm3"),
+            Some([0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0xFA, 0xFF])
+        );
+        assert_eq!(
+            build_live_exhaust_flap_request([0x14, 0x7A]),
+            [0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0xFA, 0xFF]
+        );
+        assert_eq!(
+            build_live_exhaust_flap_request([0xEB, 0x85]),
             [0x2F, 0x60, 0xFD, 0x03, 0xEB, 0x85, 0x0A, 0xFF]
         );
         assert_eq!(
