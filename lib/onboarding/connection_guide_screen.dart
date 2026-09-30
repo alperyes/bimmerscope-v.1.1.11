@@ -33,20 +33,32 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
         child: Column(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _progressRail(),
-                    const SizedBox(height: 32),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: page == 0 ? overview() : stepPage(page),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final overviewHeight = constraints.maxHeight - 38 - 6 - 32;
+                  final fillOverview = page == 0 && overviewHeight >= 500;
+                  return SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                    child: SizedBox(
+                      height: fillOverview ? overviewHeight : null,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _progressRail(),
+                          const SizedBox(height: 32),
+                          if (fillOverview)
+                            Expanded(child: overview())
+                          else
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              child: page == 0 ? overview() : stepPage(page),
+                            ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
             Container(
@@ -108,24 +120,32 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
   );
 
   Widget overview() => Column(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
       hero(),
-      const SizedBox(height: 22),
-      infoCard(
-        icon: Icons.directions_car_filled_rounded,
-        color: AppPalette.blue,
-        title: 'Compatibility',
-        body: 'BMW F-series (2012–2019)',
+      Column(
+        children: [
+          Column(
+            children: [
+              infoCard(
+                icon: Icons.directions_car_filled_rounded,
+                color: AppPalette.blue,
+                title: 'Compatibility',
+                body: 'BMW F-series (2012–2019)',
+              ),
+              const SizedBox(height: 10),
+              infoCard(
+                icon: Icons.cable_rounded,
+                color: AppPalette.babyBlue,
+                title: 'Supported adapters',
+                body: 'Direct ENET cable only.',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          safetyCard(),
+        ],
       ),
-      const SizedBox(height: 8),
-      infoCard(
-        icon: Icons.cable_rounded,
-        color: AppPalette.babyBlue,
-        title: 'Supported adapters',
-        body: 'Direct ENET cable only.',
-      ),
-      const SizedBox(height: 16),
-      safetyCard(),
     ],
   );
 
@@ -392,8 +412,8 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     child: Column(
       children: [
         Container(
-          width: 80,
-          height: 80,
+          width: 100,
+          height: 100,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: const RadialGradient(
@@ -402,7 +422,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             boxShadow: [
               BoxShadow(
                 color: AppPalette.blue.withValues(alpha: .33),
-                blurRadius: 22,
+                blurRadius: 28,
                 offset: Offset(0, 8),
               ),
             ],
@@ -411,7 +431,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             child: Image.asset('assets/branding/bimmerscope_icon.png'),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         const FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -420,7 +440,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
             maxLines: 1,
             softWrap: false,
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 25,
               fontWeight: FontWeight.w600,
               letterSpacing: 1.1,
             ),
@@ -464,6 +484,9 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
     decoration: BoxDecoration(
       color: widget.isDark ? const Color(0xFF121620) : Colors.white,
       borderRadius: BorderRadius.circular(18),
+      border: Border.all(
+        color: AppPalette.separator(widget.isDark).withValues(alpha: .55),
+      ),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -600,12 +623,13 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
   Widget safetyCard() => Semantics(
     container: true,
     label:
-        'Driving safety. Configure the dashboard before driving. Never run diagnostics while the vehicle is moving.',
+        'Before you drive. Set up while parked. Never run diagnostics while moving.',
     child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppPalette.orange.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppPalette.orange.withValues(alpha: .2)),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -613,9 +637,19 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
           Icon(Icons.warning_amber_rounded, color: AppPalette.orange),
           SizedBox(width: 11),
           Expanded(
-            child: Text(
-              'Configure the dashboard before driving. Keep your attention on the road, mount the device securely and never run diagnostics while the vehicle is moving.',
-              style: TextStyle(fontSize: 11, height: 1.45),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Before you drive',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Set up the dashboard while parked. Mount your phone securely and never run diagnostics while moving.',
+                  style: TextStyle(fontSize: 11, height: 1.4),
+                ),
+              ],
             ),
           ),
         ],

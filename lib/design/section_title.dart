@@ -1,8 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:bmw_app/design/app_palette.dart';
 
 const sectionTitleTopGap = 12.0;
 const sectionTitleBottomGap = 9.0;
 const sectionTitleHeight = 48.0;
+
+class AppCountBadge extends StatelessWidget {
+  const AppCountBadge({super.key, required this.label, required this.isDark});
+
+  final String label;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: AppPalette.secondary(isDark).withValues(alpha: .12),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: AppPalette.secondary(isDark),
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
+}
 
 class AppSectionHeader extends StatelessWidget {
   const AppSectionHeader({super.key, required this.title, this.trailing});

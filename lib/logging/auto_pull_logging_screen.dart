@@ -7,6 +7,7 @@ class AutoPullLoggingScreen extends StatefulWidget {
     super.key,
     required this.isDark,
     required this.connectionLabel,
+    this.isDemo = false,
     required this.isConnected,
     required this.canConfigure,
     required this.enabled,
@@ -19,6 +20,7 @@ class AutoPullLoggingScreen extends StatefulWidget {
 
   final bool isDark;
   final String connectionLabel;
+  final bool isDemo;
   final bool isConnected;
   final bool canConfigure;
   final bool enabled;
@@ -71,6 +73,7 @@ class _AutoPullLoggingScreenState extends State<AutoPullLoggingScreen> {
                 label: widget.connectionLabel,
                 isDark: widget.isDark,
                 iconOnly: true,
+                isDemo: widget.isDemo,
               ),
             ),
           ),

@@ -24,7 +24,6 @@ class DataLogger {
   String? _ecuSoftware;
   String? _ecuCalibration;
   final _channels = <String, Map<String, Object?>>{};
-  final _markers = <Map<String, Object?>>[];
   int sampleCount = 0;
   String? lastSha256;
 
@@ -63,7 +62,6 @@ class DataLogger {
     _ecuSoftware = ecuSoftware;
     _ecuCalibration = ecuCalibration;
     _channels.clear();
-    _markers.clear();
     sampleCount = 0;
     lastSha256 = null;
     _sink!
@@ -109,26 +107,6 @@ class DataLogger {
       '${csv(sensor.unit)},${event.rawValue},${csv(_sessionId)},${csv(_source)}',
     );
     sampleCount++;
-  }
-
-  /// Adds a human-readable event marker without changing the numeric CSV
-  /// schema. Comment rows remain valid CSV and are ignored by chart parsing,
-  /// while support tools can use the timestamp and elapsed position.
-  bool addMarker([String label = 'Manual marker']) {
-    final sink = _sink;
-    final started = _startedAt;
-    if (sink == null || started == null) return false;
-    final now = DateTime.now();
-    final clean = label.trim().isEmpty ? 'Manual marker' : label.trim();
-    final elapsedMs = now.difference(started).inMilliseconds;
-    sink.writeln('# marker,${now.toIso8601String()},$elapsedMs,${csv(clean)}');
-    _markers.add({
-      'type': 'marker',
-      'label': clean,
-      'timestamp': now.toIso8601String(),
-      'elapsed_ms': elapsedMs,
-    });
-    return true;
   }
 
   Future<File?> stop() async {
@@ -186,9 +164,6 @@ class DataLogger {
         'sample_count': sampleCount,
       },
       'channels': _channels.values.toList(),
-      // Markers remain in the CSV for compatibility, and are repeated here
-      // as structured capture context for package validators and reviewers.
-      'markers': _markers,
     };
     await temporary.writeAsString(
       const JsonEncoder.withIndent('  ').convert(content),

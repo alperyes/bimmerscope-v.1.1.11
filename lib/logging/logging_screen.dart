@@ -96,6 +96,7 @@ class LoggingScreen extends StatefulWidget {
     this.telemetryGapCount = 0,
     this.maxTelemetryGapMs = 0,
     this.previewMode = false,
+    this.demoMode = false,
   });
 
   final bool isDark;
@@ -117,6 +118,7 @@ class LoggingScreen extends StatefulWidget {
   final int telemetryGapCount;
   final int maxTelemetryGapMs;
   final bool previewMode;
+  final bool demoMode;
   final String connectionLabel;
 
   @override
@@ -158,36 +160,44 @@ class _LoggingScreenState extends State<LoggingScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(child: recorderPanel()),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            sliver: SliverToBoxAdapter(child: autoLogSettingsCard()),
-          ),
           if (!loading && files.isNotEmpty)
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
               sliver: SliverToBoxAdapter(
-                child: SizedBox(
-                  height: sectionTitleHeight,
-                  child: Row(
-                    children: [
-                      const Spacer(),
-                      Text(
-                        '${files.length} ${files.length == 1 ? 'session' : 'sessions'}',
-                        style: TextStyle(
-                          color: AppPalette.secondary(widget.isDark),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: sectionTitleHeight,
+                      child: Row(
+                        children: [
+                          autoLogSettingsButton(),
+                          const Spacer(),
+                          IconButton(
+                            tooltip: 'Refresh logs',
+                            onPressed: loadLogs,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        tooltip: 'Refresh logs',
-                        onPressed: loadLogs,
-                        icon: const Icon(Icons.refresh_rounded),
+                    ),
+                    const SizedBox(height: 2),
+                    Center(
+                      child: AppCountBadge(
+                        label:
+                            '${files.length} ${files.length == 1 ? 'session' : 'sessions'}',
+                        isDark: widget.isDark,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+          if (files.isEmpty && !loading)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              sliver: SliverToBoxAdapter(child: autoLogSettingsButton()),
             ),
           if (loading)
             SliverPadding(
@@ -321,6 +331,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
               label: widget.connectionLabel,
               isDark: widget.isDark,
               iconOnly: true,
+              isDemo: widget.demoMode,
             ),
           ),
         ],
@@ -329,6 +340,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
   );
 
   Widget recorderPanel() {
+    final recorderReady = widget.canRecord && !widget.isRecording;
     final recorderDetail = widget.isRecording
         ? '${formatDuration(widget.elapsed)} · ${widget.sampleCount} samples'
         : !widget.isConnected
@@ -337,9 +349,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
         ? 'Start live monitoring to record telemetry'
         : widget.telemetryDegraded
         ? 'Connection degraded · waiting for fresh samples'
-        : widget.telemetryGapCount == 0
-        ? 'Live telemetry ready'
-        : 'Live telemetry ready · ${widget.telemetryGapCount} gaps · max ${widget.maxTelemetryGapMs} ms';
+        : 'Live telemetry ready';
     final recorderLabel = widget.isRecording
         ? 'Recording. $recorderDetail'
         : 'Data Recorder. $recorderDetail';
@@ -362,7 +372,11 @@ class _LoggingScreenState extends State<LoggingScreen> {
                   height: 44,
                   decoration: BoxDecoration(
                     color:
-                        (widget.isRecording ? AppPalette.red : AppPalette.blue)
+                        (widget.isRecording
+                                ? AppPalette.red
+                                : recorderReady
+                                ? AppPalette.green
+                                : AppPalette.blue)
                             .withValues(alpha: .13),
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -372,6 +386,8 @@ class _LoggingScreenState extends State<LoggingScreen> {
                         : Icons.show_chart_rounded,
                     color: widget.isRecording
                         ? AppPalette.red
+                        : recorderReady
+                        ? AppPalette.green
                         : AppPalette.blue,
                     size: 22,
                   ),
@@ -442,6 +458,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
       builder: (_) => AutoPullLoggingScreen(
         isDark: widget.isDark,
         connectionLabel: widget.connectionLabel,
+        isDemo: widget.demoMode,
         isConnected: widget.isConnected,
         canConfigure: widget.canRecord,
         enabled: widget.autoLogEnabled,
@@ -454,74 +471,48 @@ class _LoggingScreenState extends State<LoggingScreen> {
     ),
   );
 
-  Widget autoLogSettingsCard() {
-    final detail = widget.canRecord
-        ? widget.autoLogEnabled
-              ? 'On · ${widget.autoLogThreshold.round()}% throttle'
-              : 'Configure automatic pull logging'
-        : widget.isConnected
-        ? 'Start live monitoring to enable'
-        : 'Connect to enable';
+  Widget autoLogSettingsButton() {
+    final enabled = widget.autoLogEnabled;
     return Semantics(
       button: true,
-      label: 'Automatic pull logging settings. $detail',
-      child: Material(
-        color: AppPalette.surface(widget.isDark),
-        borderRadius: BorderRadius.circular(appCardRadius),
-        child: InkWell(
-          onTap: openAutoLogSettings,
-          borderRadius: BorderRadius.circular(appCardRadius),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(appCardRadius),
+      label: 'Automatic pull logging. ${enabled ? 'On' : 'Off'}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton.icon(
+            onPressed: openAutoLogSettings,
+            style: TextButton.styleFrom(
+              foregroundColor: enabled
+                  ? AppPalette.green
+                  : AppPalette.secondary(widget.isDark),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppPalette.blue.withValues(alpha: .13),
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: const Icon(
-                    Icons.directions_car_filled_rounded,
-                    color: AppPalette.blue,
-                    size: 21,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Automatic pull logging',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        detail,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppPalette.secondary(widget.isDark),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppPalette.secondary(widget.isDark),
-                ),
-              ],
+            icon: Icon(
+              enabled ? Icons.bolt_rounded : Icons.bolt_outlined,
+              size: 18,
+            ),
+            label: Text(enabled ? 'Auto pull on' : 'Auto pull'),
+          ),
+          IconButton(
+            tooltip: enabled
+                ? 'Disable automatic pull logging'
+                : 'Enable automatic pull logging',
+            onPressed: () async {
+              await widget.onAutoLogChanged(!enabled);
+            },
+            visualDensity: VisualDensity.compact,
+            iconSize: 18,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            icon: Icon(
+              enabled ? Icons.toggle_on_rounded : Icons.toggle_off_rounded,
+              color: enabled
+                  ? AppPalette.green
+                  : AppPalette.secondary(widget.isDark),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -756,7 +747,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
     final lines = await file.readAsLines();
     final points = <String, List<double>>{};
     final timedPoints = <String, List<LogSample>>{};
-    final markers = <String>[];
     var loggedVehicle = 'Not identified';
     var loggedProfile = '';
     var durationSeconds = 0.0;
@@ -767,17 +757,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
       }
       if (line.startsWith('# vehicle_profile,')) {
         loggedProfile = line.substring('# vehicle_profile,'.length).trim();
-        continue;
-      }
-      if (line.startsWith('# marker,')) {
-        final fields = _parseCsvLine(line.substring(2));
-        if (fields.length >= 4) {
-          final elapsed = int.tryParse(fields[2]) ?? 0;
-          final label = fields[3].replaceAll('"', '').trim();
-          markers.add(
-            '${_LoggingScreenState.formatDuration(Duration(milliseconds: elapsed))} · $label',
-          );
-        }
         continue;
       }
       if (line.startsWith('#') || line.trim().isEmpty) {
@@ -817,7 +796,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
           points: points,
           timedPoints: timedPoints,
           durationSeconds: durationSeconds,
-          markers: markers,
           quality: quality,
           provenance: provenance,
         ),
@@ -949,7 +927,6 @@ class _LogPlotPage extends StatefulWidget {
     required this.points,
     required this.timedPoints,
     required this.durationSeconds,
-    required this.markers,
     required this.quality,
     required this.provenance,
   });
@@ -958,7 +935,6 @@ class _LogPlotPage extends StatefulWidget {
   final Map<String, List<double>> points;
   final Map<String, List<LogSample>> timedPoints;
   final double durationSeconds;
-  final List<String> markers;
   final LogQualityReport quality;
   final LogProvenanceStatus provenance;
 
@@ -1145,10 +1121,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         _sessionSummary(),
         const SizedBox(height: 10),
         _provenanceCard(),
-        if (widget.markers.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          _markersCard(),
-        ],
         if (_pullStart != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -1278,37 +1250,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
             ),
           ),
       ],
-    ),
-  );
-
-  Widget _markersCard() => Card(
-    margin: EdgeInsets.zero,
-    child: ExpansionTile(
-      initiallyExpanded: true,
-      leading: const Icon(Icons.flag_outlined),
-      title: Semantics(
-        header: true,
-        child: const Text(
-          'Log markers',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-      ),
-      subtitle: Text(
-        '${widget.markers.length} marked event${widget.markers.length == 1 ? '' : 's'}',
-      ),
-      children: widget.markers
-          .map(
-            (marker) => Semantics(
-              container: true,
-              label: 'Log marker: $marker',
-              child: ListTile(
-                dense: true,
-                leading: const Icon(Icons.bookmark_outline_rounded, size: 18),
-                title: Text(marker),
-              ),
-            ),
-          )
-          .toList(),
     ),
   );
 

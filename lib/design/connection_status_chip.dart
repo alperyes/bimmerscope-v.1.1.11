@@ -8,11 +8,51 @@ class ConnectionStatusChip extends StatelessWidget {
     required this.isDark,
     this.compact = false,
     this.iconOnly = false,
+    this.isDemo = false,
   });
   final String label;
   final bool isDark;
   final bool compact;
   final bool iconOnly;
+  final bool isDemo;
+
+  String get _statusLabel => switch (label.trim().toLowerCase()) {
+    '' ||
+    'connection' ||
+    'not connected' ||
+    'disconnected' ||
+    'offline' => 'Disconnected',
+    'connected' || 'monitoring' => 'Connected',
+    'connecting' ||
+    'searching' ||
+    'identifying' ||
+    'discovering' ||
+    'scanning' => 'Connecting',
+    'failed' => 'Error',
+    _ => label.trim(),
+  };
+
+  String get _accessibleLabel => isDemo
+      ? 'Demo mode. Connection status: $_statusLabel'
+      : 'Connection status: $_statusLabel';
+
+  Widget _demoBadge() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+    decoration: BoxDecoration(
+      color: AppPalette.blue,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: const Text(
+      'DEMO',
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: 8,
+        fontWeight: FontWeight.w900,
+        letterSpacing: .35,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final tone = AppPalette.connectionTone(label);
@@ -24,32 +64,37 @@ class ConnectionStatusChip extends StatelessWidget {
         ? Duration.zero
         : const Duration(milliseconds: 180);
     if (iconOnly) {
-      final connected = label.trim().toLowerCase() == 'connected';
-      final indicatorLabel = connected ? 'Connected' : 'Not connected';
+      final indicatorColor = color;
       return Tooltip(
-        message: indicatorLabel,
+        message: _accessibleLabel,
         child: Semantics(
           container: true,
-          label: 'Connection status: $indicatorLabel',
+          label: _accessibleLabel,
           liveRegion: true,
-          child: SizedBox.square(
-            dimension: 24,
+          child: SizedBox(
+            width: isDemo ? 64 : 24,
+            height: 24,
             child: Center(
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: connected ? AppPalette.green : AppPalette.red,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: (connected ? AppPalette.green : AppPalette.red)
-                          .withValues(alpha: .22),
-                      blurRadius: 0,
-                      spreadRadius: 7,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isDemo) ...[_demoBadge(), const SizedBox(width: 4)],
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: indicatorColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: indicatorColor.withValues(alpha: .22),
+                          blurRadius: 0,
+                          spreadRadius: 7,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -58,10 +103,10 @@ class ConnectionStatusChip extends StatelessWidget {
     }
     if (compact) {
       return Tooltip(
-        message: label,
+        message: _accessibleLabel,
         child: Semantics(
           container: true,
-          label: 'Connection status: $label',
+          label: _accessibleLabel,
           liveRegion: true,
           child: Container(
             constraints: const BoxConstraints(minHeight: 32, maxWidth: 148),
@@ -77,11 +122,12 @@ class ConnectionStatusChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (isDemo) ...[_demoBadge(), const SizedBox(width: 6)],
                 Icon(icon, size: 16, color: color),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    label,
+                    _statusLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -100,7 +146,7 @@ class ConnectionStatusChip extends StatelessWidget {
     }
     return Semantics(
       container: true,
-      label: 'Connection status: $label',
+      label: _accessibleLabel,
       liveRegion: true,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -115,6 +161,7 @@ class ConnectionStatusChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (isDemo) ...[_demoBadge(), const SizedBox(width: 7)],
               AnimatedSwitcher(
                 duration: iconTransition,
                 transitionBuilder: (child, animation) =>
@@ -133,7 +180,7 @@ class ConnectionStatusChip extends StatelessWidget {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 180),
                 child: Text(
-                  label,
+                  _statusLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

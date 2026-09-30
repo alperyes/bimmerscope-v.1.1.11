@@ -65,7 +65,7 @@ String _statusLabelForPhase(String phase) => switch (phase) {
   'connected' => 'Connected',
   'connecting' || 'identifying' || 'discovering' => 'Connecting',
   'reconnecting' => 'Recovering',
-  _ => 'Not connected',
+  _ => 'Disconnected',
 };
 
 class DashboardScreen extends StatefulWidget {
@@ -85,6 +85,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with WidgetsBindingObserver {
+  final GlobalKey<ScaffoldState> _dashboardScaffoldKey =
+      GlobalKey<ScaffoldState>();
   final events = <String>[];
   final eventHistory = <Map<String, dynamic>>[];
   final connectionTimeline = <Map<String, dynamic>>[];
@@ -132,6 +134,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? engineEcuSgbdIndex;
   String? engineEcuSerialNumber;
   String? engineEcuManufacturingDate;
+  String? engineEcuFlashCounter;
   String? engineEcuDiagnosticSession;
   String? engineEcuCodingId;
   String? engineEcuCvn;
@@ -153,7 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool landscape = false;
   String? fullscreenGaugeId;
   String? resizingSensorId;
-  int selectedTab = 0;
+  int selectedTab = ProductConfig.tuningEnabled ? 4 : 0;
   Timer? loggingTimer;
   Timer? telemetryWatchdog;
   Timer? _layoutSaveTimer;
@@ -331,7 +334,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ? 'Monitoring'
                 : 'Connected',
           'error' => 'Error',
-          _ => 'Connection',
+          _ => 'Disconnected',
         };
 
   String get connectionActionLabel => switch (phase) {
@@ -409,6 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     engineEcuSgbdIndex = null;
     engineEcuSerialNumber = null;
     engineEcuManufacturingDate = null;
+    engineEcuFlashCounter = null;
     engineEcuDiagnosticSession = null;
     engineEcuCodingId = null;
     engineEcuCvn = null;
@@ -1074,21 +1078,63 @@ class _DashboardScreenState extends State<DashboardScreen>
       final proceed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Prepare ENET connection'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 4),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          title: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '1 - Turn off Wi-Fi and mobile data\n'
-                '2 - Connect ENET cable\n'
-                '3 - Enable Share via Ethernet (Ethernet tethering)\n'
-                '4 - Switch ignition on',
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  Icons.cable_rounded,
+                  color: Theme.of(dialogContext).colorScheme.onPrimaryContainer,
+                  size: 22,
+                ),
               ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Prepare ENET connection'),
+                    SizedBox(height: 4),
+                    Text(
+                      'Follow these steps before connecting to your vehicle.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _connectionStep(dialogContext, 'Turn off Wi-Fi and mobile data'),
+              _connectionStep(dialogContext, 'Connect the ENET cable'),
+              _connectionStep(
+                dialogContext,
+                'Enable Share via Ethernet',
+                detail: 'Also called Ethernet tethering',
+              ),
+              _connectionStep(dialogContext, 'Switch the ignition on'),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
                   onPressed: () async {
                     final opened = await openPortableHotspotSettings();
                     if (!opened && dialogContext.mounted) {
@@ -1101,8 +1147,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                       );
                     }
                   },
-                  icon: const Icon(Icons.settings_ethernet_rounded),
-                  label: const Text('Open Portable hotspot settings'),
+                  icon: const Icon(Icons.settings_ethernet_rounded, size: 19),
+                  label: const Text('Open hotspot settings'),
                 ),
               ),
             ],
@@ -1122,6 +1168,41 @@ class _DashboardScreenState extends State<DashboardScreen>
       if (proceed != true || !mounted) return;
     }
     connect();
+  }
+
+  Widget _connectionStep(BuildContext context, String label, {String? detail}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '•  ',
+            style: TextStyle(
+              color: scheme.onSurfaceVariant,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (detail != null) ...[
+                  const SizedBox(height: 2),
+                  Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void disconnect() {
@@ -1608,6 +1689,9 @@ class _DashboardScreenState extends State<DashboardScreen>
         engineEcuManufacturingDate = event.ecuManufacturingDate.isEmpty
             ? null
             : event.ecuManufacturingDate;
+        engineEcuFlashCounter = event.ecuFlashCounter.isEmpty
+            ? null
+            : event.ecuFlashCounter;
         engineEcuDiagnosticSession = event.ecuDiagnosticSession.isEmpty
             ? null
             : event.ecuDiagnosticSession;
@@ -1694,6 +1778,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           monitoringActive = false;
           engineEcuIdentity = null;
           engineEcuHardware = null;
+          engineEcuFlashCounter = null;
           engineEcuSoftware = null;
           engineEcuBootloader = null;
           engineEcuCalibration = null;
@@ -1836,7 +1921,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       );
       _autoLogRecording = automatic;
       _autoLogTrigger.reset();
-      if (automatic) logger.addMarker('Automatic pull log started');
       loggingElapsed = Duration.zero;
       loggingTimer?.cancel();
       loggingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1857,7 +1941,6 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Future<void> stopLogging({bool automatic = false}) async {
     final wasAutomatic = _autoLogRecording || automatic;
-    if (wasAutomatic) logger.addMarker('Automatic pull log stopped');
     _autoLogRecording = false;
     _autoLogTrigger.reset();
     loggingTimer?.cancel();
@@ -1881,20 +1964,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         ),
       );
     }
-  }
-
-  void addLogMarker() {
-    if (!logger.addMarker()) return;
-    logUserAction('Added manual log marker');
-    HapticFeedback.selectionClick();
-    if (!mounted) return;
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Marker added to the active log.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 
   Future<void> selectTab(int index) async {
@@ -1956,6 +2025,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) => fullscreen
       ? fullscreenDashboard()
       : Scaffold(
+          key: _dashboardScaffoldKey,
           drawer: _sideMenu(context),
           body: Stack(
             children: [
@@ -1965,6 +2035,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   2 => DiagnosticsScreen(
                     isDark: widget.isDark,
                     connectionLabel: connectionStageLabel,
+                    demoMode: demoActive || simulatorActive,
                     onToggleTheme: widget.onToggleTheme,
                     onShowGuide: showConnectionGuide,
                     vin: vin,
@@ -1978,6 +2049,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   3 => LoggingScreen(
                     isDark: widget.isDark,
                     connectionLabel: connectionStageLabel,
+                    demoMode: demoActive || simulatorActive,
                     onToggleTheme: widget.onToggleTheme,
                     onShowGuide: showConnectionGuide,
                     isRecording: logger.isRecording,
@@ -2002,6 +2074,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     vin: vin,
                     mileageKm: mileageKm,
                     connectionLabel: connectionStageLabel,
+                    demoMode: demoActive || simulatorActive,
                     simulatorMode: simulatorActive,
                     engineEcuDetected: engineEcuDetected,
                     engineEcuIdentity: engineEcuIdentity,
@@ -2030,6 +2103,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                     onToggleTheme: widget.onToggleTheme,
                     onBeforeVehicleCheck: pauseLiveSessionForScan,
                     onAfterVehicleCheck: resumeLiveSessionAfterScan,
+                    onOpenDrawer: () =>
+                        _dashboardScaffoldKey.currentState?.openDrawer(),
                   ),
                   _ => ColoredBox(
                     color: AppPalette.background(widget.isDark),
@@ -2040,6 +2115,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           SliverToBoxAdapter(
                             child: Header(
                               phase: phase,
+                              demoMode: demoActive || simulatorActive,
                               vin: vin,
                               detail: detail,
                               isDark: widget.isDark,
@@ -2053,20 +2129,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                               onSimulator: () => connect(simulator: true),
                             ),
                           ),
-                          if (editing)
-                            SliverPadding(
-                              padding: const EdgeInsets.fromLTRB(
-                                dashboardHorizontalPadding,
-                                0,
-                                dashboardHorizontalPadding,
-                                12,
-                              ),
-                              sliver: SliverToBoxAdapter(child: editBanner()),
-                            ),
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(
                               dashboardHorizontalPadding,
-                              sectionTitleTopGap + 6,
+                              8,
                               dashboardHorizontalPadding,
                               sectionTitleBottomGap,
                             ),
@@ -2746,6 +2812,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               label: _statusLabelForPhase(phase),
                               isDark: widget.isDark,
                               iconOnly: true,
+                              isDemo: demoActive || simulatorActive,
                             ),
                           ),
                         ],
@@ -2874,54 +2941,52 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 2, 22, 0),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 4,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              vehicleQuickAction(
-                                Icons.settings_remote_rounded,
-                                'Flap',
-                                (_flapControlAvailable || demoActive)
-                                    ? showFlapControl
-                                    : null,
-                                accentColor: flapMode.startsWith('open')
-                                    ? AppPalette.orange
-                                    : flapMode == 'closed'
-                                    ? AppPalette.red
-                                    : null,
-                              ),
-                              const SizedBox(width: 12),
-                              vehicleQuickAction(
-                                Icons.directions_car_rounded,
-                                'Details',
-                                live && vin != 'Not identified'
-                                    ? showVehicleDetails
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  // Reserve scroll space for the floating connection action
-                  // so the last content card is never hidden behind it.
+                SliverFillRemaining(
+                  hasScrollBody: false,
                   child: Column(
                     children: [
-                      SizedBox(height: floatingConnectionPanelClearance),
+                      Expanded(
+                        child: Align(
+                          alignment: const Alignment(0, 0.45),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 120,
+                                  child: vehicleQuickAction(
+                                    Icons.settings_remote_rounded,
+                                    'Flap',
+                                    (_flapControlAvailable || demoActive)
+                                        ? showFlapControl
+                                        : null,
+                                    accentColor: flapMode.startsWith('open')
+                                        ? AppPalette.orange
+                                        : flapMode == 'closed'
+                                        ? AppPalette.red
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 120,
+                                  child: vehicleQuickAction(
+                                    Icons.directions_car_rounded,
+                                    'Details',
+                                    live && vin != 'Not identified'
+                                        ? showVehicleDetails
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Keep the quick actions centered in the space above
+                      // the floating connection control.
+                      const SizedBox(height: floatingConnectionPanelClearance),
                     ],
                   ),
                 ),
@@ -3058,6 +3123,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           engineEcuCalibration: engineEcuCalibration,
           engineEcuCodingId: engineEcuCodingId,
           engineEcuManufacturingDate: engineEcuManufacturingDate,
+          engineEcuFlashCounter: engineEcuFlashCounter,
           engineEcuDiagnosticSession: engineEcuDiagnosticSession,
           engineEcuApplicationSoftware: engineEcuApplicationSoftware,
           engineEcuSupplierHardware: engineEcuSupplierHardware,
@@ -3283,6 +3349,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       label: _statusLabelForPhase(phase),
                       isDark: widget.isDark,
                       iconOnly: true,
+                      isDemo: demoActive || simulatorActive,
                     ),
                   ],
                 ),
@@ -3570,7 +3637,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     VoidCallback? onTap, {
     Color? accentColor,
   }) => SizedBox(
-    width: 84,
+    width: double.infinity,
     child: Column(
       children: [
         SizedBox(
@@ -3867,287 +3934,204 @@ class _DashboardScreenState extends State<DashboardScreen>
     },
   );
 
-  Widget gaugeBoard({List<String>? onlyIds, bool fillSingle = false}) =>
-      LayoutBuilder(
-        builder: (context, constraints) {
-          const gap = 12.0;
-          final columns = constraints.maxWidth < 320
-              ? 1
-              : constraints.maxWidth >= 900
-              ? 4
-              : constraints.maxWidth >= 600
-              ? 3
-              : 2;
-          final compactWidth =
-              (constraints.maxWidth - gap * (columns - 1)) / columns;
-          final byId = {for (final sensor in sensors) sensor.id: sensor};
-          final displayedIds = onlyIds ?? visibleSensorIds;
-          if (displayedIds.isEmpty) {
-            return Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppPalette.surface(widget.isDark),
-                borderRadius: BorderRadius.circular(appCardRadius),
+  Widget gaugeBoard({
+    List<String>? onlyIds,
+    bool fillSingle = false,
+  }) => LayoutBuilder(
+    builder: (context, constraints) {
+      const gap = 12.0;
+      final columns = constraints.maxWidth < 320
+          ? 1
+          : constraints.maxWidth >= 900
+          ? 4
+          : constraints.maxWidth >= 600
+          ? 3
+          : 2;
+      final compactWidth =
+          (constraints.maxWidth - gap * (columns - 1)) / columns;
+      final byId = {for (final sensor in sensors) sensor.id: sensor};
+      final displayedIds = onlyIds ?? visibleSensorIds;
+      if (displayedIds.isEmpty) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppPalette.surface(widget.isDark),
+            borderRadius: BorderRadius.circular(appCardRadius),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                Icons.dashboard_customize_outlined,
+                size: 30,
+                color: AppPalette.secondary(widget.isDark),
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.dashboard_customize_outlined,
-                    size: 30,
-                    color: AppPalette.secondary(widget.isDark),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'No gauges visible',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Restore the default dashboard layout to continue.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppPalette.secondary(widget.isDark),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: resetGaugeLayout,
-                    icon: const Icon(Icons.restart_alt_rounded),
-                    label: const Text('Restore gauges'),
-                  ),
-                ],
+              const SizedBox(height: 10),
+              const Text(
+                'No gauges visible',
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
-            );
-          }
-          return Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: displayedIds.map((id) {
-              final sensor = byId[id]!;
-              final dial = dialSensorIds.contains(id);
-              final width = fillSingle
-                  ? constraints.maxWidth
-                  : (gaugeWidths[id] ?? compactWidth).clamp(
-                      compactWidth,
-                      constraints.maxWidth,
-                    );
-              final height = fillSingle
-                  ? constraints.maxHeight
-                  : (gaugeHeights[id] ?? 164.0).clamp(140.0, 420.0);
-              final card = GaugeCard(
-                sensor: sensor,
-                value: values[id],
-                isLive: live,
-                isDark: widget.isDark,
-                useMetric: useMetric,
-                isEditing: editing,
-                isDial: dial,
-                valueColorBackground: valueColorIds.contains(id),
-                isFullscreen: fillSingle,
-                onResize: () => startResizing(id),
-                onToggleStyle: () => setState(() {
-                  dial ? dialSensorIds.remove(id) : dialSensorIds.add(id);
-                  _scheduleLayoutSave();
-                }),
-                onRemove: () {
-                  setState(() {
-                    visibleSensorIds.remove(id);
-                    _scheduleLayoutSave();
-                  });
-                  _syncLiveSensorSelection();
-                },
-                onTapDown: editing
-                    ? (details) => showGaugeMenu(id, details.globalPosition)
-                    : null,
-                onTap: !editing ? () => toggleFullscreen(id) : null,
+              const SizedBox(height: 4),
+              Text(
+                'Restore the default dashboard layout to continue.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppPalette.secondary(widget.isDark)),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: resetGaugeLayout,
+                icon: const Icon(Icons.restart_alt_rounded),
+                label: const Text('Restore gauges'),
+              ),
+            ],
+          ),
+        );
+      }
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: displayedIds.map((id) {
+          final sensor = byId[id]!;
+          final dial = dialSensorIds.contains(id);
+          final width = fillSingle
+              ? constraints.maxWidth
+              : (gaugeWidths[id] ?? compactWidth).clamp(
+                  compactWidth,
+                  constraints.maxWidth,
+                );
+          final height = fillSingle
+              ? constraints.maxHeight
+              : (gaugeHeights[id] ?? 164.0).clamp(140.0, 420.0);
+          final card = GaugeCard(
+            sensor: sensor,
+            value: values[id],
+            isLive: live,
+            isDark: widget.isDark,
+            useMetric: useMetric,
+            isEditing: editing,
+            isResizing: resizingSensorId == id,
+            isDial: dial,
+            valueColorBackground: valueColorIds.contains(id),
+            isFullscreen: fillSingle,
+            onToggleFullscreen: () {
+              HapticFeedback.mediumImpact();
+              toggleFullscreen(id);
+            },
+            onToggleStyle: () => setState(() {
+              dial ? dialSensorIds.remove(id) : dialSensorIds.add(id);
+              _scheduleLayoutSave();
+            }),
+            onToggleValueColor: () => setState(() {
+              valueColorIds.contains(id)
+                  ? valueColorIds.remove(id)
+                  : valueColorIds.add(id);
+              _scheduleLayoutSave();
+            }),
+            onMove: () {
+              setState(() {
+                editing = true;
+                resizingSensorId = null;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Hold the gauge, then drag it to move.'),
+                  duration: Duration(seconds: 2),
+                ),
               );
-              final resizableCard = Stack(
-                children: [
-                  Positioned.fill(child: card),
-                  if (editing && resizingSensorId == id)
-                    Positioned(
-                      right: 2,
-                      bottom: 2,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onPanStart: (_) => HapticFeedback.selectionClick(),
-                        onPanUpdate: (details) => resizeGauge(
-                          id,
-                          details.delta,
-                          compactWidth,
-                          constraints.maxWidth,
+            },
+            onRemove: () {
+              setState(() {
+                visibleSensorIds.remove(id);
+                _scheduleLayoutSave();
+              });
+              _syncLiveSensorSelection();
+            },
+            onTap: !editing ? () => toggleFullscreen(id) : null,
+          );
+          final positionedCard = editing
+              ? DragTarget<String>(
+                  onWillAcceptWithDetails: (details) => details.data != id,
+                  onAcceptWithDetails: (details) => moveGauge(details.data, id),
+                  builder: (context, candidates, rejected) =>
+                      LongPressDraggable<String>(
+                        data: id,
+                        feedback: Material(
+                          color: Colors.transparent,
+                          child: SizedBox(
+                            width: width,
+                            height: height,
+                            child: card,
+                          ),
                         ),
-                        onPanEnd: (_) => HapticFeedback.lightImpact(),
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          alignment: Alignment.bottomRight,
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(16),
-                              bottomRight: Radius.circular(20),
+                        childWhenDragging: Opacity(opacity: .25, child: card),
+                        child: AnimatedScale(
+                          scale: candidates.isEmpty ? 1 : .96,
+                          duration: const Duration(milliseconds: 120),
+                          child: card,
+                        ),
+                      ),
+                )
+              : card;
+          return SizedBox(
+            key: ValueKey(id),
+            width: width,
+            height: height,
+            child: Stack(
+              children: [
+                Positioned.fill(child: positionedCard),
+                if (editing)
+                  Positioned(
+                    right: 7,
+                    bottom: 7,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (_) {
+                        HapticFeedback.selectionClick();
+                        setState(() => resizingSensorId = id);
+                      },
+                      onPanUpdate: (details) => resizeGauge(
+                        id,
+                        details.delta,
+                        compactWidth,
+                        constraints.maxWidth,
+                      ),
+                      onPanEnd: (_) {
+                        HapticFeedback.lightImpact();
+                        setState(() => resizingSensorId = null);
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppPalette.blue,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppPalette.surface(widget.isDark),
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: .22),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-                          child: const Icon(
-                            Icons.open_in_full_rounded,
-                            size: 19,
-                            color: Colors.white,
-                          ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.open_in_full_rounded,
+                          size: 17,
+                          color: Colors.white,
                         ),
                       ),
                     ),
-                ],
-              );
-              return SizedBox(
-                key: ValueKey(id),
-                width: width,
-                height: height,
-                child: editing
-                    ? DragTarget<String>(
-                        onWillAcceptWithDetails: (details) =>
-                            details.data != id,
-                        onAcceptWithDetails: (details) =>
-                            moveGauge(details.data, id),
-                        builder: (context, candidates, rejected) =>
-                            LongPressDraggable<String>(
-                              data: id,
-                              feedback: Material(
-                                color: Colors.transparent,
-                                child: SizedBox(
-                                  width: width,
-                                  height: 150,
-                                  child: resizableCard,
-                                ),
-                              ),
-                              childWhenDragging: Opacity(
-                                opacity: .25,
-                                child: resizableCard,
-                              ),
-                              child: AnimatedScale(
-                                scale: candidates.isEmpty ? 1 : .96,
-                                duration: const Duration(milliseconds: 120),
-                                child: resizableCard,
-                              ),
-                            ),
-                      )
-                    : resizableCard,
-              );
-            }).toList(),
+                  ),
+              ],
+            ),
           );
-        },
+        }).toList(),
       );
-
-  Future<void> showGaugeMenu(String id, Offset position) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final action = await showMenu<_GaugeMenuAction>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      items: [
-        const PopupMenuItem(
-          value: _GaugeMenuAction.resize,
-          child: ListTile(
-            leading: Icon(Icons.aspect_ratio_rounded),
-            title: Text('Resize'),
-            dense: true,
-          ),
-        ),
-        const PopupMenuItem(
-          value: _GaugeMenuAction.fullscreen,
-          child: ListTile(
-            leading: Icon(Icons.fullscreen_rounded),
-            title: Text('Full screen'),
-            dense: true,
-          ),
-        ),
-        PopupMenuItem(
-          value: _GaugeMenuAction.style,
-          child: ListTile(
-            leading: const Icon(Icons.speed_rounded),
-            title: Text(
-              dialSensorIds.contains(id) ? 'Digital display' : 'Dial display',
-            ),
-            dense: true,
-          ),
-        ),
-        PopupMenuItem(
-          value: _GaugeMenuAction.valueColor,
-          child: ListTile(
-            leading: const Icon(Icons.color_lens_rounded),
-            title: Text(
-              valueColorIds.contains(id)
-                  ? 'Neutral background'
-                  : 'Reading color',
-            ),
-            dense: true,
-          ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
-          value: _GaugeMenuAction.move,
-          child: ListTile(
-            leading: Icon(Icons.drag_indicator_rounded),
-            title: Text('Drag to move'),
-            dense: true,
-          ),
-        ),
-      ],
-    );
-    if (!mounted || action == null) return;
-    switch (action) {
-      case _GaugeMenuAction.resize:
-        startResizing(id);
-      case _GaugeMenuAction.fullscreen:
-        HapticFeedback.mediumImpact();
-        await toggleFullscreen(id);
-      case _GaugeMenuAction.style:
-        HapticFeedback.selectionClick();
-        setState(() {
-          dialSensorIds.contains(id)
-              ? dialSensorIds.remove(id)
-              : dialSensorIds.add(id);
-          _scheduleLayoutSave();
-        });
-      case _GaugeMenuAction.valueColor:
-        setState(() {
-          valueColorIds.contains(id)
-              ? valueColorIds.remove(id)
-              : valueColorIds.add(id);
-          _scheduleLayoutSave();
-        });
-      case _GaugeMenuAction.move:
-        setState(() {
-          editing = true;
-          resizingSensorId = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Hold the gauge, then drag it to a new position.'),
-          ),
-        );
-    }
-  }
-
-  void startResizing(String id) {
-    HapticFeedback.selectionClick();
-    setState(() {
-      editing = true;
-      resizingSensorId = id;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Drag the bottom-right handle to resize the gauge.'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
+    },
+  );
 
   void resizeGauge(
     String id,
@@ -4407,34 +4391,6 @@ class _DashboardScreenState extends State<DashboardScreen>
       ),
     );
   }
-
-  Widget editBanner() => Container(
-    padding: const EdgeInsets.fromLTRB(14, 11, 10, 11),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primary.withValues(alpha: .1),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: Row(
-      children: [
-        Icon(
-          Icons.drag_indicator_rounded,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(width: 8),
-        const Expanded(
-          child: Text(
-            'Hold and drag to move gauges',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: chooseGauges,
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('Gauges'),
-        ),
-      ],
-    ),
-  );
 
   Future<void> chooseGauges() async {
     var query = '';
@@ -4762,6 +4718,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             label: _statusLabelForPhase(phase),
             isDark: widget.isDark,
             iconOnly: true,
+            isDemo: demoActive || simulatorActive,
           ),
         ),
       ],
@@ -4793,66 +4750,61 @@ class _DashboardScreenState extends State<DashboardScreen>
   );
 
   Widget telemetryHeader() => SizedBox(
-    height: sectionTitleHeight,
+    height: sectionTitleHeight + 8,
     child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: AppPalette.surface(widget.isDark),
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              monitorControl(
-                tooltip: 'Add or choose gauges',
-                icon: Icons.add_box_outlined,
-                onPressed: chooseGauges,
-                accent: AppPalette.blue,
-                highlighted: true,
-              ),
-              monitorControl(
-                tooltip: editing ? 'Finish customizing' : 'Customize gauges',
-                icon: editing
-                    ? Icons.check_rounded
-                    : Icons.dashboard_customize_rounded,
-                onPressed: () => setState(() {
-                  editing = !editing;
-                  if (!editing) resizingSensorId = null;
-                }),
-                accent: editing ? AppPalette.blue : null,
-                highlighted: editing,
-              ),
-              if (logger.isRecording)
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppPalette.surface(widget.isDark),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
                 monitorControl(
-                  tooltip: 'Add log marker',
-                  icon: Icons.flag_outlined,
-                  onPressed: addLogMarker,
-                  accent: AppPalette.orange,
+                  tooltip: 'Add or choose gauges',
+                  icon: Icons.add_box_outlined,
+                  onPressed: chooseGauges,
+                  accent: AppPalette.blue,
+                  highlighted: true,
                 ),
-              monitorControl(
-                tooltip: logger.isRecording
-                    ? 'Stop data logging'
-                    : 'Start data logging',
-                icon: logger.isRecording
-                    ? Icons.stop_rounded
-                    : Icons.play_circle_outline_rounded,
-                onPressed:
-                    logger.isRecording ||
-                        (live && monitoringActive && !widget.previewMode)
-                    ? toggleLogging
-                    : null,
-                accent: logger.isRecording ? AppPalette.red : null,
-                highlighted: logger.isRecording,
-              ),
-              monitorControl(
-                tooltip: 'Full-screen gauges',
-                icon: Icons.fullscreen_rounded,
-                onPressed: toggleFullscreen,
-              ),
-            ],
+                monitorControl(
+                  tooltip: editing ? 'Finish customizing' : 'Customize gauges',
+                  icon: editing
+                      ? Icons.check_rounded
+                      : Icons.dashboard_customize_rounded,
+                  onPressed: () => setState(() {
+                    editing = !editing;
+                    if (!editing) resizingSensorId = null;
+                  }),
+                  accent: editing ? AppPalette.blue : null,
+                  highlighted: editing,
+                ),
+                monitorControl(
+                  tooltip: logger.isRecording
+                      ? 'Stop data logging'
+                      : 'Start data logging',
+                  icon: logger.isRecording
+                      ? Icons.stop_rounded
+                      : Icons.fiber_manual_record_rounded,
+                  onPressed:
+                      logger.isRecording ||
+                          (live && monitoringActive && !widget.previewMode)
+                      ? toggleLogging
+                      : null,
+                  accent: logger.isRecording ? AppPalette.red : null,
+                  highlighted: logger.isRecording,
+                ),
+                monitorControl(
+                  tooltip: 'Full-screen gauges',
+                  icon: Icons.fullscreen_rounded,
+                  onPressed: toggleFullscreen,
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -4997,6 +4949,7 @@ class VehicleDetailsScreen extends StatelessWidget {
     this.engineEcuCalibration,
     this.engineEcuCodingId,
     this.engineEcuManufacturingDate,
+    this.engineEcuFlashCounter,
     this.engineEcuDiagnosticSession,
     this.engineEcuApplicationSoftware,
     this.engineEcuSupplierHardware,
@@ -5022,6 +4975,7 @@ class VehicleDetailsScreen extends StatelessWidget {
   final String? engineEcuCalibration;
   final String? engineEcuCodingId;
   final String? engineEcuManufacturingDate;
+  final String? engineEcuFlashCounter;
   final String? engineEcuDiagnosticSession;
   final String? engineEcuApplicationSoftware;
   final String? engineEcuSupplierHardware;
@@ -5082,27 +5036,31 @@ class VehicleDetailsScreen extends StatelessWidget {
                 engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
                 secondary,
               ),
-              _detail('Hardware number', _value(engineEcuHardware), secondary),
               _detail(
-                'Software ID',
+                'Hardware ID (HWEL)',
+                _value(engineEcuHardware),
+                secondary,
+              ),
+              _detail(
+                'Software ID (SWFL)',
                 _value(engineEcuSoftware),
                 secondary,
                 identifier: true,
               ),
               _detail(
-                'Bootloader ID',
+                'Bootloader ID (BTLD)',
                 _value(engineEcuBootloader),
                 secondary,
                 identifier: true,
               ),
               _detail(
-                'Calibration ID',
+                'Calibration ID (SWFL)',
                 _value(engineEcuCalibration),
                 secondary,
                 identifier: true,
               ),
               _detail(
-                'Coding ID',
+                'Coding ID (CAFD)',
                 _value(engineEcuCodingId),
                 secondary,
                 identifier: true,
@@ -5112,6 +5070,8 @@ class VehicleDetailsScreen extends StatelessWidget {
                 _value(engineEcuManufacturingDate),
                 secondary,
               ),
+              if (engineEcuFlashCounter != null)
+                _detail('Flash counter', engineEcuFlashCounter!, secondary),
               _detail(
                 'Diagnostic session',
                 _value(engineEcuDiagnosticSession),
@@ -5130,47 +5090,6 @@ class VehicleDetailsScreen extends StatelessWidget {
               _detail(
                 'Supplier software',
                 _value(engineEcuSupplierSoftware),
-                secondary,
-              ),
-              const SizedBox(height: 16),
-              Semantics(
-                header: true,
-                child: Text(
-                  'BMW routine 0205',
-                  style: TextStyle(
-                    color: secondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              _detail(
-                'Routine software',
-                _value(engineEcuBmwRoutine0205Software),
-                secondary,
-                identifier: true,
-              ),
-              _detail(
-                'Controller family',
-                _value(engineEcuBmwControllerFamily),
-                secondary,
-              ),
-              _detail('Variant', _value(engineEcuBmwVariant), secondary),
-              _detail(
-                'Transmission',
-                _value(engineEcuBmwTransmission),
-                secondary,
-              ),
-              _detail('Emissions', _value(engineEcuBmwEmissions), secondary),
-              _detail(
-                'Internal token',
-                _value(engineEcuBmwInternalToken),
-                secondary,
-              ),
-              _detail(
-                'Raw routine data',
-                _value(engineEcuBmwRoutine0205Raw),
                 secondary,
               ),
             ],
@@ -5248,12 +5167,11 @@ class VehicleDetailsScreen extends StatelessWidget {
   );
 }
 
-enum _GaugeMenuAction { resize, fullscreen, style, valueColor, move }
-
 class Header extends StatelessWidget {
   const Header({
     super.key,
     required this.phase,
+    required this.demoMode,
     required this.vin,
     required this.detail,
     required this.isDark,
@@ -5264,6 +5182,7 @@ class Header extends StatelessWidget {
     this.onSimulator,
   });
   final String phase;
+  final bool demoMode;
   final String vin;
   final String detail;
   final bool isDark;
@@ -5333,6 +5252,7 @@ class Header extends StatelessWidget {
                     label: _statusLabelForPhase(phase),
                     isDark: isDark,
                     iconOnly: true,
+                    isDemo: demoMode,
                   ),
                 ),
               ],

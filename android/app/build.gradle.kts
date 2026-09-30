@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -62,4 +64,24 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Keep the Dart product edition in sync with the Android flavor. Without this,
+// the Tune APK gets the Tune package name but can still compile Core UI.
+tasks.withType<com.flutter.gradle.tasks.BaseFlutterTask>().configureEach {
+    if (flavor == "tune") {
+        val tuneEditionDefine = Base64.getEncoder().encodeToString(
+            "BIMMERSCOPE_EDITION=tune".toByteArray()
+        )
+        val otherDefines = dartDefines.orEmpty()
+            .split(",")
+            .filter { it.isNotBlank() }
+            .filterNot { encoded ->
+                runCatching {
+                    String(Base64.getDecoder().decode(encoded))
+                        .startsWith("BIMMERSCOPE_EDITION=")
+                }.getOrDefault(false)
+            }
+        dartDefines = (otherDefines + tuneEditionDefine).joinToString(",")
+    }
 }

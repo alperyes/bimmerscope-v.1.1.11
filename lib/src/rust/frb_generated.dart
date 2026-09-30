@@ -1221,8 +1221,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   EcuFingerprintValues dco_decode_ecu_fingerprint_values(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 24)
-      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
     return EcuFingerprintValues(
       hardware: dco_decode_String(arr[0]),
       software: dco_decode_String(arr[1]),
@@ -1238,16 +1238,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sgbdIndex: dco_decode_String(arr[11]),
       serialNumber: dco_decode_String(arr[12]),
       manufacturingDate: dco_decode_String(arr[13]),
-      diagnosticSession: dco_decode_String(arr[14]),
-      codingId: dco_decode_String(arr[15]),
-      cvn: dco_decode_String(arr[16]),
-      bmwRoutine0205Raw: dco_decode_String(arr[17]),
-      bmwRoutine0205Software: dco_decode_String(arr[18]),
-      bmwControllerFamily: dco_decode_String(arr[19]),
-      bmwVariant: dco_decode_String(arr[20]),
-      bmwTransmission: dco_decode_String(arr[21]),
-      bmwEmissions: dco_decode_String(arr[22]),
-      bmwInternalToken: dco_decode_String(arr[23]),
+      flashCounter: dco_decode_String(arr[14]),
+      diagnosticSession: dco_decode_String(arr[15]),
+      codingId: dco_decode_String(arr[16]),
+      cvn: dco_decode_String(arr[17]),
+      bmwRoutine0205Raw: dco_decode_String(arr[18]),
+      bmwRoutine0205Software: dco_decode_String(arr[19]),
+      bmwControllerFamily: dco_decode_String(arr[20]),
+      bmwVariant: dco_decode_String(arr[21]),
+      bmwTransmission: dco_decode_String(arr[22]),
+      bmwEmissions: dco_decode_String(arr[23]),
+      bmwInternalToken: dco_decode_String(arr[24]),
     );
   }
 
@@ -1440,8 +1441,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VehicleEvent dco_decode_vehicle_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 39)
-      throw Exception('unexpected arr length: expect 39 but see ${arr.length}');
+    if (arr.length != 40)
+      throw Exception('unexpected arr length: expect 40 but see ${arr.length}');
     return VehicleEvent(
       kind: dco_decode_String(arr[0]),
       message: dco_decode_String(arr[1]),
@@ -1465,23 +1466,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ecuSgbdIndex: dco_decode_String(arr[19]),
       ecuSerialNumber: dco_decode_String(arr[20]),
       ecuManufacturingDate: dco_decode_String(arr[21]),
-      ecuDiagnosticSession: dco_decode_String(arr[22]),
-      ecuCodingId: dco_decode_String(arr[23]),
-      ecuCvn: dco_decode_String(arr[24]),
-      ecuBmwRoutine0205Raw: dco_decode_String(arr[25]),
-      ecuBmwRoutine0205Software: dco_decode_String(arr[26]),
-      ecuBmwControllerFamily: dco_decode_String(arr[27]),
-      ecuBmwVariant: dco_decode_String(arr[28]),
-      ecuBmwTransmission: dco_decode_String(arr[29]),
-      ecuBmwEmissions: dco_decode_String(arr[30]),
-      ecuBmwInternalToken: dco_decode_String(arr[31]),
-      transportRequestId: dco_decode_u_64(arr[32]),
-      transportRequestOperation: dco_decode_String(arr[33]),
-      transportRequestAgeMs: dco_decode_u_64(arr[34]),
-      transportRetryCount: dco_decode_u_8(arr[35]),
-      transportSocketState: dco_decode_String(arr[36]),
-      transportRecoveryAction: dco_decode_String(arr[37]),
-      transportRecoveryResult: dco_decode_String(arr[38]),
+      ecuFlashCounter: dco_decode_String(arr[22]),
+      ecuDiagnosticSession: dco_decode_String(arr[23]),
+      ecuCodingId: dco_decode_String(arr[24]),
+      ecuCvn: dco_decode_String(arr[25]),
+      ecuBmwRoutine0205Raw: dco_decode_String(arr[26]),
+      ecuBmwRoutine0205Software: dco_decode_String(arr[27]),
+      ecuBmwControllerFamily: dco_decode_String(arr[28]),
+      ecuBmwVariant: dco_decode_String(arr[29]),
+      ecuBmwTransmission: dco_decode_String(arr[30]),
+      ecuBmwEmissions: dco_decode_String(arr[31]),
+      ecuBmwInternalToken: dco_decode_String(arr[32]),
+      transportRequestId: dco_decode_u_64(arr[33]),
+      transportRequestOperation: dco_decode_String(arr[34]),
+      transportRequestAgeMs: dco_decode_u_64(arr[35]),
+      transportRetryCount: dco_decode_u_8(arr[36]),
+      transportSocketState: dco_decode_String(arr[37]),
+      transportRecoveryAction: dco_decode_String(arr[38]),
+      transportRecoveryResult: dco_decode_String(arr[39]),
     );
   }
 
@@ -1731,6 +1733,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sgbdIndex = sse_decode_String(deserializer);
     var var_serialNumber = sse_decode_String(deserializer);
     var var_manufacturingDate = sse_decode_String(deserializer);
+    var var_flashCounter = sse_decode_String(deserializer);
     var var_diagnosticSession = sse_decode_String(deserializer);
     var var_codingId = sse_decode_String(deserializer);
     var var_cvn = sse_decode_String(deserializer);
@@ -1756,6 +1759,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sgbdIndex: var_sgbdIndex,
       serialNumber: var_serialNumber,
       manufacturingDate: var_manufacturingDate,
+      flashCounter: var_flashCounter,
       diagnosticSession: var_diagnosticSession,
       codingId: var_codingId,
       cvn: var_cvn,
@@ -2059,6 +2063,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_ecuSgbdIndex = sse_decode_String(deserializer);
     var var_ecuSerialNumber = sse_decode_String(deserializer);
     var var_ecuManufacturingDate = sse_decode_String(deserializer);
+    var var_ecuFlashCounter = sse_decode_String(deserializer);
     var var_ecuDiagnosticSession = sse_decode_String(deserializer);
     var var_ecuCodingId = sse_decode_String(deserializer);
     var var_ecuCvn = sse_decode_String(deserializer);
@@ -2099,6 +2104,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ecuSgbdIndex: var_ecuSgbdIndex,
       ecuSerialNumber: var_ecuSerialNumber,
       ecuManufacturingDate: var_ecuManufacturingDate,
+      ecuFlashCounter: var_ecuFlashCounter,
       ecuDiagnosticSession: var_ecuDiagnosticSession,
       ecuCodingId: var_ecuCodingId,
       ecuCvn: var_ecuCvn,
@@ -2339,6 +2345,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.sgbdIndex, serializer);
     sse_encode_String(self.serialNumber, serializer);
     sse_encode_String(self.manufacturingDate, serializer);
+    sse_encode_String(self.flashCounter, serializer);
     sse_encode_String(self.diagnosticSession, serializer);
     sse_encode_String(self.codingId, serializer);
     sse_encode_String(self.cvn, serializer);
@@ -2603,6 +2610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.ecuSgbdIndex, serializer);
     sse_encode_String(self.ecuSerialNumber, serializer);
     sse_encode_String(self.ecuManufacturingDate, serializer);
+    sse_encode_String(self.ecuFlashCounter, serializer);
     sse_encode_String(self.ecuDiagnosticSession, serializer);
     sse_encode_String(self.ecuCodingId, serializer);
     sse_encode_String(self.ecuCvn, serializer);

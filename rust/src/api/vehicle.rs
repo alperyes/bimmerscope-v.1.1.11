@@ -572,6 +572,14 @@ pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefi
             None,
         ),
         data_identifier(
+            "dme_flash_counter",
+            "DME flash counter",
+            0x2502,
+            0x62,
+            "unsigned_u32_be",
+            Some(4),
+        ),
+        data_identifier(
             "s55_ecu_manufacturing_date",
             "S55 ECU manufacturing date",
             0xF18B,
@@ -826,6 +834,7 @@ pub struct VehicleEvent {
     pub ecu_sgbd_index: String,
     pub ecu_serial_number: String,
     pub ecu_manufacturing_date: String,
+    pub ecu_flash_counter: String,
     pub ecu_diagnostic_session: String,
     pub ecu_coding_id: String,
     pub ecu_cvn: String,
@@ -861,6 +870,7 @@ pub struct EcuFingerprintValues {
     pub sgbd_index: String,
     pub serial_number: String,
     pub manufacturing_date: String,
+    pub flash_counter: String,
     pub diagnostic_session: String,
     pub coding_id: String,
     pub cvn: String,
@@ -907,6 +917,7 @@ impl VehicleEvent {
             ecu_sgbd_index: String::new(),
             ecu_serial_number: String::new(),
             ecu_manufacturing_date: String::new(),
+            ecu_flash_counter: String::new(),
             ecu_diagnostic_session: String::new(),
             ecu_coding_id: String::new(),
             ecu_cvn: String::new(),
@@ -951,6 +962,7 @@ impl VehicleEvent {
             ecu_sgbd_index: String::new(),
             ecu_serial_number: String::new(),
             ecu_manufacturing_date: String::new(),
+            ecu_flash_counter: String::new(),
             ecu_diagnostic_session: String::new(),
             ecu_coding_id: String::new(),
             ecu_cvn: String::new(),
@@ -1021,6 +1033,7 @@ impl VehicleEvent {
             ecu_sgbd_index: String::new(),
             ecu_serial_number: String::new(),
             ecu_manufacturing_date: String::new(),
+            ecu_flash_counter: String::new(),
             ecu_diagnostic_session: String::new(),
             ecu_coding_id: String::new(),
             ecu_cvn: String::new(),
@@ -1072,6 +1085,7 @@ impl VehicleEvent {
             ecu_sgbd_index: values.sgbd_index,
             ecu_serial_number: values.serial_number,
             ecu_manufacturing_date: values.manufacturing_date,
+            ecu_flash_counter: values.flash_counter,
             ecu_diagnostic_session: values.diagnostic_session,
             ecu_coding_id: values.coding_id,
             ecu_cvn: values.cvn,
@@ -1710,30 +1724,22 @@ fn identify_engine(
     let vin = read_ascii_data_identifier(stream, ENGINE_ECU_ADDRESS, "vehicle_vin")
         .or_else(|_| read_ascii_data_identifier(stream, 0x10, "vehicle_vin"))?;
 
-    // The captured F82/S55 session returns the four main-page identifiers in
-    // one read-only F101 response: bootloader, software, calibration, and
-    // coding. Prefer that proven composite record over unverified individual
-    // DIDs. Retain the older optional reads as a compatibility fallback when a
-    // DME does not implement this S55-specific layout.
+    // The captured F101 response carries HWEL as its first versioned record;
+    // the F82/S55 layout then carries bootloader, software, calibration, and
+    // coding in the remaining bundle. Prefer these captured records over
+    // unverified individual DIDs, and retain the legacy reads as a fallback
+    // when a DME does not implement this layout.
     let mut values =
         match read_data_identifier(stream, ENGINE_ECU_ADDRESS, "s55_dme_identity_bundle") {
-            Ok(payload) => {
-                let mut decoded = decode_s55_dme_identity_bundle(&payload).unwrap_or_else(|_| {
-                    read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS)
-                });
-                if vin == N20_BENCH_VIN && identity.raw_data == [0x0F, 0x18, 0x10] {
-                    if let Some(hardware) = decode_n20_bench_hardware_from_f101(&payload) {
-                        decoded.hardware = hardware;
-                    }
-                }
-                decoded
-            }
+            Ok(payload) => decode_s55_dme_identity_bundle(&payload)
+                .unwrap_or_else(|_| read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS)),
             Err(_) => read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS),
         };
     values.manufacturing_date =
         read_s55_ecu_manufacturing_date(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     values.diagnostic_session =
         read_s55_dme_diagnostic_session(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
+    values.flash_counter = read_dme_flash_counter(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     if let Ok(routine) = read_s55_bmw_routine_0205(stream, ENGINE_ECU_ADDRESS) {
         values.bmw_routine_0205_raw = routine.raw_hex;
         values.bmw_routine_0205_software = routine.software;
@@ -1875,11 +1881,11 @@ fn decode_s55_dme_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues
         FIRST_RECORD_OFFSET + RECORD_SIZE + 1 + SUBSEQUENT_RECORD_STRIDE * 2,
     ];
 
-    // F101 starts with a DME-specific 26-byte prefix. Its first versioned
-    // record is seven bytes; each following record has a one-byte marker before
-    // its seven-byte ID/version value. This is the layout captured from the
-    // target MEVD17.2.G/S55 DME. Reject another layout and use the legacy
-    // read-only fallback instead of assigning incorrect identifiers.
+    // After HWEL at offset 18, the S55 F101 layout has a DME-specific prefix
+    // through offset 25. Its bootloader record is seven bytes; each following
+    // record has a one-byte marker before its seven-byte ID/version value.
+    // Reject another layout and use the legacy read-only fallback rather than
+    // assigning incorrect identifiers.
     if payload.len() < RECORD_OFFSETS[3] + RECORD_SIZE {
         return Err("S55 F101 identity response has an unsupported layout".into());
     }
@@ -1889,6 +1895,7 @@ fn decode_s55_dme_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues
     };
 
     Ok(EcuFingerprintValues {
+        hardware: decode_mhd_hwel_from_f101(payload).unwrap_or_default(),
         bootloader: format_record(&payload[RECORD_OFFSETS[0]..RECORD_OFFSETS[0] + RECORD_SIZE]),
         software: format_record(&payload[RECORD_OFFSETS[1]..RECORD_OFFSETS[1] + RECORD_SIZE]),
         calibration: format_record(&payload[RECORD_OFFSETS[2]..RECORD_OFFSETS[2] + RECORD_SIZE]),
@@ -1897,14 +1904,46 @@ fn decode_s55_dme_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues
     })
 }
 
-fn decode_n20_bench_hardware_from_f101(payload: &[u8]) -> Option<String> {
-    // MHD's HW value for this identified N20 bench is the raw second F101
-    // seven-byte record. Only apply this mapping to the captured layout;
-    // other DMEs may assign different meanings to the same record position.
-    if hex_payload(payload) != N20_BENCH_F101 {
+fn decode_mhd_hwel_from_f101(payload: &[u8]) -> Option<String> {
+    // MHD reads the HWEL as the first seven-byte versioned record in the
+    // captured F101 family. Later records are separated by marker bytes and
+    // include BTLD/SWFL/CAFD; using the second record would mislabel BTLD or
+    // software as hardware. Require the observed response prefix and HWEL
+    // record marker before interpreting this fixed position.
+    const HWEL_OFFSET: usize = 18;
+    const RECORD_SIZE: usize = 7;
+    if payload.len() <= HWEL_OFFSET + RECORD_SIZE
+        || payload.get(..3) != Some(&[0x01, 0x01, 0x00])
+        || payload.get(HWEL_OFFSET + RECORD_SIZE) != Some(&0x06)
+    {
         return None;
     }
-    Some(hex_payload(&payload[34..41]))
+    let record = &payload[HWEL_OFFSET..HWEL_OFFSET + RECORD_SIZE];
+    let id = u32::from_be_bytes(record[..4].try_into().ok()?);
+    if id == 0 || record[4..].iter().all(|byte| *byte == 0) {
+        return None;
+    }
+    Some(format!(
+        "{id:08X}{:03}{:03}{:03}",
+        record[4], record[5], record[6]
+    ))
+}
+
+fn decode_dme_flash_counter(payload: &[u8]) -> Option<u32> {
+    let bytes: [u8; 4] = payload.try_into().ok()?;
+    Some(u32::from_be_bytes(bytes))
+}
+
+fn read_dme_flash_counter(stream: &mut TcpStream, ecu: u8) -> Option<String> {
+    let raw = read_optional_identifier_hex(stream, ecu, 0x2502);
+    if raw.len() != 8 {
+        return None;
+    }
+    let bytes = (0..raw.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&raw[index..index + 2], 16).ok())
+        .collect::<Option<Vec<_>>>()?;
+    decode_dme_flash_counter(&bytes).map(|counter| counter.to_string())
 }
 
 fn read_legacy_optional_fingerprint(stream: &mut TcpStream, ecu: u8) -> EcuFingerprintValues {
@@ -3936,6 +3975,15 @@ mod tests {
         assert_eq!(s55_bundle.response_sid, 0x62);
         assert_eq!(s55_bundle.encoding, "binary");
 
+        let flash_counter = identifiers
+            .iter()
+            .find(|item| item.id == "dme_flash_counter")
+            .unwrap();
+        assert_eq!(flash_counter.did, 0x2502);
+        assert_eq!(flash_counter.response_sid, 0x62);
+        assert_eq!(flash_counter.encoding, "unsigned_u32_be");
+        assert_eq!(flash_counter.exact_length, Some(4));
+
         let ecu_date = identifiers
             .iter()
             .find(|item| item.id == "s55_ecu_manufacturing_date")
@@ -3963,6 +4011,7 @@ mod tests {
         ];
 
         let values = decode_s55_dme_identity_bundle(&payload).unwrap();
+        assert_eq!(values.hardware, "000019DE010019001");
         assert_eq!(values.bootloader, "00001A83010059002");
         assert_eq!(values.software, "00001A84029040001");
         assert_eq!(values.calibration, "0000260B029040254");
@@ -3970,19 +4019,29 @@ mod tests {
     }
 
     #[test]
-    fn extracts_mhd_hardware_id_only_from_captured_n20_f101_layout() {
+    fn extracts_hwel_from_the_first_mhd_f101_record() {
         let captured = N20_BENCH_F101;
         let payload = (0..captured.len())
             .step_by(2)
             .map(|index| u8::from_str_radix(&captured[index..index + 2], 16).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(
-            decode_n20_bench_hardware_from_f101(&payload),
-            Some("00001C9F1D9601".into())
+            decode_mhd_hwel_from_f101(&payload),
+            Some("000019A6001019003".into())
         );
         let mut changed = payload;
-        changed[34] ^= 1;
-        assert_eq!(decode_n20_bench_hardware_from_f101(&changed), None);
+        changed[25] ^= 1;
+        assert_eq!(decode_mhd_hwel_from_f101(&changed), None);
+    }
+
+    #[test]
+    fn decodes_mhd_dme_flash_counter_as_big_endian_u32() {
+        assert_eq!(decode_dme_flash_counter(&[0x00, 0x00, 0x00, 0x05]), Some(5));
+        assert_eq!(decode_dme_flash_counter(&[0x00, 0x01]), None);
+        assert_eq!(
+            decode_dme_flash_counter(&[0x00, 0x00, 0x00, 0x00, 0x05]),
+            None
+        );
     }
 
     #[test]

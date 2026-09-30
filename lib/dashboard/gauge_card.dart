@@ -35,14 +35,16 @@ class GaugeCard extends StatelessWidget {
     required this.isLive,
     required this.isDark,
     this.isEditing = false,
+    this.isResizing = false,
     this.isDial = false,
     this.isFullscreen = false,
     this.valueColorBackground = false,
     this.useMetric = true,
-    this.onResize,
+    this.onToggleFullscreen,
     this.onToggleStyle,
+    this.onToggleValueColor,
+    this.onMove,
     this.onRemove,
-    this.onTapDown,
     this.onTap,
   });
 
@@ -51,14 +53,16 @@ class GaugeCard extends StatelessWidget {
   final bool isLive;
   final bool isDark;
   final bool isEditing;
+  final bool isResizing;
   final bool isDial;
   final bool isFullscreen;
   final bool valueColorBackground;
   final bool useMetric;
-  final VoidCallback? onResize;
+  final VoidCallback? onToggleFullscreen;
   final VoidCallback? onToggleStyle;
+  final VoidCallback? onToggleValueColor;
+  final VoidCallback? onMove;
   final VoidCallback? onRemove;
-  final GestureTapDownCallback? onTapDown;
   final VoidCallback? onTap;
 
   @override
@@ -86,7 +90,6 @@ class GaugeCard extends StatelessWidget {
     }
 
     return GestureDetector(
-      onTapDown: onTapDown,
       onTap: onTap,
       child: Semantics(
         label:
@@ -106,6 +109,9 @@ class GaugeCard extends StatelessWidget {
                     )
                   : AppPalette.surface(isDark),
               borderRadius: BorderRadius.circular(appCardRadius),
+              border: isResizing
+                  ? Border.all(color: AppPalette.blue, width: 2)
+                  : null,
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(
@@ -374,20 +380,34 @@ class GaugeCard extends StatelessWidget {
                         size: _gaugeControlIconSize,
                       ),
                       onSelected: (action) => switch (action) {
-                        _GaugeAction.resize => onResize?.call(),
+                        _GaugeAction.fullscreen => onToggleFullscreen?.call(),
                         _GaugeAction.style => onToggleStyle?.call(),
+                        _GaugeAction.valueColor => onToggleValueColor?.call(),
+                        _GaugeAction.move => onMove?.call(),
                         _GaugeAction.hide => onRemove?.call(),
                       },
                       itemBuilder: (context) => [
                         const PopupMenuItem(
-                          value: _GaugeAction.resize,
-                          child: Text('Resize'),
+                          value: _GaugeAction.fullscreen,
+                          child: Text('Full screen'),
                         ),
                         PopupMenuItem(
                           value: _GaugeAction.style,
                           child: Text(
                             isDial ? 'Digital display' : 'Dial display',
                           ),
+                        ),
+                        PopupMenuItem(
+                          value: _GaugeAction.valueColor,
+                          child: Text(
+                            valueColorBackground
+                                ? 'Neutral background'
+                                : 'Reading color',
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: _GaugeAction.move,
+                          child: Text('Move gauge'),
                         ),
                         const PopupMenuDivider(),
                         const PopupMenuItem(
@@ -428,18 +448,22 @@ class GaugeCard extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      sensor.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF8B949F),
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: .2,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        sensor.label,
+                        softWrap: false,
+                        style: const TextStyle(
+                          color: Color(0xFF8B949F),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: .2,
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 10),
                   Container(
                     width: 6,
                     height: 6,
@@ -591,9 +615,9 @@ class GaugeCard extends StatelessWidget {
                         : TextAlign.center,
                     style: const TextStyle(
                       color: Color(0xFF8B949F),
-                      fontSize: 15,
+                      fontSize: 20,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: .4,
+                      letterSpacing: .2,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -759,7 +783,7 @@ class GaugeCard extends StatelessWidget {
   }
 }
 
-enum _GaugeAction { resize, style, hide }
+enum _GaugeAction { fullscreen, style, valueColor, move, hide }
 
 class _DialPainter extends CustomPainter {
   const _DialPainter({

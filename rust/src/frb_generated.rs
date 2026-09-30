@@ -1285,6 +1285,7 @@ impl SseDecode for crate::api::vehicle::EcuFingerprintValues {
         let mut var_sgbdIndex = <String>::sse_decode(deserializer);
         let mut var_serialNumber = <String>::sse_decode(deserializer);
         let mut var_manufacturingDate = <String>::sse_decode(deserializer);
+        let mut var_flashCounter = <String>::sse_decode(deserializer);
         let mut var_diagnosticSession = <String>::sse_decode(deserializer);
         let mut var_codingId = <String>::sse_decode(deserializer);
         let mut var_cvn = <String>::sse_decode(deserializer);
@@ -1310,6 +1311,7 @@ impl SseDecode for crate::api::vehicle::EcuFingerprintValues {
             sgbd_index: var_sgbdIndex,
             serial_number: var_serialNumber,
             manufacturing_date: var_manufacturingDate,
+            flash_counter: var_flashCounter,
             diagnostic_session: var_diagnosticSession,
             coding_id: var_codingId,
             cvn: var_cvn,
@@ -1613,6 +1615,7 @@ impl SseDecode for crate::api::vehicle::VehicleEvent {
         let mut var_ecuSgbdIndex = <String>::sse_decode(deserializer);
         let mut var_ecuSerialNumber = <String>::sse_decode(deserializer);
         let mut var_ecuManufacturingDate = <String>::sse_decode(deserializer);
+        let mut var_ecuFlashCounter = <String>::sse_decode(deserializer);
         let mut var_ecuDiagnosticSession = <String>::sse_decode(deserializer);
         let mut var_ecuCodingId = <String>::sse_decode(deserializer);
         let mut var_ecuCvn = <String>::sse_decode(deserializer);
@@ -1653,6 +1656,7 @@ impl SseDecode for crate::api::vehicle::VehicleEvent {
             ecu_sgbd_index: var_ecuSgbdIndex,
             ecu_serial_number: var_ecuSerialNumber,
             ecu_manufacturing_date: var_ecuManufacturingDate,
+            ecu_flash_counter: var_ecuFlashCounter,
             ecu_diagnostic_session: var_ecuDiagnosticSession,
             ecu_coding_id: var_ecuCodingId,
             ecu_cvn: var_ecuCvn,
@@ -2072,6 +2076,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::vehicle::EcuFingerprintValues
             self.sgbd_index.into_into_dart().into_dart(),
             self.serial_number.into_into_dart().into_dart(),
             self.manufacturing_date.into_into_dart().into_dart(),
+            self.flash_counter.into_into_dart().into_dart(),
             self.diagnostic_session.into_into_dart().into_dart(),
             self.coding_id.into_into_dart().into_dart(),
             self.cvn.into_into_dart().into_dart(),
@@ -2226,6 +2231,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::vehicle::VehicleEvent {
             self.ecu_sgbd_index.into_into_dart().into_dart(),
             self.ecu_serial_number.into_into_dart().into_dart(),
             self.ecu_manufacturing_date.into_into_dart().into_dart(),
+            self.ecu_flash_counter.into_into_dart().into_dart(),
             self.ecu_diagnostic_session.into_into_dart().into_dart(),
             self.ecu_coding_id.into_into_dart().into_dart(),
             self.ecu_cvn.into_into_dart().into_dart(),
@@ -2437,6 +2443,7 @@ impl SseEncode for crate::api::vehicle::EcuFingerprintValues {
         <String>::sse_encode(self.sgbd_index, serializer);
         <String>::sse_encode(self.serial_number, serializer);
         <String>::sse_encode(self.manufacturing_date, serializer);
+        <String>::sse_encode(self.flash_counter, serializer);
         <String>::sse_encode(self.diagnostic_session, serializer);
         <String>::sse_encode(self.coding_id, serializer);
         <String>::sse_encode(self.cvn, serializer);
@@ -2674,6 +2681,7 @@ impl SseEncode for crate::api::vehicle::VehicleEvent {
         <String>::sse_encode(self.ecu_sgbd_index, serializer);
         <String>::sse_encode(self.ecu_serial_number, serializer);
         <String>::sse_encode(self.ecu_manufacturing_date, serializer);
+        <String>::sse_encode(self.ecu_flash_counter, serializer);
         <String>::sse_encode(self.ecu_diagnostic_session, serializer);
         <String>::sse_encode(self.ecu_coding_id, serializer);
         <String>::sse_encode(self.ecu_cvn, serializer);

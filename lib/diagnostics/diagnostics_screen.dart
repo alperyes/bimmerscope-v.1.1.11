@@ -1,5 +1,6 @@
 import 'package:bmw_app/src/rust/api/vehicle.dart';
 import 'package:bmw_app/design/app_palette.dart';
+import 'package:bmw_app/design/section_title.dart';
 import 'package:bmw_app/diagnostics/fault_definitions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,6 +26,7 @@ class DiagnosticsScreen extends StatefulWidget {
     this.onSetFlapMode,
     this.previewMode = false,
     this.simulatorMode = false,
+    this.demoMode = false,
   });
 
   final bool isDark;
@@ -32,6 +34,7 @@ class DiagnosticsScreen extends StatefulWidget {
   final VoidCallback onShowGuide;
   final bool previewMode;
   final bool simulatorMode;
+  final bool demoMode;
   final String connectionLabel;
   final String vin;
   final Future<void> Function()? onBeforeVehicleScan;
@@ -398,6 +401,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               label: widget.connectionLabel,
               isDark: widget.isDark,
               iconOnly: true,
+              isDemo: widget.demoMode || widget.simulatorMode,
             ),
           ),
         ],
@@ -405,85 +409,96 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     ),
   );
 
-  Widget scanPanel() => Container(
-    height: appTopActionCardHeight,
-    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-    decoration: BoxDecoration(
-      color: AppPalette.surface(widget.isDark),
-      borderRadius: BorderRadius.circular(appCardRadius),
-    ),
-    child: Column(
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppPalette.blue.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(14),
+  Widget scanPanel() {
+    final connection = widget.connectionLabel.trim().toLowerCase();
+    final iconColor = switch (connection) {
+      'connected' || 'monitoring' => AppPalette.green,
+      'degraded' => AppPalette.orange,
+      _ => AppPalette.blue,
+    };
+    return Container(
+      height: appTopActionCardHeight,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: BoxDecoration(
+        color: AppPalette.surface(widget.isDark),
+        borderRadius: BorderRadius.circular(appCardRadius),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  Icons.health_and_safety_rounded,
+                  color: iconColor,
+                  size: 22,
+                ),
               ),
-              child: const Icon(
-                Icons.health_and_safety_rounded,
-                color: AppPalette.blue,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Engine DME/DDE',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _statePresentation.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppPalette.secondary(widget.isDark),
-                      fontSize: 11,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Engine DME/DDE',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const Spacer(),
-        const SizedBox(height: 4),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: FilledButton.icon(
-            key: const Key('diagnostics-scan-button'),
-            onPressed: scanning || !_vehicleAvailable ? null : () => scan(),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              foregroundColor: Colors.white,
-            ),
-            icon: scanning
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
+                    const SizedBox(height: 4),
+                    Text(
+                      _statePresentation.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppPalette.secondary(widget.isDark),
+                        fontSize: 11,
+                      ),
                     ),
-                  )
-                : const Icon(Icons.manage_search_rounded, size: 20),
-            label: Text(scanning ? scanStage : 'Scan'),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
-    ),
-  );
+          const Spacer(),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              key: const Key('diagnostics-scan-button'),
+              onPressed: scanning || !_vehicleAvailable ? null : () => scan(),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                foregroundColor: Colors.white,
+              ),
+              icon: scanning
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.manage_search_rounded, size: 20),
+              label: Text(scanning ? 'Scanning' : 'Scan'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget resultsHeader() => Padding(
     padding: const EdgeInsets.only(bottom: 10),
@@ -494,7 +509,12 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           children: [
             if (hasScanned || history.isNotEmpty)
               TextButton.icon(
-                style: TextButton.styleFrom(foregroundColor: AppPalette.red),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppPalette.red,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 onPressed: clearing || faults.isEmpty
                     ? null
                     : demoScan
@@ -508,37 +528,27 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     : const Icon(Icons.delete_sweep_rounded, size: 18),
                 label: Text(clearing ? 'Clearing…' : 'Clear codes'),
               ),
-            if (hasScanned && error == null) ...[
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppPalette.secondary(
-                    widget.isDark,
-                  ).withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${faults.length} ${faults.length == 1 ? 'fault' : 'faults'}',
-                  style: TextStyle(
-                    color: AppPalette.secondary(widget.isDark),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
             const Spacer(),
+            if (hasScanned && error == null) ...[
+              AppCountBadge(
+                label:
+                    '${faults.length} ${faults.length == 1 ? 'fault' : 'faults'}',
+                isDark: widget.isDark,
+              ),
+              const SizedBox(width: 4),
+            ],
             if (hasScanned && faults.isNotEmpty)
               IconButton(
                 tooltip: 'Export fault report',
                 onPressed: exportReport,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.ios_share_rounded, size: 18),
               ),
             if (history.isNotEmpty)
               IconButton(
                 tooltip: 'Scan history',
                 onPressed: showHistory,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.history_rounded),
               ),
           ],
@@ -845,10 +855,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Clear stored DTCs?'),
         content: const Text(
-          'This sends a broadcast clear-fault command. Any responding vehicle '
-          'module may clear its stored DTCs; BimmerScope then verifies the S55 DME directly. '
-          'Only continue with the vehicle stationary, ignition on, and the '
-          'cause of the fault understood. The command cannot be undone.',
+          '• Only continue with the vehicle stationary, ignition on, and the '
+          'cause of the fault understood.\n'
+          '• The command cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -1168,11 +1177,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   style: TextStyle(color: muted, fontSize: 10),
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 5,
-                  children: _faultStatusFlags(fault.status),
-                ),
+                _faultActiveStatus(fault.status),
                 const SizedBox(height: 10),
                 Text(
                   definition?.title ?? 'BMW-specific fault',
@@ -1197,13 +1202,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   definition?.explanation ?? 'Definition unavailable.',
                   style: const TextStyle(fontSize: 11, height: 1.45),
                 ),
-                if (definition != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Next check: ${definition.nextStep}',
-                    style: TextStyle(color: muted, fontSize: 10, height: 1.4),
-                  ),
-                ],
               ],
             ),
           ),
@@ -1212,80 +1210,39 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
   }
 
-  List<Widget> _faultStatusFlags(int status) {
-    final flags = <({String label, Color color, IconData icon})>[];
-    if ((status & 0x01) != 0) {
-      flags.add((
-        label: 'Currently failed',
-        color: AppPalette.status(AppStatusTone.danger, widget.isDark),
-        icon: Icons.error_rounded,
-      ));
-    }
-    if ((status & 0x08) != 0) {
-      flags.add((
-        label: 'Confirmed',
-        color: AppPalette.status(AppStatusTone.warning, widget.isDark),
-        icon: Icons.inventory_2_rounded,
-      ));
-    }
-    if ((status & 0x04) != 0) {
-      flags.add((
-        label: 'Pending',
-        color: AppPalette.status(AppStatusTone.warning, widget.isDark),
-        icon: Icons.hourglass_top_rounded,
-      ));
-    }
-    if ((status & 0x20) != 0) {
-      flags.add((
-        label: 'Since clear',
-        color: AppPalette.status(AppStatusTone.neutral, widget.isDark),
-        icon: Icons.history_rounded,
-      ));
-    }
-    if ((status & 0x02) != 0) {
-      flags.add((
-        label: 'Failed this operation cycle',
-        color: AppPalette.status(AppStatusTone.neutral, widget.isDark),
-        icon: Icons.directions_car_filled_rounded,
-      ));
-    }
-    if (flags.isEmpty) {
-      flags.add((
-        label: 'Status recorded',
-        color: AppPalette.status(AppStatusTone.neutral, widget.isDark),
-        icon: Icons.info_outline_rounded,
-      ));
-    }
-    return flags
-        .map(
-          (flag) => Semantics(
-            label: flag.label,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: flag.color.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: flag.color.withValues(alpha: .32)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(flag.icon, size: 13, color: flag.color),
-                  const SizedBox(width: 4),
-                  Text(
-                    flag.label,
-                    style: TextStyle(
-                      color: flag.color,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
+  Widget _faultActiveStatus(int status) {
+    final active = (status & 0x01) != 0;
+    final color = AppPalette.status(
+      active ? AppStatusTone.danger : AppStatusTone.neutral,
+      widget.isDark,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .32)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            active ? Icons.error_rounded : Icons.check_circle_outline_rounded,
+            size: 13,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            active ? 'Active' : 'Not active',
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
             ),
           ),
-        )
-        .toList();
+        ],
+      ),
+    );
   }
 }
 

@@ -2,13 +2,38 @@ import 'package:bmw_app/app.dart';
 import 'dart:convert';
 import 'package:bmw_app/dashboard/dashboard_screen.dart';
 import 'package:bmw_app/design/app_palette.dart';
+import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:bmw_app/diagnostics/diagnostics_screen.dart';
+import 'package:bmw_app/onboarding/connection_guide_screen.dart';
 import 'package:bmw_app/product/product_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('connection chip normalizes phases and marks demo sessions', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ConnectionStatusChip(
+            label: 'Identifying',
+            isDark: true,
+            iconOnly: true,
+            isDemo: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('DEMO'), findsOneWidget);
+    expect(
+      find.byTooltip('Demo mode. Connection status: Connecting'),
+      findsOneWidget,
+    );
+  });
+
   test('connection labels use the shared semantic status tones', () {
     expect(AppPalette.connectionTone('Connected'), AppStatusTone.success);
     expect(AppPalette.connectionTone('Connecting'), AppStatusTone.active);
@@ -76,6 +101,43 @@ void main() {
     expect(find.text('BIMMERSCOPE'), findsOneWidget);
     expect(find.text('BMW F-series (2012–2019)'), findsOneWidget);
     expect(find.text('Next'), findsOneWidget);
+  });
+
+  testWidgets('connection guide scrolls on a compact phone viewport', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ConnectionGuideScreen(
+          isDark: true,
+          firstLaunch: true,
+          onDone: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Next'), findsOneWidget);
+    expect(find.text('Skip setup'), findsOneWidget);
+    expect(find.text('Compatibility'), findsOneWidget);
+    expect(find.text('Supported adapters'), findsOneWidget);
+    expect(tester.getRect(find.text('Next')).bottom, lessThan(600));
+    expect(tester.takeException(), isNull);
+
+    final safetyCopy = find.text(
+      'Set up the dashboard while parked. Mount your phone securely and never run diagnostics while moving.',
+    );
+    await tester.ensureVisible(safetyCopy);
+    await tester.pumpAndSettle();
+
+    expect(safetyCopy, findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
+    expect(find.text('Skip setup'), findsOneWidget);
+    expect(tester.getRect(find.text('Next')).bottom, lessThan(600));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('renders the dashboard shell', (tester) async {

@@ -33,6 +33,7 @@ class TuneScreen extends StatefulWidget {
     required this.vin,
     required this.mileageKm,
     required this.connectionLabel,
+    this.demoMode = false,
     required this.simulatorMode,
     required this.engineEcuDetected,
     required this.engineEcuIdentity,
@@ -59,12 +60,14 @@ class TuneScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.onBeforeVehicleCheck,
     required this.onAfterVehicleCheck,
+    required this.onOpenDrawer,
   });
 
   final bool isDark;
   final String vin;
   final double? mileageKm;
   final String connectionLabel;
+  final bool demoMode;
   final bool simulatorMode;
   final bool engineEcuDetected;
   final String? engineEcuIdentity;
@@ -91,6 +94,7 @@ class TuneScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
   final Future<void> Function() onBeforeVehicleCheck;
   final Future<void> Function() onAfterVehicleCheck;
+  final VoidCallback onOpenDrawer;
 
   @override
   State<TuneScreen> createState() => _TuneScreenState();
@@ -1149,17 +1153,15 @@ class _TuneScreenState extends State<TuneScreen> {
                     alignment: Alignment.centerLeft,
                     child: Transform.translate(
                       offset: const Offset(-2, 0),
-                      child: Builder(
-                        builder: (context) => IconButton(
-                          onPressed: () => Scaffold.of(context).openDrawer(),
-                          icon: const Icon(Icons.menu_rounded),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 40,
-                            height: 40,
-                          ),
-                          visualDensity: VisualDensity.compact,
+                      child: IconButton(
+                        onPressed: widget.onOpenDrawer,
+                        icon: const Icon(Icons.menu_rounded),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
                         ),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ),
                   ),
@@ -1169,6 +1171,7 @@ class _TuneScreenState extends State<TuneScreen> {
                       label: widget.connectionLabel,
                       isDark: widget.isDark,
                       iconOnly: true,
+                      isDemo: widget.demoMode || widget.simulatorMode,
                     ),
                   ),
                 ],
@@ -2370,61 +2373,129 @@ class _UnlockStatusPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppPalette.background(isDark),
-    appBar: AppBar(title: const Text('Check unlock status')),
+    appBar: AppBar(
+      title: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppPalette.blue.withValues(alpha: isDark ? .16 : .1),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(
+              Icons.lock_open_rounded,
+              color: AppPalette.blue,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text('Check unlock status'),
+        ],
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Divider(
+          height: 1,
+          color: AppPalette.separator(isDark).withValues(alpha: .65),
+        ),
+      ),
+    ),
     body: FutureBuilder<String>(
       future: status,
       builder: (context, snapshot) {
         final muted = isDark
             ? const Color(0xFF9DA8B8)
             : const Color(0xFF58677B);
+        final complete = snapshot.connectionState == ConnectionState.done;
+        final message = snapshot.hasError
+            ? 'Unable to verify unlock status: ${snapshot.error}'
+            : snapshot.data ?? 'Unable to verify unlock status.';
+        final sections = message.split('\n\n');
+        final positive = message.contains('reference matched');
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
               decoration: BoxDecoration(
-                color: AppPalette.surface(isDark),
-                borderRadius: BorderRadius.circular(appCardRadius),
+                gradient: LinearGradient(
+                  colors: [
+                    AppPalette.surface(isDark),
+                    AppPalette.surface(isDark).withValues(alpha: .72),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: (positive ? AppPalette.green : AppPalette.blue)
+                      .withValues(alpha: .22),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.lock_open_outlined,
-                    color: AppPalette.blue,
-                    size: 30,
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: (positive ? AppPalette.green : AppPalette.blue)
+                              .withValues(alpha: .14),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          positive
+                              ? Icons.verified_rounded
+                              : Icons.search_rounded,
+                          color: positive ? AppPalette.green : AppPalette.blue,
+                          size: 25,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          complete
+                              ? 'Unlock status result'
+                              : 'Checking unlock status…',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -.2,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    snapshot.connectionState != ConnectionState.done
-                        ? 'Checking unlock status…'
-                        : 'Unlock status result',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (snapshot.connectionState != ConnectionState.done)
+                  const SizedBox(height: 20),
+                  if (!complete)
                     const LinearProgressIndicator()
                   else
-                    Text(
-                      snapshot.hasError
-                          ? 'Unable to verify unlock status: ${snapshot.error}'
-                          : snapshot.data ?? 'Unable to verify unlock status.',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: muted,
-                        height: 1.45,
+                    for (var i = 0; i < sections.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 16),
+                      Text(
+                        sections[i],
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: i == 0 ? null : muted,
+                          height: 1.45,
+                          fontWeight: i == 0
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
                       ),
-                    ),
+                    ],
                 ],
               ),
             ),
             const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
               decoration: BoxDecoration(
-                color: AppPalette.surface(isDark),
+                color: AppPalette.surface(isDark).withValues(alpha: .72),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppPalette.separator(isDark)),
               ),
               child: const Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2474,13 +2545,13 @@ class _EcuIdentityPage extends StatelessWidget {
     final muted = AppPalette.secondary(isDark);
     final fields = <(String, String?)>[
       ('VIN', vin),
-      ('Hardware ID', hardware),
-      ('Software ID', software),
-      ('Bootloader ID', bootloader),
-      ('Calibration ID', calibration),
+      ('Hardware ID (HWEL)', hardware),
+      ('Software ID (SWFL)', software),
+      ('Bootloader ID (BTLD)', bootloader),
+      ('Calibration ID (SWFL)', calibration),
       ('Raw ECU ID (F1 50)', identity),
       ('Manufactured', manufacturingDate),
-      ('Coding ID', codingId),
+      ('Coding ID (CAFD)', codingId),
     ];
     return Scaffold(
       backgroundColor: AppPalette.background(isDark),
