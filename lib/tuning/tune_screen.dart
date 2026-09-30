@@ -2201,7 +2201,7 @@ class _TuneActionMenu extends StatelessWidget {
 }
 
 Color _tuneMenuSurface(bool isDark) =>
-    isDark ? const Color(0xFF292D35) : const Color(0xFFE5EAF2);
+    AppPalette.blue.withValues(alpha: isDark ? .13 : .07);
 
 class _TuneActionTile extends StatelessWidget {
   const _TuneActionTile({
