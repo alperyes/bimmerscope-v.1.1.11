@@ -10,7 +10,6 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:bmw_app/logging/log_health_analysis.dart';
 import 'package:bmw_app/logging/log_quality.dart';
 import 'package:bmw_app/logging/log_sample.dart';
 import 'package:bmw_app/logging/auto_pull_logging_screen.dart';
@@ -160,6 +159,10 @@ class _LoggingScreenState extends State<LoggingScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(child: recorderPanel()),
           ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            sliver: SliverToBoxAdapter(child: autoLogSettingsButton()),
+          ),
           if (!loading && files.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
@@ -171,7 +174,13 @@ class _LoggingScreenState extends State<LoggingScreen> {
                       height: sectionTitleHeight,
                       child: Row(
                         children: [
-                          autoLogSettingsButton(),
+                          const Text(
+                            'Saved sessions',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                           const Spacer(),
                           IconButton(
                             tooltip: 'Refresh logs',
@@ -193,11 +202,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
                   ],
                 ),
               ),
-            ),
-          if (files.isEmpty && !loading)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-              sliver: SliverToBoxAdapter(child: autoLogSettingsButton()),
             ),
           if (loading)
             SliverPadding(
@@ -247,17 +251,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      if (widget.canRecord) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Start a recording to create your first session.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppPalette.secondary(widget.isDark),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -346,7 +339,7 @@ class _LoggingScreenState extends State<LoggingScreen> {
         : !widget.isConnected
         ? 'Connect to record live telemetry'
         : !widget.canRecord
-        ? 'Start live monitoring to record telemetry'
+        ? 'Start live monitoring first'
         : widget.telemetryDegraded
         ? 'Connection degraded · waiting for fresh samples'
         : 'Live telemetry ready';
@@ -473,46 +466,78 @@ class _LoggingScreenState extends State<LoggingScreen> {
 
   Widget autoLogSettingsButton() {
     final enabled = widget.autoLogEnabled;
-    return Semantics(
-      button: true,
-      label: 'Automatic pull logging. ${enabled ? 'On' : 'Off'}',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextButton.icon(
-            onPressed: openAutoLogSettings,
-            style: TextButton.styleFrom(
-              foregroundColor: enabled
-                  ? AppPalette.green
-                  : AppPalette.secondary(widget.isDark),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            icon: Icon(
-              enabled ? Icons.bolt_rounded : Icons.bolt_outlined,
-              size: 18,
-            ),
-            label: Text(enabled ? 'Auto pull on' : 'Auto pull'),
+    final canToggle = widget.canRecord;
+    final detail = !canToggle
+        ? enabled
+              ? 'Paused · start live monitoring first'
+              : 'Start live monitoring first'
+        : enabled
+        ? 'On · starts at ${widget.autoLogThreshold.round()}% throttle'
+        : 'Off · starts at ${widget.autoLogThreshold.round()}% throttle';
+    final tone = enabled && canToggle ? AppPalette.green : AppPalette.blue;
+    return Material(
+      color: AppPalette.surface(widget.isDark),
+      borderRadius: BorderRadius.circular(appCardRadius),
+      child: InkWell(
+        key: const Key('logs-auto-pull-settings'),
+        onTap: openAutoLogSettings,
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: tone.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  enabled ? Icons.bolt_rounded : Icons.bolt_outlined,
+                  size: 22,
+                  color: tone,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Auto pull',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      detail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppPalette.secondary(widget.isDark),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Switch.adaptive(
+                key: const Key('logs-auto-pull-toggle'),
+                value: enabled,
+                onChanged: canToggle
+                    ? (value) async {
+                        await widget.onAutoLogChanged(value);
+                      }
+                    : null,
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: enabled
-                ? 'Disable automatic pull logging'
-                : 'Enable automatic pull logging',
-            onPressed: () async {
-              await widget.onAutoLogChanged(!enabled);
-            },
-            visualDensity: VisualDensity.compact,
-            iconSize: 18,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            icon: Icon(
-              enabled ? Icons.toggle_on_rounded : Icons.toggle_off_rounded,
-              color: enabled
-                  ? AppPalette.green
-                  : AppPalette.secondary(widget.isDark),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -786,7 +811,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
       vin: loggedVehicle,
       profileId: loggedProfile,
     );
-    final provenance = await inspectLogProvenance(file);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -797,7 +821,6 @@ class _LoggingScreenState extends State<LoggingScreen> {
           timedPoints: timedPoints,
           durationSeconds: durationSeconds,
           quality: quality,
-          provenance: provenance,
         ),
       ),
     );
@@ -928,7 +951,6 @@ class _LogPlotPage extends StatefulWidget {
     required this.timedPoints,
     required this.durationSeconds,
     required this.quality,
-    required this.provenance,
   });
   final String fileName;
   final String filePath;
@@ -936,7 +958,6 @@ class _LogPlotPage extends StatefulWidget {
   final Map<String, List<LogSample>> timedPoints;
   final double durationSeconds;
   final LogQualityReport quality;
-  final LogProvenanceStatus provenance;
 
   @override
   State<_LogPlotPage> createState() => _LogPlotPageState();
@@ -1119,8 +1140,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
         ),
         const SizedBox(height: 16),
         _sessionSummary(),
-        const SizedBox(height: 10),
-        _provenanceCard(),
         if (_pullStart != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -1129,10 +1148,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
                 : 'Pull interval marked: samples ${_pullStart! + 1}–${_pullEnd! + 1}.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
-        ],
-        if (analyzeLog(widget.points).isNotEmpty) ...[
-          const SizedBox(height: 14),
-          _healthFindingsCard(analyzeLog(widget.points)),
         ],
         const SizedBox(height: 16),
         Container(
@@ -1345,6 +1360,7 @@ class _LogPlotPageState extends State<_LogPlotPage> {
             durationSeconds: widget.durationSeconds,
             useMinutes: _useMinutes,
             zoom: _zoom,
+            cursorIndex: _cursorEnabled ? _cursorIndex : null,
           ),
         ),
       ],
@@ -1383,7 +1399,7 @@ class _LogPlotPageState extends State<_LogPlotPage> {
           ),
         ),
         subtitle: Text(
-          '${widget.points.values.fold<int>(0, (total, values) => math.max(total, values.length))} samples · ${_LoggingScreenState.formatDuration(Duration(seconds: widget.durationSeconds.round()))}',
+          '${widget.points.values.fold<int>(0, (total, values) => math.max(total, values.length))} samples · ${_LoggingScreenState.formatDuration(Duration(seconds: widget.durationSeconds.round()))} · ${widget.quality.maxGapMs > 1000 ? 'gaps detected' : 'continuous samples'}',
         ),
         children: rows
             .map(
@@ -1418,84 +1434,6 @@ class _LogPlotPageState extends State<_LogPlotPage> {
       ),
     );
   }
-
-  Widget _provenanceCard() {
-    final status = widget.provenance;
-    final color = status.matchesCsv ? AppPalette.green : AppPalette.orange;
-    final title = status.matchesCsv
-        ? 'Capture metadata verified'
-        : status.metadataPresent
-        ? 'Capture metadata needs review'
-        : 'No capture metadata sidecar';
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            status.matchesCsv ? Icons.verified_outlined : Icons.info_outline,
-            color: color,
-            size: 19,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(fontWeight: FontWeight.w800, color: color),
-                ),
-                const SizedBox(height: 4),
-                Text(status.detail, style: const TextStyle(fontSize: 11)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _healthFindingsCard(List<LogHealthFinding> findings) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Semantics(
-          header: true,
-          child: Text(
-            'Review flags',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ),
-        const SizedBox(height: 8),
-        for (final finding in findings)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              '• ${finding.message}',
-              style: TextStyle(
-                color: finding.severity == LogFindingSeverity.warning
-                    ? AppPalette.orange
-                    : null,
-              ),
-            ),
-          ),
-        Text(
-          'Conservative review only; confirm units and vehicle-specific limits with your tuner.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    ),
-  );
 }
 
 class _SharedLogChart extends StatelessWidget {
@@ -1506,6 +1444,7 @@ class _SharedLogChart extends StatelessWidget {
     required this.durationSeconds,
     required this.useMinutes,
     required this.zoom,
+    this.cursorIndex,
   });
   final Map<String, List<double>> points;
   final Map<String, List<LogSample>> timedPoints;
@@ -1513,6 +1452,7 @@ class _SharedLogChart extends StatelessWidget {
   final double durationSeconds;
   final bool useMinutes;
   final double zoom;
+  final int? cursorIndex;
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
@@ -1534,6 +1474,7 @@ class _SharedLogChart extends StatelessWidget {
           colors,
           durationSeconds,
           useMinutes,
+          cursorIndex,
         ),
         child: const SizedBox.expand(),
       ),
@@ -1548,12 +1489,14 @@ class _SharedLogChartPainter extends CustomPainter {
     this.colors,
     this.durationSeconds,
     this.useMinutes,
+    this.cursorIndex,
   );
   final Map<String, List<double>> points;
   final Map<String, List<LogSample>> timedPoints;
   final List<Color> colors;
   final double durationSeconds;
   final bool useMinutes;
+  final int? cursorIndex;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1587,6 +1530,23 @@ class _SharedLogChartPainter extends CustomPainter {
           ..strokeWidth = 2.3,
       );
     }
+    if (cursorIndex != null && durationSeconds > 0) {
+      final maxSamples = points.values.fold<int>(
+        0,
+        (maximum, values) => math.max(maximum, values.length),
+      );
+      final cursorRatio = maxSamples <= 1
+          ? 0.0
+          : cursorIndex!.clamp(0, maxSamples - 1) / (maxSamples - 1);
+      final cursorX = cursorRatio * size.width;
+      canvas.drawLine(
+        Offset(cursorX, 0),
+        Offset(cursorX, chartHeight),
+        Paint()
+          ..color = const Color(0xFFE9EEF8)
+          ..strokeWidth = 1.2,
+      );
+    }
     final suffix = useMinutes ? 'min' : 's';
     final end = useMinutes ? durationSeconds / 60 : durationSeconds;
     final labels = TextPainter(textDirection: TextDirection.ltr)
@@ -1606,7 +1566,10 @@ class _SharedLogChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SharedLogChartPainter old) =>
-      old.useMinutes != useMinutes || old.durationSeconds != durationSeconds;
+      old.useMinutes != useMinutes ||
+      old.durationSeconds != durationSeconds ||
+      old.cursorIndex != cursorIndex ||
+      old.points != points;
 }
 
 class _LogChart extends StatelessWidget {

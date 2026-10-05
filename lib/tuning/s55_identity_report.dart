@@ -17,7 +17,7 @@ String buildS55IdentityReport({
     'DME address: HSFZ 0x12',
     '',
     'FIELD | DID | VALUE',
-    'DME identity / SGBD index | 22 F1 50 | ${_value(evidence.identity)}',
+    'Diagnostic ECU ID | 22 F1 50 | ${_value(evidence.identity)}',
     'BMW software reference | 22 40 1F | ${_value(evidence.software)}',
     'Startup / boot block | 22 40 98 | ${_value(evidence.bootloader)}',
     'Calibration / CVN record | 22 40 3C | ${_value(evidence.calibration)}',

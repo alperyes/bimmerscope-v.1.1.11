@@ -37,6 +37,14 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Make sure the glass moves freely and perform the BMW window initialization procedure. If learning fails, check the regulator, position feedback and supply.',
   ),
+  '030343': FaultDefinition(
+    title: 'Steering-column switch button stuck',
+    system: 'Steering controls / SZL / FEM',
+    explanation:
+        'The FEM reports a stuck button input in the steering-column switch cluster (SZL), associated with the turn-signal control (FAS/BC/FLA).',
+    nextStep:
+        'Check the steering-column buttons and stalk for a control that does not return normally. Confirm its live input state and inspect the SZL connector before replacing parts.',
+  ),
   '030350': FaultDefinition(
     title: 'Steering-column switch cluster LIN device missing',
     system: 'Body electronics / steering controls',
@@ -69,6 +77,22 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Check the related fuse, power feed and connector for a loose or damaged connection, then verify the circuit under the BMW test procedure.',
   ),
+  '80409A': FaultDefinition(
+    title: 'Terminal 15N1 driver: open circuit or short to positive',
+    system: 'Ignition power distribution / FEM',
+    explanation:
+        'The FEM detected a line interruption or short to battery positive on its KL15N1 (ignition-switched power) driver circuit. This code alone does not identify the failed component.',
+    nextStep:
+        'Check related terminal-power faults, then inspect the KL15N1 supply path, fuses, connectors and wiring using the vehicle-specific BMW wiring diagram and test plan.',
+  ),
+  '80409B': FaultDefinition(
+    title: 'Terminal 15N2 driver: open circuit or short to positive',
+    system: 'Ignition power distribution / FEM',
+    explanation:
+        'The FEM detected a line interruption or short to battery positive on its KL15N2 (ignition-switched power) driver circuit. This code alone does not identify the failed component.',
+    nextStep:
+        'Check related terminal-power faults, then inspect the KL15N2 supply path, fuses, connectors and wiring using the vehicle-specific BMW wiring diagram and test plan.',
+  ),
   '80409C': FaultDefinition(
     title: 'Brake-light switch circuit fault',
     system: 'Braking controls / FEM',
@@ -100,6 +124,14 @@ const _definitions = <String, FaultDefinition>{
         'The wake-up line to the intelligent battery sensor (IBS) is open or shorted to battery voltage.',
     nextStep:
         'Inspect the IBS connector and wake-up wire, and check related battery-management faults. Verify battery condition before replacing the sensor.',
+  ),
+  '804107': FaultDefinition(
+    title: 'Front interior aerial: line disconnection',
+    system: 'Comfort access / FEM',
+    explanation:
+        'The FEM detected an open circuit on the front passenger-compartment aerial used for key detection.',
+    nextStep:
+        'Check whether the key is detected inside the vehicle, then inspect the front interior aerial connector and wiring using the vehicle-specific test plan before replacing components.',
   ),
   '80415B': FaultDefinition(
     title: 'Engine-compartment lid contact circuit fault',
@@ -264,8 +296,7 @@ const _definitions = <String, FaultDefinition>{
   'D90C04': FaultDefinition(
     title: 'K-LIN_1 master communication fault',
     system: 'Body electronics / LIN network',
-    explanation:
-        'The FEM reports no communication on the K-LIN_1 branch.',
+    explanation: 'The FEM reports no communication on the K-LIN_1 branch.',
     nextStep:
         'Inspect the connected LIN components, branch wiring and connectors; isolate the affected device using the vehicle wiring diagram.',
   ),
@@ -280,16 +311,14 @@ const _definitions = <String, FaultDefinition>{
   'D90C0A': FaultDefinition(
     title: 'K-LIN_16 master communication fault',
     system: 'Body electronics / LIN network',
-    explanation:
-        'The FEM has lost communication on the K-LIN_16 branch.',
+    explanation: 'The FEM has lost communication on the K-LIN_16 branch.',
     nextStep:
         'Inspect the branch and its connected devices for a short, open or poor connection; use the vehicle-specific wiring map to isolate the cause.',
   ),
   'D90C0D': FaultDefinition(
     title: 'K-LIN_E master communication fault',
     system: 'Body electronics / LIN network',
-    explanation:
-        'Communication is missing on the FEM’s K-LIN_E branch.',
+    explanation: 'Communication is missing on the FEM’s K-LIN_E branch.',
     nextStep:
         'Check which LIN components are fitted to this branch and inspect their wiring and connectors for an open or short.',
   ),
@@ -421,6 +450,14 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Check wheel-speed values and DSC communication, then inspect related sensor, wiring and network faults.',
   ),
+  'D91681': FaultDefinition(
+    title: 'Vehicle electrical-system voltage message missing',
+    system: 'Body electronics / DME communication',
+    explanation:
+        'The FEM or BDC did not receive the vehicle electrical-system voltage message from the DME/DDE. This is a missing network message, not by itself proof of low voltage.',
+    nextStep:
+        'Check DME/DDE communication and related network faults, then verify module power, ground and battery/charging voltage before replacing parts.',
+  ),
   'D91697': FaultDefinition(
     title: 'Seat-belt and occupancy status missing',
     system: 'Body electronics / restraint system',
@@ -509,6 +546,14 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Check driving-mode switch operation and related network faults, then verify the switch module and wiring.',
   ),
+  'D917F9': FaultDefinition(
+    title: 'Drivetrain data 2 message missing',
+    system: 'Body electronics / drivetrain network',
+    explanation:
+        'The FEM did not receive drivetrain-data message 2 (0x3F9) from the DME/DDE. A missing message does not by itself identify a failed control unit.',
+    nextStep:
+        'Check companion DME/DDE and network faults, then verify DME/DDE power, ground and bus communication before replacing a module.',
+  ),
   'D91CE4': FaultDefinition(
     title: 'Vehicle ride-height data missing from ICM',
     system: 'Body electronics / chassis network',
@@ -565,6 +610,14 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Check for related ICM, DSC and tyre-pressure monitoring faults. Compare tyre-status data at the source and inspect network communication before replacing sensors or modules.',
   ),
+  'D91FF9': FaultDefinition(
+    title: 'Drivetrain data 2 message missing (ID 230.0.2)',
+    system: 'Body electronics / drivetrain network',
+    explanation:
+        'The FEM did not receive drivetrain-data message 2 (ID 230.0.2) from the DME/DDE. This is distinct from the 0x3F9 message reported by D917F9.',
+    nextStep:
+        'Review related DME/DDE and network faults together, then verify module power, ground and bus communication using the vehicle-specific test plan before replacing components.',
+  ),
   'CD0420': FaultDefinition(
     title: 'Gateway detected a FlexRay signalling fault',
     system: 'Central gateway / FlexRay',
@@ -572,6 +625,14 @@ const _definitions = <String, FaultDefinition>{
         'The central gateway recorded a fault in FlexRay controller signalling; this can accompany loss of communication with other control units.',
     nextStep:
         'Review all FlexRay and module communication faults together, check vehicle battery condition and inspect the network path. Follow the VIN-specific BMW test plan before considering software or hardware repairs.',
+  ),
+  'CD0487': FaultDefinition(
+    title: 'FlexRay synchronisation failed',
+    system: 'Central gateway (ZGM) / FlexRay',
+    explanation:
+        'The central gateway could not complete FlexRay network synchronisation. This fault does not by itself identify a failed gateway or another specific module.',
+    nextStep:
+        'Review other gateway and FlexRay faults, check battery voltage and module power supplies, then follow the vehicle-specific BMW network test plan to locate any communication or wiring fault.',
   ),
   'CD1410': FaultDefinition(
     title: 'Gateway received invalid system-time data',
@@ -685,6 +746,22 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Inspect the second-channel wiring and connector, then verify its supply, ground and signal against channel 1 using the vehicle-specific procedure.',
   ),
+  '101401': FaultDefinition(
+    title: 'Throttle valve adaptation conditions not met',
+    system: 'Engine throttle control / DME',
+    explanation:
+        'The DME could not complete throttle-valve adaptation because the required operating conditions were not met. This code alone does not establish that the throttle valve has failed.',
+    nextStep:
+        'Check battery voltage, ignition and engine state, and any related throttle-valve faults. If the fault remains current, follow the BMW test plan for adaptation before replacing parts.',
+  ),
+  '101410': FaultDefinition(
+    title: 'Throttle valve adaptation: battery voltage too low',
+    system: 'Engine throttle control / DME',
+    explanation:
+        'The DME reports that battery voltage was too low for throttle-valve adaptation to complete. This fault alone does not establish that the throttle valve has failed.',
+    nextStep:
+        'Check battery condition and voltage during adaptation, along with related power-supply and throttle faults. Restore stable voltage and follow the BMW adaptation test plan before replacing parts.',
+  ),
   'CD9933': FaultDefinition(
     title: 'FlexRay yaw-rate message not received',
     system: 'Vehicle network / FlexRay',
@@ -692,6 +769,14 @@ const _definitions = <String, FaultDefinition>{
         'A vehicle controller did not receive the expected yaw-rate data message on the FlexRay network.',
     nextStep:
         'Check for related network or stability-control faults and confirm the yaw-rate source is online. Diagnose shared power, wiring and network communication before replacing a module.',
+  ),
+  'CD9A04': FaultDefinition(
+    title: 'DSC braking-torque message missing',
+    system: 'Engine management / FlexRay',
+    explanation:
+        'The DME/DDE did not receive the expected actual total braking-torque message (43.3.4) from the DSC. The fault identifies a missing network message, not a brake-system component failure by itself.',
+    nextStep:
+        'Review related DSC and FlexRay faults, confirm the DSC is communicating, and check module power and network wiring using the vehicle-specific BMW test plan.',
   ),
   'CDA004': FaultDefinition(
     title: 'FlexRay wheel-torque message unavailable',
@@ -725,6 +810,14 @@ const _definitions = <String, FaultDefinition>{
     nextStep:
         'Check the circuit power supply, fuse and connections under the conditions specified by the BMW test plan before replacing components.',
   ),
+  '1BC112': FaultDefinition(
+    title: 'Zero-gear sensor circuit: short to positive',
+    system: 'Engine management / DME',
+    explanation:
+        'The DME reports an electrical fault on the zero-gear sensor circuit, consistent with the signal being shorted to battery positive (B+). This code alone does not confirm that the sensor has failed, and applicability depends on the vehicle configuration.',
+    nextStep:
+        'Confirm the vehicle is equipped with this sensor, then inspect its connector and wiring for a short to B+. Check the sensor supply, ground and signal using the vehicle-specific BMW wiring diagram and test plan before replacing parts.',
+  ),
   '123701': FaultDefinition(
     title: 'Wastegate position signal: short to positive',
     system: 'Turbocharger / wastegate actuator',
@@ -756,6 +849,14 @@ const _definitions = <String, FaultDefinition>{
         'The DME detected an interrupted electrical path while controlling the tank ventilation valve.',
     nextStep:
         'Check the valve connector and harness for a loose connection or broken conductor, then test the valve circuit before replacing the valve.',
+  ),
+  '1C3110': FaultDefinition(
+    title: 'Engine oil pressure/temperature sensor: electrical malfunction',
+    system: 'Engine oil pressure and temperature / DME',
+    explanation:
+        'The DME detected an electrical fault in the engine-oil pressure/temperature sensor circuit. This code alone does not establish actual oil pressure or prove the sensor is defective.',
+    nextStep:
+        'Check the sensor connector, wiring, supply and ground using the vehicle-specific test plan. Verify actual oil pressure independently if an oil-pressure warning is present; do not continue driving with a low-pressure warning.',
   ),
   '104401': FaultDefinition(
     title: 'Intake manifold pressure sensor circuit: short to positive',

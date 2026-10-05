@@ -58,6 +58,40 @@ void main() {
     expect(second, contains('bbb'));
   });
 
+  test('import preserves metadata and history excludes sidecars', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'bimmerscope-stock-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final source = File('${directory.path}/bench.bin');
+    await source.writeAsBytes([0, 1, 2, 3]);
+    final store = StockFileStore(directoryProvider: () async => directory);
+
+    final first = await store.importFile(
+      sourcePath: source.path,
+      vin: 'BENCH',
+      metadata: {
+        'source': 'imported_file',
+        'readStatus': 'compatibility_unverified',
+      },
+    );
+    final second = await store.importFile(
+      sourcePath: source.path,
+      vin: 'BENCH',
+    );
+    final history = await store.loadAll('BENCH');
+    final metadata =
+        jsonDecode(
+              await File('${first.file.path}.metadata.json').readAsString(),
+            )
+            as Map<String, dynamic>;
+
+    expect(first.file.path, isNot(second.file.path));
+    expect(history, hasLength(2));
+    expect(metadata['source'], 'imported_file');
+    expect(metadata['sha256'], sha256.convert([0, 1, 2, 3]).toString());
+  });
+
   test('logger provenance can be tested with injected storage', () async {
     final directory = Directory(
       '${Directory.systemTemp.path}/bimmerscope_log_test',

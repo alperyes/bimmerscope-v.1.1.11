@@ -25,6 +25,7 @@ import 'package:bmw_app/src/rust/api/vehicle.dart';
 import 'package:bmw_app/tuning/tune_screen.dart';
 import 'package:bmw_app/tuning/tune_guide_screen.dart';
 import 'package:bmw_app/vehicle/vehicle_identity.dart';
+import 'package:bmw_app/vehicle/dme_identifier_format.dart';
 import 'package:bmw_app/vehicle/vehicle_capabilities.dart';
 import 'package:bmw_app/vehicle/vehicle_garage.dart';
 import 'package:bmw_app/vehicle/simulator_transport.dart';
@@ -135,8 +136,17 @@ class _DashboardScreenState extends State<DashboardScreen>
   String? engineEcuSerialNumber;
   String? engineEcuManufacturingDate;
   String? engineEcuFlashCounter;
+  String? engineEcuLastFlashDate;
   String? engineEcuDiagnosticSession;
   String? engineEcuCodingId;
+  String? engineFactoryHardware;
+  String? engineFactoryBootloader;
+  String? engineFactorySoftware;
+  String? engineFactoryCalibration;
+  String? engineSupplierHardware;
+  String? engineSupplierBootloader;
+  String? engineSupplierSoftware;
+  String? engineSupplierCalibration;
   String? engineEcuCvn;
   String? engineEcuBmwRoutine0205Raw;
   String? engineEcuBmwRoutine0205Software;
@@ -189,6 +199,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool useMetric = true;
   String gatewayHost = '169.254.12.64';
   int gatewayPort = 6801;
+  String? vehicleGatewayIp;
   AppDiagnosticsLevel _diagnosticsLevel = AppDiagnosticsLevel.normal;
 
   void _writeDiagnosticRecord(Map<String, Object?> record) {
@@ -413,8 +424,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     engineEcuSerialNumber = null;
     engineEcuManufacturingDate = null;
     engineEcuFlashCounter = null;
+    engineEcuLastFlashDate = null;
     engineEcuDiagnosticSession = null;
     engineEcuCodingId = null;
+    engineFactoryHardware = null;
+    engineFactoryBootloader = null;
+    engineFactorySoftware = null;
+    engineFactoryCalibration = null;
+    engineSupplierHardware = null;
+    engineSupplierBootloader = null;
+    engineSupplierSoftware = null;
+    engineSupplierCalibration = null;
     engineEcuCvn = null;
     engineEcuBmwRoutine0205Raw = null;
     engineEcuBmwRoutine0205Software = null;
@@ -508,6 +528,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<bool> setAutoLogEnabled(bool enabled) async {
+    if (enabled && (!live || !monitoringActive || widget.previewMode)) {
+      return false;
+    }
     if (enabled && !visibleSensorIds.contains('throttle_angle')) {
       if (visibleSensorIds.length >= maxLiveSensors) {
         if (mounted) {
@@ -976,6 +999,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       simulatorActive = simulator;
       demoActive = demo;
       sessionId = newSessionId;
+      vehicleGatewayIp = null;
       lastConnectionHealthAt = null;
       lastTelemetryAt = null;
       _lastSensorSampleAt = null;
@@ -1102,22 +1126,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
               ),
               const SizedBox(width: 14),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Prepare ENET connection'),
-                    SizedBox(height: 4),
-                    Text(
-                      'Follow these steps before connecting to your vehicle.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const Expanded(child: Text('Prepare ENET connection')),
             ],
           ),
           content: Column(
@@ -1240,6 +1249,12 @@ class _DashboardScreenState extends State<DashboardScreen>
       telemetryDegraded = false;
       lastTelemetryAt = monitoringActive ? DateTime.now() : null;
       _lastSensorSampleAt = null;
+      if (!monitoringActive) {
+        values.clear();
+        _lastSensorAtById.clear();
+        _lastSuccessfulSensorId = null;
+        _lastSuccessfulSensorAt = null;
+      }
     });
   }
 
@@ -1532,6 +1547,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (port == null || port <= 0 || port > 65535) return;
     gatewayHost = match.group(1)!;
     gatewayPort = port;
+    vehicleGatewayIp = gatewayHost;
   }
 
   void onEvent(VehicleEvent event, [int? generation]) {
@@ -1722,6 +1738,34 @@ class _DashboardScreenState extends State<DashboardScreen>
             ? null
             : event.ecuBmwInternalToken;
         engineEcuCapturedAt = DateTime.now();
+      } else if (event.kind == 'ecu_factory_identity') {
+        engineFactoryHardware = event.ecuHardware.isEmpty
+            ? null
+            : event.ecuHardware;
+        engineFactoryBootloader = event.ecuBootloader.isEmpty
+            ? null
+            : event.ecuBootloader;
+        engineFactorySoftware = event.ecuSoftware.isEmpty
+            ? null
+            : event.ecuSoftware;
+        engineFactoryCalibration = event.ecuCalibration.isEmpty
+            ? null
+            : event.ecuCalibration;
+      } else if (event.kind == 'ecu_supplier_identity') {
+        engineSupplierHardware = event.ecuHardware.isEmpty
+            ? null
+            : event.ecuHardware;
+        engineSupplierBootloader = event.ecuBootloader.isEmpty
+            ? null
+            : event.ecuBootloader;
+        engineSupplierSoftware = event.ecuSoftware.isEmpty
+            ? null
+            : event.ecuSoftware;
+        engineSupplierCalibration = event.ecuCalibration.isEmpty
+            ? null
+            : event.ecuCalibration;
+      } else if (event.kind == 'ecu_last_flash_date') {
+        engineEcuLastFlashDate = event.message.isEmpty ? null : event.message;
       } else if (event.kind == 'mileage') {
         mileageKm = event.value;
       } else {
@@ -1745,6 +1789,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           monitoringActive = false;
           telemetryDegraded = false;
           lastTelemetryAt = null;
+          values.clear();
           _lastSensorSampleAt = null;
           _lastSensorAtById.clear();
           _lastSuccessfulSensorId = null;
@@ -1779,9 +1824,18 @@ class _DashboardScreenState extends State<DashboardScreen>
           engineEcuIdentity = null;
           engineEcuHardware = null;
           engineEcuFlashCounter = null;
+          engineEcuLastFlashDate = null;
           engineEcuSoftware = null;
           engineEcuBootloader = null;
           engineEcuCalibration = null;
+          engineFactoryHardware = null;
+          engineFactoryBootloader = null;
+          engineFactorySoftware = null;
+          engineFactoryCalibration = null;
+          engineSupplierHardware = null;
+          engineSupplierBootloader = null;
+          engineSupplierSoftware = null;
+          engineSupplierCalibration = null;
           engineEcuApplicationSoftware = null;
           engineEcuSoftwareVersion = null;
           engineEcuSupplierHardware = null;
@@ -1974,8 +2028,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     logUserAction(
       'Selected ${switch (index) {
         0 => 'Vehicle',
-        2 => 'Diagnostics',
-        3 => 'Logging',
+        2 => 'Diagnose',
+        3 => 'Logs',
         _ => 'Other',
       }} page',
     );
@@ -2094,6 +2148,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                     engineEcuSgbdIndex: engineEcuSgbdIndex,
                     engineEcuSerialNumber: engineEcuSerialNumber,
                     engineEcuManufacturingDate: engineEcuManufacturingDate,
+                    engineEcuLastFlashDate: engineEcuLastFlashDate,
+                    engineFactoryHardware: engineFactoryHardware,
+                    engineFactoryBootloader: engineFactoryBootloader,
+                    engineFactorySoftware: engineFactorySoftware,
+                    engineFactoryCalibration: engineFactoryCalibration,
+                    engineSupplierHardware: engineSupplierHardware,
+                    engineSupplierBootloader: engineSupplierBootloader,
+                    engineSupplierSoftware: engineSupplierSoftware,
+                    engineSupplierCalibration: engineSupplierCalibration,
                     engineEcuCodingId: engineEcuCodingId,
                     engineEcuCvn: engineEcuCvn,
                     sessionId: sessionId,
@@ -2184,7 +2247,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     NavigationDestination(
                       icon: Icon(Icons.health_and_safety_outlined),
                       selectedIcon: Icon(Icons.health_and_safety_rounded),
-                      label: 'Diagnostics',
+                      label: 'Diagnose',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.show_chart_outlined),
@@ -2268,12 +2331,15 @@ class _DashboardScreenState extends State<DashboardScreen>
                       child: FittedBox(
                         alignment: Alignment.centerLeft,
                         fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${BuildInfo.version} · ${ProductConfig.editionName}',
-                          style: const TextStyle(
-                            color: Color(0xFFDAE9FF),
-                            fontSize: 15,
-                            fontWeight: FontWeight.w400,
+                        child: FutureBuilder<String>(
+                          future: BuildInfo.version,
+                          builder: (context, snapshot) => Text(
+                            '${snapshot.data ?? 'Version unavailable'} · ${ProductConfig.editionName}',
+                            style: const TextStyle(
+                              color: Color(0xFFDAE9FF),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ),
                       ),
@@ -2298,50 +2364,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                 topPadding: 22,
                 bottomPadding: 20,
               ),
-              const SizedBox(height: 4),
-              _menuItem(
-                context,
-                Icons.directions_car_rounded,
-                'Vehicle',
-                0,
-                foreground: foreground,
-                muted: muted,
-              ),
-              _menuItem(
-                context,
-                Icons.speed_rounded,
-                'Monitor',
-                1,
-                foreground: foreground,
-                muted: muted,
-              ),
-              _menuItem(
-                context,
-                Icons.health_and_safety_rounded,
-                'Diagnostics',
-                2,
-                foreground: foreground,
-                muted: muted,
-              ),
-              _menuItem(
-                context,
-                Icons.show_chart_rounded,
-                'Logs',
-                3,
-                foreground: foreground,
-                muted: muted,
-              ),
-              if (ProductConfig.tuningEnabled)
-                _menuItem(
-                  context,
-                  Icons.tune_rounded,
-                  'Tune',
-                  4,
-                  foreground: foreground,
-                  muted: muted,
-                ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(26, 22, 26, 20),
+                padding: const EdgeInsets.fromLTRB(26, 4, 26, 16),
                 child: Divider(height: 1, color: divider),
               ),
               _drawerItem(
@@ -2451,25 +2475,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _menuItem(
-    BuildContext context,
-    IconData icon,
-    String label,
-    int index, {
-    required Color foreground,
-    required Color muted,
-  }) => _drawerItem(
-    icon: icon,
-    title: label,
-    foreground: foreground,
-    muted: muted,
-    selected: selectedTab == index,
-    onTap: () {
-      Navigator.pop(context);
-      selectTab(index);
-    },
-  );
-
   Widget _drawerItem({
     required IconData icon,
     required String title,
@@ -2479,22 +2484,17 @@ class _DashboardScreenState extends State<DashboardScreen>
     String? subtitle,
     Color? iconBackground,
     Color? iconColor,
-    bool selected = false,
     double topPadding = 2,
     double bottomPadding = 2,
   }) {
-    final activeColor = selected ? AppPalette.blue : muted;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, topPadding, 18, bottomPadding),
       child: Material(
-        color: selected
-            ? AppPalette.blue.withValues(alpha: .10)
-            : Colors.transparent,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: Semantics(
           button: true,
-          selected: selected,
           label: subtitle == null ? title : '$title, $subtitle',
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
@@ -2508,7 +2508,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: iconBackground == null
-                          ? Icon(icon, color: activeColor, size: 27)
+                          ? Icon(icon, color: muted, size: 27)
                           : Container(
                               width: 52,
                               height: 52,
@@ -2518,7 +2518,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                               child: Icon(
                                 icon,
-                                color: iconColor ?? activeColor,
+                                color: iconColor ?? muted,
                                 size: 29,
                               ),
                             ),
@@ -2534,7 +2534,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           Text(
                             title,
                             style: TextStyle(
-                              color: selected ? AppPalette.blue : foreground,
+                              color: foreground,
                               fontSize: subtitle == null ? 18 : 20,
                               fontWeight: subtitle == null
                                   ? FontWeight.w400
@@ -2895,6 +2895,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
                     child: Container(
+                      key: const Key('vehicle-artwork'),
                       height: artworkHeight,
                       width: double.infinity,
                       clipBehavior: Clip.hardEdge,
@@ -2945,47 +2946,63 @@ class _DashboardScreenState extends State<DashboardScreen>
                   hasScrollBody: false,
                   child: Column(
                     children: [
-                      Expanded(
-                        child: Align(
-                          alignment: const Alignment(0, 0.45),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                      const Spacer(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                        child: Builder(
+                          builder: (context) {
+                            final flapAvailable =
+                                _flapControlAvailable || demoActive;
+                            final flapStatus = !flapAvailable
+                                ? 'Unavailable'
+                                : flapMode.startsWith('open')
+                                ? 'Open'
+                                : flapMode == 'closed'
+                                ? 'Closed'
+                                : 'Automatic';
+                            final detailsAction = vehicleActionCard(
+                              key: const Key('vehicle-details-action'),
+                              icon: Icons.directions_car_outlined,
+                              title: 'Vehicle details',
+                              subtitle: live && vin != 'Not identified'
+                                  ? 'VIN and DME'
+                                  : 'Connect to view',
+                              onTap: live && vin != 'Not identified'
+                                  ? showVehicleDetails
+                                  : null,
+                            );
+                            final flapAction = vehicleActionCard(
+                              key: const Key('vehicle-flap-action'),
+                              icon: Icons.settings_remote_rounded,
+                              title: 'Exhaust flap',
+                              subtitle: flapStatus,
+                              onTap: flapAvailable ? showFlapControl : null,
+                              accentColor: flapMode.startsWith('open')
+                                  ? AppPalette.orange
+                                  : flapMode == 'closed'
+                                  ? AppPalette.red
+                                  : null,
+                            );
+                            if (MediaQuery.sizeOf(context).width < 340) {
+                              return Column(
+                                children: [
+                                  detailsAction,
+                                  const SizedBox(height: 10),
+                                  flapAction,
+                                ],
+                              );
+                            }
+                            return Row(
                               children: [
-                                SizedBox(
-                                  width: 120,
-                                  child: vehicleQuickAction(
-                                    Icons.settings_remote_rounded,
-                                    'Flap',
-                                    (_flapControlAvailable || demoActive)
-                                        ? showFlapControl
-                                        : null,
-                                    accentColor: flapMode.startsWith('open')
-                                        ? AppPalette.orange
-                                        : flapMode == 'closed'
-                                        ? AppPalette.red
-                                        : null,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                SizedBox(
-                                  width: 120,
-                                  child: vehicleQuickAction(
-                                    Icons.directions_car_rounded,
-                                    'Details',
-                                    live && vin != 'Not identified'
-                                        ? showVehicleDetails
-                                        : null,
-                                  ),
-                                ),
+                                Expanded(child: detailsAction),
+                                const SizedBox(width: 10),
+                                Expanded(child: flapAction),
                               ],
-                            ),
-                          ),
+                            );
+                          },
                         ),
                       ),
-                      // Keep the quick actions centered in the space above
-                      // the floating connection control.
+                      // Leave room to scroll past the floating connection control.
                       const SizedBox(height: floatingConnectionPanelClearance),
                     ],
                   ),
@@ -3094,8 +3111,8 @@ class _DashboardScreenState extends State<DashboardScreen>
                     borderRadius: BorderRadius.circular(14),
                   ),
                   textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -3113,6 +3130,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         builder: (_) => VehicleDetailsScreen(
           isDark: widget.isDark,
           vin: vin,
+          gatewayIp: vehicleGatewayIp,
+          gatewayPort: gatewayPort,
           identity: identity,
           mileageKm: mileageKm,
           engineEcuDetected: engineEcuDetected,
@@ -3122,12 +3141,18 @@ class _DashboardScreenState extends State<DashboardScreen>
           engineEcuBootloader: engineEcuBootloader,
           engineEcuCalibration: engineEcuCalibration,
           engineEcuCodingId: engineEcuCodingId,
+          engineFactoryHardware: engineFactoryHardware,
+          engineFactoryBootloader: engineFactoryBootloader,
+          engineFactorySoftware: engineFactorySoftware,
+          engineFactoryCalibration: engineFactoryCalibration,
+          engineSupplierHardware: engineSupplierHardware,
+          engineSupplierBootloader: engineSupplierBootloader,
+          engineSupplierSoftware: engineSupplierSoftware,
+          engineSupplierCalibration: engineSupplierCalibration,
           engineEcuManufacturingDate: engineEcuManufacturingDate,
           engineEcuFlashCounter: engineEcuFlashCounter,
+          engineEcuLastFlashDate: engineEcuLastFlashDate,
           engineEcuDiagnosticSession: engineEcuDiagnosticSession,
-          engineEcuApplicationSoftware: engineEcuApplicationSoftware,
-          engineEcuSupplierHardware: engineEcuSupplierHardware,
-          engineEcuSupplierSoftware: engineEcuSupplierSoftware,
           engineEcuBmwRoutine0205Raw: engineEcuBmwRoutine0205Raw,
           engineEcuBmwRoutine0205Software: engineEcuBmwRoutine0205Software,
           engineEcuBmwControllerFamily: engineEcuBmwControllerFamily,
@@ -3320,38 +3345,46 @@ class _DashboardScreenState extends State<DashboardScreen>
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
               sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'BIMMERSCOPE',
-                            style: TextStyle(
-                              color: scheme.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.8,
-                            ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    return Row(
+                      crossAxisAlignment: compact
+                          ? CrossAxisAlignment.start
+                          : CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'BIMMERSCOPE',
+                                style: TextStyle(
+                                  color: scheme.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.8,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Your vehicle',
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Your vehicle',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    ConnectionStatusChip(
-                      label: _statusLabelForPhase(phase),
-                      isDark: widget.isDark,
-                      iconOnly: true,
-                      isDemo: demoActive || simulatorActive,
-                    ),
-                  ],
+                        ),
+                        const SizedBox(width: 12),
+                        ConnectionStatusChip(
+                          label: _statusLabelForPhase(phase),
+                          isDark: widget.isDark,
+                          iconOnly: compact,
+                          isDemo: demoActive || simulatorActive,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -3443,64 +3476,69 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.35,
-                ),
-                delegate: SliverChildListDelegate([
-                  hubAction(
-                    icon: Icons.speed_rounded,
-                    title: 'Monitor',
-                    subtitle: '${visibleSensorIds.length} active gauges',
-                    surface: surface,
-                    muted: muted,
-                    onTap: () => selectTab(1),
-                  ),
-                  hubAction(
-                    icon: Icons.health_and_safety_rounded,
-                    title: 'Diagnostics',
-                    subtitle: 'Read engine faults',
-                    surface: surface,
-                    muted: muted,
-                    onTap: () => selectTab(2),
-                  ),
-                  hubAction(
-                    icon: Icons.settings_remote_rounded,
-                    title: 'Flap control',
-                    subtitle: demoActive
-                        ? 'Demo'
-                        : _flapControlAvailable
-                        ? 'Validated vehicle'
-                        : 'Available after validation',
-                    surface: surface,
-                    muted: muted,
-                    onTap: showFlapControl,
-                    enabled: _flapControlAvailable || demoActive,
-                  ),
-                  hubAction(
-                    icon: logger.isRecording
-                        ? Icons.stop_circle_rounded
-                        : Icons.show_chart_rounded,
-                    title: 'Logs',
-                    subtitle: logger.isRecording
-                        ? '${logger.sampleCount} samples recorded'
-                        : 'Record and share CSV',
-                    surface: surface,
-                    muted: muted,
-                    onTap: () => selectTab(3),
-                  ),
-                  hubAction(
-                    icon: Icons.menu_book_rounded,
-                    title: 'Connection guide',
-                    subtitle: 'Cable, ignition and setup',
-                    surface: surface,
-                    muted: muted,
-                    onTap: showConnectionGuide,
-                  ),
-                ]),
+              sliver: SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.crossAxisExtent < 390 ? 1 : 2;
+                  return SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: columns == 1 ? 3.35 : 1.35,
+                    ),
+                    delegate: SliverChildListDelegate([
+                      hubAction(
+                        icon: Icons.speed_rounded,
+                        title: 'Monitor',
+                        subtitle: '${visibleSensorIds.length} active gauges',
+                        surface: surface,
+                        muted: muted,
+                        onTap: () => selectTab(1),
+                      ),
+                      hubAction(
+                        icon: Icons.health_and_safety_rounded,
+                        title: 'Diagnose',
+                        subtitle: 'Read engine faults',
+                        surface: surface,
+                        muted: muted,
+                        onTap: () => selectTab(2),
+                      ),
+                      hubAction(
+                        icon: Icons.settings_remote_rounded,
+                        title: 'Flap control',
+                        subtitle: demoActive
+                            ? 'Demo'
+                            : _flapControlAvailable
+                            ? 'Validated vehicle'
+                            : 'Available after validation',
+                        surface: surface,
+                        muted: muted,
+                        onTap: showFlapControl,
+                        enabled: _flapControlAvailable || demoActive,
+                      ),
+                      hubAction(
+                        icon: logger.isRecording
+                            ? Icons.stop_circle_rounded
+                            : Icons.show_chart_rounded,
+                        title: 'Logs',
+                        subtitle: logger.isRecording
+                            ? '${logger.sampleCount} samples recorded'
+                            : 'Record and share CSV',
+                        surface: surface,
+                        muted: muted,
+                        onTap: () => selectTab(3),
+                      ),
+                      hubAction(
+                        icon: Icons.menu_book_rounded,
+                        title: 'Connection guide',
+                        subtitle: 'Cable, ignition and setup',
+                        surface: surface,
+                        muted: muted,
+                        onTap: showConnectionGuide,
+                      ),
+                    ]),
+                  );
+                },
               ),
             ),
             SliverPadding(
@@ -3631,43 +3669,80 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget vehicleQuickAction(
-    IconData icon,
-    String label,
-    VoidCallback? onTap, {
+  Widget vehicleActionCard({
+    required Key key,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback? onTap,
     Color? accentColor,
-  }) => SizedBox(
-    width: double.infinity,
-    child: Column(
-      children: [
-        SizedBox(
-          width: 64,
-          height: 64,
-          child: IconButton.filledTonal(
-            onPressed: onTap,
-            icon: Icon(icon, size: 24),
-            tooltip: label,
-            style: IconButton.styleFrom(
-              foregroundColor: onTap == null
-                  ? AppPalette.secondary(widget.isDark)
-                  : accentColor ?? AppPalette.blue,
-              backgroundColor: (accentColor ?? AppPalette.blue).withValues(
-                alpha: .12,
-              ),
-              overlayColor: (accentColor ?? AppPalette.blue).withValues(
-                alpha: .16,
-              ),
+  }) {
+    final enabled = onTap != null;
+    final tone = enabled
+        ? accentColor ?? AppPalette.blue
+        : AppPalette.secondary(widget.isDark);
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: Material(
+        color: AppPalette.surface(widget.isDark),
+        borderRadius: BorderRadius.circular(appCardRadius),
+        child: InkWell(
+          key: key,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(appCardRadius),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 13, 12, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: tone.withValues(alpha: .13),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Icon(icon, size: 20, color: tone),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: AppPalette.secondary(widget.isDark),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: enabled ? null : AppPalette.secondary(widget.isDark),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: enabled ? tone : AppPalette.secondary(widget.isDark),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   String get _modelYearLabel {
     return '${identifyVehicle(vin)?.modelYear ?? '-'}';
@@ -4939,6 +5014,8 @@ class VehicleDetailsScreen extends StatelessWidget {
     super.key,
     required this.isDark,
     required this.vin,
+    required this.gatewayIp,
+    required this.gatewayPort,
     required this.identity,
     required this.mileageKm,
     required this.engineEcuDetected,
@@ -4948,12 +5025,18 @@ class VehicleDetailsScreen extends StatelessWidget {
     this.engineEcuBootloader,
     this.engineEcuCalibration,
     this.engineEcuCodingId,
+    this.engineFactoryHardware,
+    this.engineFactoryBootloader,
+    this.engineFactorySoftware,
+    this.engineFactoryCalibration,
+    this.engineSupplierHardware,
+    this.engineSupplierBootloader,
+    this.engineSupplierSoftware,
+    this.engineSupplierCalibration,
     this.engineEcuManufacturingDate,
     this.engineEcuFlashCounter,
+    this.engineEcuLastFlashDate,
     this.engineEcuDiagnosticSession,
-    this.engineEcuApplicationSoftware,
-    this.engineEcuSupplierHardware,
-    this.engineEcuSupplierSoftware,
     this.engineEcuBmwRoutine0205Raw,
     this.engineEcuBmwRoutine0205Software,
     this.engineEcuBmwControllerFamily,
@@ -4965,6 +5048,8 @@ class VehicleDetailsScreen extends StatelessWidget {
 
   final bool isDark;
   final String vin;
+  final String? gatewayIp;
+  final int gatewayPort;
   final VehicleIdentity? identity;
   final double? mileageKm;
   final bool engineEcuDetected;
@@ -4974,12 +5059,18 @@ class VehicleDetailsScreen extends StatelessWidget {
   final String? engineEcuBootloader;
   final String? engineEcuCalibration;
   final String? engineEcuCodingId;
+  final String? engineFactoryHardware;
+  final String? engineFactoryBootloader;
+  final String? engineFactorySoftware;
+  final String? engineFactoryCalibration;
+  final String? engineSupplierHardware;
+  final String? engineSupplierBootloader;
+  final String? engineSupplierSoftware;
+  final String? engineSupplierCalibration;
   final String? engineEcuManufacturingDate;
   final String? engineEcuFlashCounter;
+  final String? engineEcuLastFlashDate;
   final String? engineEcuDiagnosticSession;
-  final String? engineEcuApplicationSoftware;
-  final String? engineEcuSupplierHardware;
-  final String? engineEcuSupplierSoftware;
   final String? engineEcuBmwRoutine0205Raw;
   final String? engineEcuBmwRoutine0205Software;
   final String? engineEcuBmwControllerFamily;
@@ -4996,14 +5087,6 @@ class VehicleDetailsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
         children: [
-          Semantics(
-            header: true,
-            child: Text(
-              identity?.displayLabel ?? 'Vehicle',
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
-            ),
-          ),
-          const SizedBox(height: 24),
           _section(
             icon: Icons.directions_car_outlined,
             title: 'Vehicle',
@@ -5011,6 +5094,12 @@ class VehicleDetailsScreen extends StatelessWidget {
               _detail(
                 'VIN',
                 vin == 'Not identified' ? '-' : vin,
+                secondary,
+                identifier: true,
+              ),
+              _detail(
+                'ENET gateway IP',
+                gatewayIp == null ? '-' : '$gatewayIp:$gatewayPort',
                 secondary,
                 identifier: true,
               ),
@@ -5032,41 +5121,116 @@ class VehicleDetailsScreen extends StatelessWidget {
             title: 'Engine ECU · DME/DDE',
             children: [
               _detail(
-                'ECU identity',
+                'Diagnostic ECU ID',
                 engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
                 secondary,
               ),
-              _detail(
-                'Hardware ID (HWEL)',
-                _value(engineEcuHardware),
-                secondary,
+              _identityGroup(
+                title: 'Factory software',
+                accent: secondary,
+                children: [
+                  _detail(
+                    'Hardware ID (HWEL)',
+                    _value(engineFactoryHardware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Bootloader ID (BTLD)',
+                    _value(engineFactoryBootloader),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Software ID (SWFL)',
+                    _value(engineFactorySoftware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Calibration ID (SWFL)',
+                    _value(engineFactoryCalibration),
+                    secondary,
+                    identifier: true,
+                  ),
+                ],
               ),
-              _detail(
-                'Software ID (SWFL)',
-                _value(engineEcuSoftware),
-                secondary,
-                identifier: true,
+              const SizedBox(height: 16),
+              _identityGroup(
+                title: 'Supplier software',
+                accent: secondary,
+                children: [
+                  _detail(
+                    'Hardware ID (HWEL)',
+                    _value(engineSupplierHardware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Bootloader ID (BTLD)',
+                    _value(engineSupplierBootloader),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Software ID (SWFL)',
+                    _value(engineSupplierSoftware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Calibration ID (SWFL)',
+                    _value(engineSupplierCalibration),
+                    secondary,
+                    identifier: true,
+                  ),
+                ],
               ),
-              _detail(
-                'Bootloader ID (BTLD)',
-                _value(engineEcuBootloader),
-                secondary,
-                identifier: true,
+              const SizedBox(height: 16),
+              _identityGroup(
+                title: 'Current software',
+                accent: AppPalette.blue,
+                children: [
+                  _detail(
+                    'Hardware ID (HWEL)',
+                    _value(engineEcuHardware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Bootloader ID (BTLD)',
+                    _value(engineEcuBootloader),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Software ID (SWFL)',
+                    _value(engineEcuSoftware),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Calibration ID (SWFL)',
+                    _value(engineEcuCalibration),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Coding ID (CAFD)',
+                    _value(engineEcuCodingId),
+                    secondary,
+                    identifier: true,
+                  ),
+                  _detail(
+                    'Last flash date',
+                    _value(engineEcuLastFlashDate),
+                    secondary,
+                  ),
+                ],
               ),
+              const SizedBox(height: 12),
               _detail(
-                'Calibration ID (SWFL)',
-                _value(engineEcuCalibration),
-                secondary,
-                identifier: true,
-              ),
-              _detail(
-                'Coding ID (CAFD)',
-                _value(engineEcuCodingId),
-                secondary,
-                identifier: true,
-              ),
-              _detail(
-                'Manufactured',
+                'ECU Manufactured',
                 _value(engineEcuManufacturingDate),
                 secondary,
               ),
@@ -5077,21 +5241,6 @@ class VehicleDetailsScreen extends StatelessWidget {
                 _value(engineEcuDiagnosticSession),
                 secondary,
               ),
-              _detail(
-                'Application software',
-                _value(engineEcuApplicationSoftware),
-                secondary,
-              ),
-              _detail(
-                'Supplier hardware',
-                _value(engineEcuSupplierHardware),
-                secondary,
-              ),
-              _detail(
-                'Supplier software',
-                _value(engineEcuSupplierSoftware),
-                secondary,
-              ),
             ],
           ),
         ],
@@ -5100,6 +5249,38 @@ class VehicleDetailsScreen extends StatelessWidget {
   }
 
   String _value(String? value) => value == null || value.isEmpty ? '-' : value;
+
+  Widget _identityGroup({
+    required String title,
+    required Color accent,
+    required List<Widget> children,
+  }) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(15, 14, 14, 8),
+    decoration: BoxDecoration(
+      color: accent.withValues(alpha: .07),
+      borderRadius: BorderRadius.circular(12),
+      border: Border(left: BorderSide(color: accent, width: 4)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: accent,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    ),
+  );
 
   Widget _section({
     required IconData icon,
@@ -5145,7 +5326,7 @@ class VehicleDetailsScreen extends StatelessWidget {
     bool identifier = false,
   }) => Semantics(
     container: true,
-    label: '$label: $value',
+    label: '$label: ${identifier ? formatDmeComponentId(value) : value}',
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
@@ -5154,13 +5335,24 @@ class VehicleDetailsScreen extends StatelessWidget {
           Text(label, style: TextStyle(color: secondary, fontSize: 13)),
           const SizedBox(height: 5),
           SelectableText(
-            value,
+            identifier ? formatDmeComponentId(value) : value,
             style: TextStyle(
               fontFamily: identifier ? 'monospace' : null,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (rawDmeComponentId(identifier ? value : '') case final raw?) ...[
+            const SizedBox(height: 4),
+            SelectableText(
+              raw,
+              style: TextStyle(
+                color: secondary,
+                fontFamily: 'monospace',
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     ),

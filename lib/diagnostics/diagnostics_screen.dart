@@ -2,6 +2,7 @@ import 'package:bmw_app/src/rust/api/vehicle.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/section_title.dart';
 import 'package:bmw_app/diagnostics/fault_definitions.dart';
+import 'package:bmw_app/diagnostics/memory_read_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
@@ -24,6 +25,7 @@ class DiagnosticsScreen extends StatefulWidget {
     this.onAfterVehicleScan,
     this.onScanEvent,
     this.onSetFlapMode,
+    this.onResetDme,
     this.previewMode = false,
     this.simulatorMode = false,
     this.demoMode = false,
@@ -41,6 +43,7 @@ class DiagnosticsScreen extends StatefulWidget {
   final Future<void> Function()? onAfterVehicleScan;
   final void Function(String message)? onScanEvent;
   final Future<void> Function(String mode)? onSetFlapMode;
+  final Future<void> Function(String vin)? onResetDme;
 
   @override
   State<DiagnosticsScreen> createState() => _DiagnosticsScreenState();
@@ -78,6 +81,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   bool demoProfile = false;
   bool demoScan = false;
   bool clearing = false;
+  bool resettingDme = false;
   bool flapTestRunning = false;
   int flapTestStep = 0;
   String? error;
@@ -316,6 +320,67 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             sliver: SliverToBoxAdapter(child: scanPanel()),
           ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: OutlinedButton.icon(
+                onPressed:
+                    _vehicleAvailable &&
+                        !widget.previewMode &&
+                        !widget.demoMode &&
+                        !widget.simulatorMode &&
+                        !scanning &&
+                        !clearing &&
+                        !resettingDme &&
+                        widget.vin.length == 17 &&
+                        widget.onBeforeVehicleScan != null &&
+                        widget.onAfterVehicleScan != null
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => MemoryReadScreen(
+                            vin: widget.vin,
+                            onBeforeRead: widget.onBeforeVehicleScan!,
+                            onAfterRead: widget.onAfterVehicleScan!,
+                          ),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.memory_rounded),
+                label: const Text('Read DME memory'),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: OutlinedButton.icon(
+                key: const Key('diagnostics-reset-dme-button'),
+                onPressed:
+                    _vehicleAvailable &&
+                        !widget.previewMode &&
+                        !widget.demoMode &&
+                        !widget.simulatorMode &&
+                        !scanning &&
+                        !clearing &&
+                        !resettingDme &&
+                        widget.vin.trim().length == 17 &&
+                        widget.onBeforeVehicleScan != null &&
+                        widget.onAfterVehicleScan != null
+                    ? resetDme
+                    : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppPalette.red,
+                ),
+                icon: resettingDme
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.restart_alt_rounded),
+                label: Text(resettingDme ? 'Resetting DME…' : 'Reset DME'),
+              ),
+            ),
+          ),
           if (hasScanned || history.isNotEmpty || flapTestRunning)
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -331,8 +396,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               sliver: SliverToBoxAdapter(child: healthyState()),
             )
-          else if (!hasScanned && !_vehicleAvailable)
-            SliverToBoxAdapter(child: disconnectedState())
+          else if (!hasScanned && !scanning)
+            SliverToBoxAdapter(child: scanAvailabilityState())
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -477,7 +542,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
             height: 48,
             child: FilledButton.icon(
               key: const Key('diagnostics-scan-button'),
-              onPressed: scanning || !_vehicleAvailable ? null : () => scan(),
+              onPressed: scanning || resettingDme || !_vehicleAvailable
+                  ? null
+                  : () => scan(),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(48),
                 foregroundColor: Colors.white,
@@ -515,7 +582,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                onPressed: clearing || faults.isEmpty
+                onPressed: clearing || resettingDme || faults.isEmpty
                     ? null
                     : demoScan
                     ? clearDemoCodes
@@ -870,7 +937,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               backgroundColor: AppPalette.red,
               foregroundColor: Colors.white,
             ),
-            child: Text('Clear DTCs'),
+            child: Text('Clear Codes'),
           ),
         ],
       ),
@@ -942,6 +1009,62 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       if (mounted) setState(() => error = exception.toString());
     } finally {
       if (mounted) setState(() => clearing = false);
+    }
+  }
+
+  Future<void> resetDme() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset DME?'),
+        content: const Text(
+          'This sends the captured 11 01 reset request to broadcast address '
+          '0xDF. Other vehicle modules may reset too. Keep the vehicle '
+          'stationary and the ignition on.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppPalette.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reset DME'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final selectedVin = widget.vin.trim();
+    setState(() {
+      error = null;
+      resettingDme = true;
+    });
+    try {
+      widget.onScanEvent?.call('DME reset requested for VIN $selectedVin');
+      await widget.onBeforeVehicleScan!.call();
+      try {
+        if (widget.onResetDme != null) {
+          await widget.onResetDme!(selectedVin);
+        } else {
+          await resetEngineDme(expectedVin: selectedVin);
+        }
+      } finally {
+        await widget.onAfterVehicleScan!.call();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('DME reset acknowledged.')),
+        );
+      }
+    } catch (exception) {
+      if (mounted) setState(() => error = exception.toString());
+    } finally {
+      if (mounted) setState(() => resettingDme = false);
     }
   }
 
@@ -1068,19 +1191,26 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     color: _statePresentation.color,
   );
 
-  Widget disconnectedState() => Semantics(
+  Widget scanAvailabilityState() => Semantics(
+    key: const Key('diagnostics-availability-state'),
     container: true,
-    label: 'Not connected',
+    label: _vehicleAvailable ? 'Ready to scan' : 'Not connected',
     child: Padding(
       padding: const EdgeInsets.only(top: 92, bottom: 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.link_off_rounded, color: AppPalette.blue, size: 40),
+          Icon(
+            _vehicleAvailable
+                ? Icons.manage_search_rounded
+                : Icons.link_off_rounded,
+            color: AppPalette.blue,
+            size: 40,
+          ),
           const SizedBox(height: 12),
-          const Text(
-            'Not connected',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          Text(
+            _vehicleAvailable ? 'Ready to scan' : 'Not connected',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -1090,7 +1220,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Widget healthyState() => const _CenteredStatus(
     icon: Icons.check_circle_rounded,
     title: 'No engine faults found',
-    message: 'The latest scan completed without stored faults.',
+    message: '',
     color: AppPalette.green,
   );
 

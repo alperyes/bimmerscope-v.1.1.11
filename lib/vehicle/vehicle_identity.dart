@@ -29,7 +29,6 @@ class VehicleIdentity {
     final year = modelYear == null ? '' : ' · $modelYear';
     return 'BMW $chassis $model$year';
   }
-
 }
 
 VehicleIdentity? identifyVehicle(String vin) {
@@ -67,6 +66,17 @@ VehicleIdentity? identifyVehicle(String vin) {
       engine: 'N55',
       transmission: '8HP',
       modelYear: 2015,
+    );
+  }
+
+  // Exact N20 bench vehicle used for the capture-derived reference probes.
+  if (vin == 'WBA3A52010F360747') {
+    return VehicleIdentity(
+      chassis: 'F30',
+      model: '328i',
+      engine: 'N20',
+      transmission: '8HP',
+      modelYear: _modelYearFromVin(vin),
     );
   }
 

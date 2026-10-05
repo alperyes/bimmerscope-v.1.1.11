@@ -2,8 +2,8 @@
 
 The source of truth is the `version:` field in `pubspec.yaml`.
 
-The current experimental workspace is `1.1.10-experimental.1+75`. Build numbers
-are never reused. This work is on the `codex/experimental-v1.1.10` branch.
+The current experimental workspace is `1.1.11-experimental.1+91`. Build numbers
+are never reused. This work is on the `codex/experimental-v1.1.11` branch.
 
 Distributed APK names use:
 
@@ -14,7 +14,7 @@ BimmerScope-v<version-name>+<build-number>-<flavor>-<build-mode>.apk
 For the current source tree, a Tune debug build is named:
 
 ```text
-BimmerScope-v1.1.10-experimental.1+75-tune-debug.apk
+BimmerScope-v1.1.11-experimental.1+91-tune-debug.apk
 ```
 
 ## Git release safety

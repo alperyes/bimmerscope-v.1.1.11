@@ -48,4 +48,25 @@ void main() {
       'engine': 'S55',
     });
   });
+
+  test('inspects bench BIN hints without claiming compatibility', () async {
+    final directory = await Directory.systemTemp.createTemp('bimmerscope-bin-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}WBA3A52010F360747_00001C9F1D9601.bin',
+    );
+    await file.writeAsBytes([
+      ...List<int>.filled(26, 0),
+      ...ascii.encode('MEVD1729__'),
+      ...List<int>.filled(64, 0),
+    ]);
+
+    final inspection = await inspectCalibrationArtifact(file);
+
+    expect(inspection.filenameVin, 'WBA3A52010F360747');
+    expect(inspection.filenameEcuId, '00001C9F1D9601');
+    expect(inspection.binaryMarker, 'MEVD1729__');
+    expect(inspection.kind, 'opaque_artifact');
+    expect(inspection.signatureStatus, 'not_verifiable');
+  });
 }

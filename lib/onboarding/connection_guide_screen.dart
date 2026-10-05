@@ -175,7 +175,7 @@ class _ConnectionGuideScreenState extends State<ConnectionGuideScreen> {
       [
         'Return to Vehicle and tap Connect.',
         'Wait for Identifying to finish.',
-        'Then open Monitor or Diagnostics.',
+        'Then open Monitor or Diagnose.',
       ],
     ];
     return Column(

@@ -163,7 +163,7 @@ void main() {
       lessThanOrEqualTo(tester.getRect(find.byType(NavigationBar)).top),
     );
 
-    await tester.tap(find.text('Diagnostics'));
+    await tester.tap(find.text('Diagnose'));
     await tester.pumpAndSettle();
     expect(monitorAction, findsNothing);
     expect(find.text('Scan'), findsOneWidget);
@@ -176,7 +176,7 @@ void main() {
     await tester.tap(find.text('Logs'));
     await tester.pumpAndSettle();
     expect(find.text('Data Recorder'), findsOneWidget);
-    expect(find.text('Automatic pull logging'), findsOneWidget);
+    expect(find.text('Auto pull'), findsOneWidget);
     expect(find.text('No saved logs yet'), findsOneWidget);
 
     if (ProductConfig.tuningEnabled) {

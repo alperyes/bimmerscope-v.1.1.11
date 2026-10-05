@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_flap_command`, `begin_session`, `build_clear_dtc_request`, `build_dtc_read_request`, `build_exhaust_flap_cycle_request`, `build_exhaust_flap_reset_request`, `build_hsfz`, `build_ista_memory_read_request`, `build_live_exhaust_flap_request`, `classify_n20_reference`, `clear_flap_command_sender`, `complete`, `configured_flap_control`, `configured_live_sensor_ids`, `confirmed_f82_s55_profile`, `data_identifier_definition`, `data_identifier`, `debug_transport`, `decode_dme_flash_counter`, `decode_mhd_hwel_from_f101`, `decode_s55_bmw_routine_0205`, `decode_s55_dme_diagnostic_session`, `decode_s55_dme_identity_bundle`, `decode_s55_ecu_manufacturing_date`, `decode_unsigned`, `diagnostic_code`, `diagnostic_service`, `discover_vehicle`, `discover_zgw_udp`, `drain_hsfz`, `dtc_status`, `ecu_display_name`, `ecu_fingerprint`, `ecu_identity`, `enter_extended_session_with_timeout`, `enter_extended_session`, `flap_request_for_mode`, `fresh_diagnostic_stream`, `hex_payload`, `identify_engine`, `is_application_response`, `is_expected_response`, `is_private_ipv4`, `is_terminal_transport_error`, `is_transient_network_configuration_error`, `label`, `last_vehicle_host`, `local_interface_summary`, `log_ignored_live_response`, `match_live_poll_response`, `monitoring_enabled`, `parse_clear_dtc_response`, `parse_dtc_response_for_ecu`, `parse_dtc_response`, `parse_exhaust_flap_io_response`, `parse_ista_memory_read_response`, `parse_zgw_vin`, `parse`, `periodic_flap_request`, `poll_connection`, `probe_enet`, `query_dtc_for_ecu_with_retry`, `query_dtc_for_ecu`, `raw_transport_log`, `read_ascii_data_identifier`, `read_data_identifier`, `read_dme_flash_counter`, `read_legacy_optional_fingerprint`, `read_matching_uds_response`, `read_n20_reference_memory`, `read_optional_identifier_hex`, `read_optional_identifier`, `read_s55_bmw_routine_0205`, `read_s55_dme_diagnostic_session`, `read_s55_ecu_manufacturing_date`, `recovery_attempt_limit`, `remember_vehicle_host`, `request_sid`, `response_request_service`, `run_demo_session`, `run_vehicle_session`, `selected_sensors`, `send_uds`, `sensor_with_transport`, `sensor`, `sensor`, `session_slot`, `stable_dme_identity`, `start_poll`, `status`, `transport_diagnostic`, `transport_identifier`, `validate_service_vehicle`, `validate_vehicle_identity`, `vin`, `wait_for_broadcast_clear_dtc_responses`
+// These functions are ignored because they are not marked as `pub`: `apply_flap_command`, `begin_session`, `build_clear_dtc_request`, `build_dme_reset_request`, `build_dtc_read_request`, `build_exhaust_flap_cycle_request`, `build_exhaust_flap_reset_request`, `build_hsfz`, `build_ista_memory_read_request`, `build_live_exhaust_flap_request`, `classify_n20_reference`, `clear_flap_command_sender`, `clear_validated_vehicle_identity`, `complete`, `configured_flap_control`, `configured_live_sensor_ids`, `confirmed_f82_s55_profile`, `data_identifier_definition`, `data_identifier`, `debug_transport`, `decode_dme_factory_identity_bundle`, `decode_dme_flash_counter`, `decode_dme_supplier_identity_bundle`, `decode_f101_last_flash_date`, `decode_mhd_hwel_from_f101`, `decode_s55_bmw_routine_0205`, `decode_s55_dme_diagnostic_session`, `decode_s55_dme_identity_bundle`, `decode_s55_ecu_manufacturing_date`, `decode_unsigned`, `diagnostic_code`, `diagnostic_service`, `discover_vehicle`, `discover_zgw_udp`, `drain_hsfz`, `dtc_status`, `ecu_display_name`, `ecu_factory_identity`, `ecu_fingerprint`, `ecu_identity`, `ecu_last_flash_date`, `ecu_supplier_identity`, `enter_extended_session_with_timeout`, `enter_extended_session`, `flap_request_for_mode`, `forget_vehicle_host`, `fresh_diagnostic_stream`, `hex_payload`, `identify_engine`, `is_application_response`, `is_engine_probe_reply`, `is_expected_response`, `is_private_ipv4`, `is_terminal_transport_error`, `is_transient_network_configuration_error`, `label`, `last_vehicle_host`, `local_interface_summary`, `log_ignored_live_response`, `match_live_poll_response`, `monitoring_enabled`, `parse_clear_dtc_response`, `parse_dme_reset_acknowledgement`, `parse_dtc_response_for_ecu`, `parse_dtc_response`, `parse_exhaust_flap_io_response`, `parse_ista_memory_read_response`, `parse_zgw_vin`, `parse`, `periodic_flap_request`, `poll_connection`, `probe_enet`, `query_dtc_for_ecu_with_retry`, `query_dtc_for_ecu`, `raw_transport_log`, `read_ascii_data_identifier`, `read_bm3_memory_block`, `read_data_identifier`, `read_dme_flash_counter`, `read_factory_identity`, `read_legacy_optional_fingerprint`, `read_matching_uds_response`, `read_n20_reference_memory`, `read_optional_identifier_hex`, `read_optional_identifier`, `read_s55_bmw_routine_0205`, `read_s55_dme_diagnostic_session`, `read_s55_ecu_manufacturing_date`, `read_supplier_identity`, `recovery_attempt_limit`, `refresh_vehicle_host_after_route_loss`, `remember_vehicle_host`, `request_sid`, `response_request_service`, `run_demo_session`, `run_vehicle_session`, `selected_sensors`, `send_uds`, `sensor_with_transport`, `sensor`, `sensor`, `session_slot`, `stable_dme_identity`, `start_poll`, `status`, `transport_diagnostic`, `transport_identifier`, `validate_bm3_read_vehicle`, `validate_matching_reset_vin`, `validate_selected_reset_vin`, `validate_service_vehicle`, `validate_vehicle_identity`, `vin`, `wait_for_broadcast_clear_dtc_responses`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DownloadHsfzTransport`, `FlapCommand`, `HsfzFrame`, `LivePollResponse`, `LivePollStage`, `PendingFlapReply`, `PendingLivePoll`, `PendingTransportRequest`, `TransportDiagnosticsConfig`, `TransportDiagnosticsLevel`, `TransportRequestContext`, `ValidatedVehicleIdentity`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `cmp`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `partial_cmp`
 // These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`, `default`, `default`, `receive`, `send`
@@ -58,11 +58,34 @@ List<DtcStatusDefinition> defaultDtcStatusDefinitions() =>
 DtcResponseDefinition defaultDtcResponseDefinition() =>
     RustLib.instance.api.crateApiVehicleDefaultDtcResponseDefinition();
 
+/// Read one user-selected DME address without changing diagnostic session or
+/// issuing any programming service. The active vehicle identity is rechecked
+/// on the new diagnostic socket before the memory request is sent.
+Future<Uint8List> readDmeMemory({
+  required int address,
+  required int length,
+  required String expectedVin,
+}) => RustLib.instance.api.crateApiVehicleReadDmeMemory(
+  address: address,
+  length: length,
+  expectedVin: expectedVin,
+);
+
 /// Read the capture-derived S55 calibration region using ISTA's conservative
 /// 256-byte transaction pattern. This is read-only and deliberately limited
 /// to the exact software token observed in the ISTA capture.
 Future<Uint8List> readIstaS55Calibration() =>
     RustLib.instance.api.crateApiVehicleReadIstaS55Calibration();
+
+/// Read the capture-derived BM3 memory region with the larger 0x23 blocks
+/// observed on the F82 and the beginning of the N20 bench read. This prototype deliberately does
+/// not invoke the unexplained 0x31 routine sent to ECU 0x40 in the F82 capture.
+Future<Uint8List> readBm3S55Calibration() =>
+    RustLib.instance.api.crateApiVehicleReadBm3S55Calibration();
+
+/// Request cancellation of the active BM3-pattern read-only transaction.
+void cancelBm3S55Calibration() =>
+    RustLib.instance.api.crateApiVehicleCancelBm3S55Calibration();
 
 List<DiagnosticDataIdentifierDefinition> defaultDiagnosticDataIdentifiers() =>
     RustLib.instance.api.crateApiVehicleDefaultDiagnosticDataIdentifiers();
@@ -121,6 +144,14 @@ Future<List<DiagnosticTroubleCode>> scanEngineDiagnostics() =>
 /// This is intentionally a separate, explicit API: scanning never clears.
 Future<List<DiagnosticTroubleCode>> clearEngineDiagnostics() =>
     RustLib.instance.api.crateApiVehicleClearEngineDiagnostics();
+
+/// Sends the captured BMW broadcast DME reset after confirming that the live
+/// DME VIN matches the vehicle selected in the app. Address 0xDF can reach
+/// multiple ECUs, so the UI requires explicit confirmation before calling.
+Future<void> resetEngineDme({required String expectedVin}) => RustLib
+    .instance
+    .api
+    .crateApiVehicleResetEngineDme(expectedVin: expectedVin);
 
 /// Executes the captured ISTA exhaust-flap cyclic service test.
 /// This is experimental and intentionally not a permanent open/close control.

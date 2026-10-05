@@ -15,6 +15,46 @@ void main() {
     await tester.tap(find.text('Tune').last);
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const Key('tune-read-dme')), findsNothing);
+    final readDme2 = find.byKey(const Key('tune-read-dme-2'));
+    expect(readDme2, findsOneWidget);
+    expect(tester.widget<OutlinedButton>(readDme2).onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const Key('tune-read-dme-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved reads'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('read-dme-2-start')))
+          .onPressed,
+      isNull,
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    final dmeStatus = find.byKey(const Key('tune-dme-status-strip'));
+    expect(dmeStatus, findsOneWidget);
+    expect(
+      find.descendant(of: dmeStatus, matching: find.text('DME software')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dmeStatus, matching: find.text('Unlock status')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dmeStatus, matching: find.text('Unverified')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dmeStatus, matching: find.text('Stock backup')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dmeStatus, matching: find.text('None')),
+      findsOneWidget,
+    );
+
     for (final key in [
       'tune-dme-identity-open',
       'tune-check-unlock-open',

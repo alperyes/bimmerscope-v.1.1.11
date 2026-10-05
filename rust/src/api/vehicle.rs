@@ -16,6 +16,7 @@ const TESTER: u8 = 0xF4;
 // The confirmed F82/S55 engine ECU is addressed at 0x12. Address 0x10 is the
 // gateway and must not be used as DME identity evidence.
 const ENGINE_ECU_ADDRESS: u8 = 0x12;
+const BROADCAST_ECU_ADDRESS: u8 = 0xDF;
 const DYNAMIC_DID_HIGH: u8 = 0xF3;
 const DYNAMIC_DID_LOW: u8 = 0x00;
 const LIVE_POLL_STARTUP_SETTLE: Duration = Duration::from_millis(400);
@@ -30,6 +31,7 @@ const MAX_SESSION_RECOVERY_ATTEMPTS: u8 = 5;
 const MAX_NETWORK_CONFIGURATION_RETRIES: u8 = 8;
 const BROADCAST_CLEAR_TIMEOUT: Duration = Duration::from_secs(5);
 const BROADCAST_CLEAR_QUIET_WINDOW: Duration = Duration::from_millis(600);
+const BROADCAST_RESET_TIMEOUT: Duration = Duration::from_secs(5);
 const TRANSPORT_DIAGNOSTICS_MAX_BYTES: u64 = 8 * 1024 * 1024;
 // ISTA capture-derived read parameters. These are protocol primitives only;
 // a live read still requires a software-specific, validated region plan.
@@ -38,9 +40,22 @@ const ISTA_MEMORY_READ_CHUNK: u32 = 0x100;
 const ISTA_S55_READ_SOFTWARE: &str = "6MC9ED0B";
 const ISTA_S55_READ_START: u32 = 0x8018_0000;
 const ISTA_S55_READ_LENGTH: u32 = 0x80_000;
+// The BM3 capture shows 0x23 reads covering [0x80180000, 0x801FFC00),
+// using 0x0FFC-byte blocks (and a 0x0DFC-byte final block).
+const BM3_S55_READ_START: u32 = 0x8018_0000;
+const BM3_S55_READ_LENGTH: u32 = 0x7_FC00;
+const BM3_S55_READ_CHUNK: u32 = 0x0_FFC;
+// A 0xFFC-byte response can span several TCP segments. The N20 bench capture
+// showed a later segment arriving just after the former three-second deadline.
+const BM3_MEMORY_RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
+const BM3_S55_READ_VIN: &str = "WBS3R92010K340307";
+const BM3_S55_READ_SOFTWARE: &str = "00001C9F029150001";
 const N20_BENCH_VIN: &str = "WBA3A52010F360747";
 const N20_BENCH_F101: &str = "010100052302078F04D20100001000000001000019A601130306000019010131020800001C9F1D96010800001CDB1D96030500000B0A007803";
+const N20_BENCH_F103: &str = "010100041504018D006E0100000007000001000019A601130306000019010131010800001C9F1D6E020800001CDB1D6E09";
+const N20_BENCH_F102: &str = "010100040810138B00080000000000000001000019A601130306000019010131010800001C9F1D6E020800001CA11D6E00";
 static ISTA_READ_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+static BM3_READ_CANCEL: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 
 #[frb(ignore)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -189,7 +204,7 @@ pub fn confirmed_vehicle_profiles() -> Vec<VehicleProfile> {
         gateway_address: "169.254.12.64".into(),
         diagnostic_port: 6801,
         engine_ecu: 0x12,
-        clear_dtc_ecu: 0xDF,
+        clear_dtc_ecu: BROADCAST_ECU_ADDRESS,
     }]
 }
 
@@ -463,11 +478,11 @@ fn build_dtc_read_request() -> [u8; 3] {
     ]
 }
 
-/// Build one bounded ISTA-style ReadMemoryByAddress request. The caller must
-/// provide a validated region; this function does not select DME addresses.
+/// Build one bounded ReadMemoryByAddress request. The caller must provide a
+/// validated region; this function does not select DME addresses.
 fn build_ista_memory_read_request(address: u32, length: u16) -> Result<[u8; 8], String> {
-    if length == 0 || u32::from(length) > ISTA_MEMORY_READ_CHUNK {
-        return Err("ISTA DME reads are limited to 256-byte chunks".into());
+    if length == 0 {
+        return Err("DME memory-read chunks must not be empty".into());
     }
     Ok([
         0x23,
@@ -497,6 +512,43 @@ fn parse_ista_memory_read_response(uds: &[u8], expected_length: usize) -> Result
     Ok(payload)
 }
 
+/// Read one user-selected DME address without changing diagnostic session or
+/// issuing any programming service. The active vehicle identity is rechecked
+/// on the new diagnostic socket before the memory request is sent.
+pub fn read_dme_memory(address: u32, length: u16, expected_vin: String) -> Result<Vec<u8>, String> {
+    if length == 0 || length > 256 {
+        return Err("Read length must be between 1 and 256 bytes".into());
+    }
+    if address.checked_add(u32::from(length) - 1).is_none() {
+        return Err("Read range exceeds the 32-bit address space".into());
+    }
+    if expected_vin.len() != 17 || !expected_vin.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("A valid connected vehicle VIN is required".into());
+    }
+    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
+    let host =
+        last_vehicle_host().ok_or_else(|| "No active vehicle endpoint to read".to_string())?;
+    let mut stream = fresh_diagnostic_stream(&host)?;
+    let vin = read_ascii_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "vehicle_vin")?;
+    if vin != expected_vin {
+        return Err("DME VIN does not match the connected vehicle".into());
+    }
+    let f150 = read_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "ecu_identification")?;
+    if f150.is_empty() {
+        return Err("DME identity is unavailable".into());
+    }
+    let request = build_ista_memory_read_request(address, length)?;
+    send_uds(&mut stream, ENGINE_ECU_ADDRESS, &request)?;
+    let response = read_matching_uds_response(
+        &mut stream,
+        ENGINE_ECU_ADDRESS,
+        &[0x63],
+        &[0x23],
+        Duration::from_secs(3),
+    )?;
+    Ok(parse_ista_memory_read_response(&response, length as usize)?.to_vec())
+}
+
 /// Read the capture-derived S55 calibration region using ISTA's conservative
 /// 256-byte transaction pattern. This is read-only and deliberately limited
 /// to the exact software token observed in the ISTA capture.
@@ -506,10 +558,11 @@ pub fn read_ista_s55_calibration() -> Result<Vec<u8>, String> {
         .get_or_init(|| Arc::new(AtomicBool::new(false)))
         .clone();
     cancelled.store(false, Ordering::Relaxed);
-    let host = discover_vehicle(&cancelled)
+    let host = last_vehicle_host()
+        .or_else(|| discover_vehicle(&cancelled))
         .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
     let mut stream = fresh_diagnostic_stream(&host)?;
-    let (vin, identity, fingerprint) = identify_engine(&mut stream)?;
+    let (vin, identity, fingerprint, _, _) = identify_engine(&mut stream)?;
     validate_vehicle_identity(vin, stable_dme_identity(&fingerprint, &identity)?)?;
     let software = fingerprint.software;
     if software.is_empty() {
@@ -544,12 +597,137 @@ pub fn read_ista_s55_calibration() -> Result<Vec<u8>, String> {
     Ok(output)
 }
 
+/// Read the capture-derived BM3 memory region with the larger 0x23 blocks
+/// observed on the F82 and the beginning of the N20 bench read. This prototype deliberately does
+/// not invoke the unexplained 0x31 routine sent to ECU 0x40 in the F82 capture.
+pub fn read_bm3_s55_calibration() -> Result<Vec<u8>, String> {
+    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
+    let cancelled = BM3_READ_CANCEL
+        .get_or_init(|| Arc::new(AtomicBool::new(false)))
+        .clone();
+    cancelled.store(false, Ordering::Relaxed);
+    let host = last_vehicle_host()
+        .or_else(|| discover_vehicle(&cancelled))
+        .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
+    let mut stream = fresh_diagnostic_stream(&host)?;
+    let is_n20_bench = validate_bm3_read_vehicle(&mut stream)?;
+
+    let mut output = Vec::with_capacity(BM3_S55_READ_LENGTH as usize);
+    let mut address = BM3_S55_READ_START;
+    let end_address = BM3_S55_READ_START + BM3_S55_READ_LENGTH;
+    let mut recovered_once = false;
+    while address < end_address {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err("BM3-pattern DME read cancelled".into());
+        }
+        let length = (end_address - address).min(BM3_S55_READ_CHUNK) as u16;
+        let block = match read_bm3_memory_block(&mut stream, address, length) {
+            Ok(block) => block,
+            Err(error) if is_n20_bench && error == "ECU response timeout" && !recovered_once => {
+                recovered_once = true;
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err("BM3-pattern DME read cancelled".into());
+                }
+                let mut resumed = fresh_diagnostic_stream(&host)?;
+                if !validate_bm3_read_vehicle(&mut resumed)? {
+                    return Err("DME changed during the N20 read".into());
+                }
+                if address > BM3_S55_READ_START {
+                    let previous_address = address - BM3_S55_READ_CHUNK;
+                    let previous_offset = (previous_address - BM3_S55_READ_START) as usize;
+                    let previous = read_bm3_memory_block(
+                        &mut resumed,
+                        previous_address,
+                        BM3_S55_READ_CHUNK as u16,
+                    )
+                    .map_err(|error| {
+                        format!(
+                            "DME read stopped at 0x{address:08X}: recovery check failed: {error}"
+                        )
+                    })?;
+                    if previous != output[previous_offset..] {
+                        return Err(format!(
+                            "DME read stopped at 0x{address:08X}: previous block changed after reconnect"
+                        ));
+                    }
+                }
+                let block =
+                    read_bm3_memory_block(&mut resumed, address, length).map_err(|error| {
+                        format!("DME read stopped at 0x{address:08X}: retry failed: {error}")
+                    })?;
+                stream = resumed;
+                block
+            }
+            Err(error) => {
+                return Err(format!(
+                    "DME read stopped at 0x{address:08X} after {} bytes: {error}",
+                    output.len()
+                ));
+            }
+        };
+        output.extend_from_slice(&block);
+        address += u32::from(length);
+    }
+    Ok(output)
+}
+
+fn validate_bm3_read_vehicle(stream: &mut TcpStream) -> Result<bool, String> {
+    let (vin, identity, fingerprint, _, _) = identify_engine(stream)?;
+    if vin == N20_BENCH_VIN {
+        validate_vehicle_identity(vin.clone(), stable_dme_identity(&fingerprint, &identity)?)?;
+        let f150 = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "ecu_identification")?;
+        let f101 = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "s55_dme_identity_bundle")?;
+        if f150 != [0x0F, 0x18, 0x10] || hex_payload(&f101) != N20_BENCH_F101 {
+            return Err("N20 DME identity does not match the captured bench probe profile".into());
+        }
+        Ok(true)
+    } else if vin != BM3_S55_READ_VIN {
+        Err(format!(
+            "Read DME 2 is limited to the captured S55 or documented N20 bench profile; found VIN {vin}"
+        ))
+    } else {
+        validate_vehicle_identity(vin, stable_dme_identity(&fingerprint, &identity)?)?;
+        let software = fingerprint.software;
+        if software != BM3_S55_READ_SOFTWARE {
+            return Err(format!(
+                "BM3-pattern read profile is limited to captured DME software {BM3_S55_READ_SOFTWARE}; found {software}"
+            ));
+        }
+        Ok(false)
+    }
+}
+
+fn read_bm3_memory_block(
+    stream: &mut TcpStream,
+    address: u32,
+    length: u16,
+) -> Result<Vec<u8>, String> {
+    let request = build_ista_memory_read_request(address, length)?;
+    send_uds(stream, ENGINE_ECU_ADDRESS, &request)?;
+    let response = read_matching_uds_response(
+        stream,
+        ENGINE_ECU_ADDRESS,
+        &[0x63],
+        &[0x23],
+        BM3_MEMORY_RESPONSE_TIMEOUT,
+    )?;
+    Ok(parse_ista_memory_read_response(&response, length as usize)?.to_vec())
+}
+
+/// Request cancellation of the active BM3-pattern read-only transaction.
+#[frb(sync)]
+pub fn cancel_bm3_s55_calibration() {
+    if let Some(flag) = BM3_READ_CANCEL.get() {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
 #[frb(sync)]
 pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefinition> {
     vec![
         data_identifier(
             "ecu_identification",
-            "ECU identification",
+            "Diagnostic ECU ID",
             0xF150,
             0x62,
             "ascii",
@@ -570,6 +748,22 @@ pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefi
             0x62,
             "binary",
             None,
+        ),
+        data_identifier(
+            "dme_factory_identity_bundle",
+            "DME factory identity bundle",
+            0xF103,
+            0x62,
+            "binary",
+            Some(49),
+        ),
+        data_identifier(
+            "dme_supplier_identity_bundle",
+            "DME system supplier identity bundle",
+            0xF102,
+            0x62,
+            "binary",
+            Some(49),
         ),
         data_identifier(
             "dme_flash_counter",
@@ -648,7 +842,7 @@ pub fn default_diagnostic_services() -> Vec<DiagnosticServiceDefinition> {
     vec![
         diagnostic_service(
             "read_ecu_identification",
-            "Read ECU identification (F150)",
+            "Read diagnostic ECU ID (F150)",
             0x22,
             0x62,
             "read_only",
@@ -770,6 +964,21 @@ fn last_vehicle_host() -> Option<String> {
 fn remember_vehicle_host(host: &str) {
     if let Ok(mut slot) = LAST_VEHICLE_HOST.get_or_init(|| Mutex::new(None)).lock() {
         *slot = Some(host.to_string());
+    }
+}
+
+fn clear_validated_vehicle_identity() {
+    if let Ok(mut binding) = LAST_VALIDATED_VEHICLE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+    {
+        *binding = None;
+    }
+}
+
+fn forget_vehicle_host() {
+    if let Ok(mut slot) = LAST_VEHICLE_HOST.get_or_init(|| Mutex::new(None)).lock() {
+        *slot = None;
     }
 }
 
@@ -1105,6 +1314,38 @@ impl VehicleEvent {
             transport_recovery_result: String::new(),
         }
     }
+
+    fn ecu_factory_identity(address: u8, values: EcuFingerprintValues) -> Self {
+        let mut event = Self::status(
+            "ecu_factory_identity",
+            "Factory DME identity collected (F103)",
+        );
+        event.ecu_address = address;
+        event.ecu_hardware = values.hardware;
+        event.ecu_bootloader = values.bootloader;
+        event.ecu_software = values.software;
+        event.ecu_calibration = values.calibration;
+        event
+    }
+
+    fn ecu_supplier_identity(address: u8, values: EcuFingerprintValues) -> Self {
+        let mut event = Self::status(
+            "ecu_supplier_identity",
+            "System supplier DME identity collected (F102)",
+        );
+        event.ecu_address = address;
+        event.ecu_hardware = values.hardware;
+        event.ecu_bootloader = values.bootloader;
+        event.ecu_software = values.software;
+        event.ecu_calibration = values.calibration;
+        event
+    }
+
+    fn ecu_last_flash_date(address: u8, date: String) -> Self {
+        let mut event = Self::status("ecu_last_flash_date", date);
+        event.ecu_address = address;
+        event
+    }
 }
 
 #[frb(sync)]
@@ -1365,7 +1606,16 @@ pub fn start_auto_vehicle_session(sink: StreamSink<VehicleEvent>) -> Result<(), 
                 "discovering",
                 "Vehicle not found yet; retrying discovery",
             ));
-            let host = last_vehicle_host().or_else(|| discover_vehicle(&stop));
+            let cached_host = last_vehicle_host();
+            let host = cached_host
+                .clone()
+                .filter(|host| probe_enet(host, Duration::from_millis(350)))
+                .or_else(|| {
+                    if cached_host.is_some() {
+                        forget_vehicle_host();
+                    }
+                    discover_vehicle(&stop)
+                });
             if let Some(host) = host {
                 remember_vehicle_host(&host);
                 run_vehicle_session(host, 6801, sink.clone(), stop.clone());
@@ -1416,7 +1666,7 @@ pub fn scan_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> {
     let mut stream = fresh_diagnostic_stream(&host)?;
 
     let profile = confirmed_f82_s55_profile();
-    validate_service_vehicle(&mut stream)?;
+    let vin = validate_service_vehicle(&mut stream)?;
     let mut faults = query_dtc_for_ecu_with_retry(
         &mut stream,
         profile.engine_ecu,
@@ -1424,7 +1674,12 @@ pub fn scan_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> {
     )?;
     // ISTA's F82 scan also queries the FEM at HSFZ address 0x40. This is
     // read-only; Clear-DTC remains restricted to the separately guarded DME path.
-    for ecu in std::iter::once(0x40).chain(ADDITIONAL_DTC_ECUS) {
+    let optional_ecus = if vin == N20_BENCH_VIN {
+        vec![0x40, 0x10]
+    } else {
+        std::iter::once(0x40).chain(ADDITIONAL_DTC_ECUS).collect()
+    };
+    for ecu in optional_ecus {
         match query_dtc_for_ecu(
             &mut stream,
             ecu,
@@ -1526,8 +1781,10 @@ pub fn clear_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> 
     // The guarded write uses its own socket and leaves live telemetry state
     // under the caller's control.
     let cancelled = AtomicBool::new(false);
-    let host = discover_vehicle(&cancelled)
+    let host = last_vehicle_host()
+        .or_else(|| discover_vehicle(&cancelled))
         .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
+    remember_vehicle_host(&host);
     let mut stream = fresh_diagnostic_stream(&host)?;
     let profile = confirmed_f82_s55_profile();
     // Validate the S55 DME directly. 0xDF is an HSFZ broadcast address, not
@@ -1559,6 +1816,37 @@ pub fn clear_engine_diagnostics() -> Result<Vec<DiagnosticTroubleCode>, String> 
         return Err("Clear succeeded, but post-clear verification was malformed".into());
     }
     parse_dtc_response(&dtc_response)
+}
+
+/// Sends the captured BMW broadcast DME reset after confirming that the live
+/// DME VIN matches the vehicle selected in the app. Address 0xDF can reach
+/// multiple ECUs, so the UI requires explicit confirmation before calling.
+pub fn reset_engine_dme(expected_vin: String) -> Result<(), String> {
+    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
+    let expected_vin = expected_vin.trim().to_ascii_uppercase();
+    validate_selected_reset_vin(&expected_vin)?;
+    let cancelled = AtomicBool::new(false);
+    let host = last_vehicle_host()
+        .or_else(|| discover_vehicle(&cancelled))
+        .ok_or_else(|| "No vehicle found. Check the cable and ignition.".to_string())?;
+    remember_vehicle_host(&host);
+    let mut stream = fresh_diagnostic_stream(&host)?;
+    let live_vin = validate_service_vehicle(&mut stream)?;
+    validate_matching_reset_vin(&expected_vin, &live_vin)?;
+
+    send_uds(
+        &mut stream,
+        BROADCAST_ECU_ADDRESS,
+        &build_dme_reset_request(),
+    )?;
+    let response = read_matching_uds_response(
+        &mut stream,
+        ENGINE_ECU_ADDRESS,
+        &[0x51, 0x01],
+        &[0x11],
+        BROADCAST_RESET_TIMEOUT,
+    )?;
+    parse_dme_reset_acknowledgement(&response)
 }
 
 /// Executes the captured ISTA exhaust-flap cyclic service test.
@@ -1716,7 +2004,16 @@ fn periodic_flap_request(mode: &str) -> Option<[u8; 8]> {
 
 fn identify_engine(
     stream: &mut TcpStream,
-) -> Result<(String, String, EcuFingerprintValues), String> {
+) -> Result<
+    (
+        String,
+        String,
+        EcuFingerprintValues,
+        Option<EcuFingerprintValues>,
+        Option<String>,
+    ),
+    String,
+> {
     let f150 = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "ecu_identification")
         .or_else(|_| read_data_identifier(stream, 0x10, "ecu_identification"))?;
     let identity = decode_ecu_identification(f150);
@@ -1729,18 +2026,30 @@ fn identify_engine(
     // coding in the remaining bundle. Prefer these captured records over
     // unverified individual DIDs, and retain the legacy reads as a fallback
     // when a DME does not implement this layout.
+    let mut last_flash_date = None;
     let mut values =
         match read_data_identifier(stream, ENGINE_ECU_ADDRESS, "s55_dme_identity_bundle") {
-            Ok(payload) => decode_s55_dme_identity_bundle(&payload)
-                .unwrap_or_else(|_| read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS)),
+            Ok(payload) => match decode_s55_dme_identity_bundle(&payload) {
+                Ok(values) => {
+                    last_flash_date = decode_f101_last_flash_date(&payload);
+                    values
+                }
+                Err(_) => read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS),
+            },
             Err(_) => read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS),
         };
+    let factory = read_factory_identity(stream);
     values.manufacturing_date =
         read_s55_ecu_manufacturing_date(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     values.diagnostic_session =
         read_s55_dme_diagnostic_session(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     values.flash_counter = read_dme_flash_counter(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
-    if let Ok(routine) = read_s55_bmw_routine_0205(stream, ENGINE_ECU_ADDRESS) {
+    if let Ok(routine) = read_bmw_routine_0205(
+        stream,
+        ENGINE_ECU_ADDRESS,
+        &values.calibration,
+        &values.bootloader,
+    ) {
         values.bmw_routine_0205_raw = routine.raw_hex;
         values.bmw_routine_0205_software = routine.software;
         values.bmw_controller_family = routine.controller_family;
@@ -1749,7 +2058,13 @@ fn identify_engine(
         values.bmw_emissions = routine.emissions;
         values.bmw_internal_token = routine.internal_token;
     }
-    Ok((vin, identity.display_value, values))
+    Ok((
+        vin,
+        identity.display_value,
+        values,
+        factory,
+        last_flash_date,
+    ))
 }
 
 #[derive(Default)]
@@ -1763,18 +2078,35 @@ pub struct BmwRoutine0205Values {
     pub internal_token: String,
 }
 
-/// Read the captured BMW-specific S55 identification routine. This is a
-/// read-only RoutineControl request; it does not prepare or write the ECU.
-fn read_s55_bmw_routine_0205(
+/// Read BMW's 0x0205 identity routine using the live calibration and
+/// bootloader identifiers. Both request forms were captured during the MHD
+/// N20 identification exchange; each remains optional for other software.
+fn read_bmw_routine_0205(
     stream: &mut TcpStream,
     ecu: u8,
+    calibration: &str,
+    bootloader: &str,
 ) -> Result<BmwRoutine0205Values, String> {
-    // The option record is the one observed for the MEVD17.2.G/S55 session.
-    // Keep it explicit and isolated because 0x0205 is BMW-specific, not a
-    // generic UDS identifier.
-    let request = [
-        0x31, 0x01, 0x02, 0x05, 0x08, 0x00, 0x00, 0x26, 0x0B, 0x1D, 0x28, 0xFE,
-    ];
+    let calibration_result = read_bmw_routine_0205_identifier(stream, ecu, calibration, 0x08);
+    let bootloader_result = read_bmw_routine_0205_identifier(stream, ecu, bootloader, 0x06);
+    match (calibration_result, bootloader_result) {
+        (Err(calibration_error), Err(bootloader_error)) => Err(format!(
+            "BMW 0x0205 calibration and bootloader reads failed: {calibration_error}; {bootloader_error}"
+        )),
+        (calibration, bootloader) => Ok(merge_bmw_routine_0205_values(
+            calibration.ok(),
+            bootloader.ok(),
+        )),
+    }
+}
+
+fn read_bmw_routine_0205_identifier(
+    stream: &mut TcpStream,
+    ecu: u8,
+    identifier: &str,
+    record_type: u8,
+) -> Result<BmwRoutine0205Values, String> {
+    let request = build_bmw_routine_0205_request(identifier, record_type)?;
     send_uds(stream, ecu, &request)?;
     let response = read_matching_uds_response(
         stream,
@@ -1783,12 +2115,101 @@ fn read_s55_bmw_routine_0205(
         &[0x31],
         Duration::from_secs(3),
     )?;
-    decode_s55_bmw_routine_0205(&response)
+    decode_bmw_routine_0205(&response)
 }
 
-fn decode_s55_bmw_routine_0205(payload: &[u8]) -> Result<BmwRoutine0205Values, String> {
+fn build_bmw_routine_0205_request(identifier: &str, record_type: u8) -> Result<Vec<u8>, String> {
+    if !matches!(record_type, 0x06 | 0x08) {
+        return Err("BMW 0x0205 identifier type is unsupported".into());
+    }
+    let identifier = identifier.trim();
+    if identifier.len() != 17 || !identifier.is_ascii() {
+        return Err("BMW identifier has an unsupported format".into());
+    }
+    let part_number = u32::from_str_radix(&identifier[..8], 16)
+        .map_err(|_| "BMW identifier has an invalid part number".to_string())?;
+    let mut request = vec![0x31, 0x01, 0x02, 0x05, record_type];
+    request.extend(part_number.to_be_bytes());
+    for version in [&identifier[8..11], &identifier[11..14], &identifier[14..17]] {
+        request.push(
+            version
+                .parse::<u8>()
+                .map_err(|_| "BMW identifier has an invalid version".to_string())?,
+        );
+    }
+    Ok(request)
+}
+
+fn format_bmw_software_identifier(record: &[u8]) -> String {
+    if record.len() != 7 {
+        return String::new();
+    }
+    format!(
+        "{:02X}{:02X}{:02X}{:02X}{:03}{:03}{:03}",
+        record[0], record[1], record[2], record[3], record[4], record[5], record[6]
+    )
+}
+
+fn merge_bmw_routine_0205_values(
+    calibration: Option<BmwRoutine0205Values>,
+    bootloader: Option<BmwRoutine0205Values>,
+) -> BmwRoutine0205Values {
+    let calibration = calibration.unwrap_or_default();
+    let bootloader = bootloader.unwrap_or_default();
+    let variant = match (
+        calibration.variant.is_empty(),
+        bootloader.variant.is_empty(),
+    ) {
+        (false, false) => format!(
+            "Software: {}; bootloader: {}",
+            calibration.variant, bootloader.variant
+        ),
+        (false, true) => calibration.variant.clone(),
+        (true, false) => bootloader.variant.clone(),
+        (true, true) => String::new(),
+    };
+    let raw_hex = [
+        (!calibration.raw_hex.is_empty()).then(|| format!("CAL {}", calibration.raw_hex)),
+        (!bootloader.raw_hex.is_empty()).then(|| format!("BTLD {}", bootloader.raw_hex)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" | ");
+    BmwRoutine0205Values {
+        raw_hex,
+        software: if calibration.software.is_empty() {
+            bootloader.software
+        } else {
+            calibration.software
+        },
+        controller_family: if calibration.controller_family.is_empty() {
+            bootloader.controller_family
+        } else {
+            calibration.controller_family
+        },
+        variant,
+        transmission: if calibration.transmission.is_empty() {
+            bootloader.transmission
+        } else {
+            calibration.transmission
+        },
+        emissions: if calibration.emissions.is_empty() {
+            bootloader.emissions
+        } else {
+            calibration.emissions
+        },
+        internal_token: if calibration.internal_token.is_empty() {
+            bootloader.internal_token
+        } else {
+            calibration.internal_token
+        },
+    }
+}
+
+fn decode_bmw_routine_0205(payload: &[u8]) -> Result<BmwRoutine0205Values, String> {
     if payload.len() < 5 || !payload.starts_with(&[0x71, 0x01, 0x02, 0x05]) {
-        return Err("S55 BMW 0x0205 response has an unsupported layout".into());
+        return Err("BMW 0x0205 response has an unsupported layout".into());
     }
     let ascii_runs = payload[4..]
         .split(|byte| !byte.is_ascii_alphanumeric() && !matches!(*byte, b'.' | b'-' | b'_'))
@@ -1810,9 +2231,54 @@ fn decode_s55_bmw_routine_0205(payload: &[u8]) -> Result<BmwRoutine0205Values, S
             .unwrap_or_default()
     };
     let software = payload[4..]
-        .windows(7)
-        .find(|record| record[0..4] == [0x00, 0x00, 0x1A, 0x84])
-        .map(|record| format!("00001A84{:03}{:03}{:03}", record[4], record[5], record[6]))
+        .windows(10)
+        .find(|record| record[..3] == [0xFF, 0x01, 0x08])
+        .map(|record| format_bmw_software_identifier(&record[3..10]))
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            payload[4..]
+                .windows(7)
+                .find(|record| record[0..4] == [0x00, 0x00, 0x1A, 0x84])
+                .map(format_bmw_software_identifier)
+        })
+        .unwrap_or_default();
+    let controller_family = ascii_runs
+        .iter()
+        .find(|value| value.starts_with("DME-MEVD") && value.ends_with('_'))
+        .and_then(|value| value.strip_prefix("DME-"))
+        .map(str::to_string)
+        .or_else(|| {
+            ascii_runs
+                .iter()
+                .find(|value| value.starts_with("MEVD"))
+                .cloned()
+        })
+        .or_else(|| {
+            ascii_runs
+                .iter()
+                .find(|value| value.starts_with("DME-MEVD"))
+                .and_then(|value| value.strip_prefix("DME-"))
+                .map(str::to_string)
+        })
+        .map(|value| value.trim_end_matches('_').to_string())
+        .unwrap_or_default();
+    let variant = ascii_runs
+        .iter()
+        .find(|value| {
+            value.starts_with("DME-MEVD")
+                && value
+                    .strip_prefix("DME-")
+                    .is_some_and(|family| family.trim_end_matches('_') != controller_family)
+        })
+        .map(|value| value.clone())
+        .or_else(|| {
+            ascii_runs
+                .iter()
+                .find(|value| {
+                    value.starts_with("MEVD") && value.trim_end_matches('_') != controller_family
+                })
+                .cloned()
+        })
         .unwrap_or_default();
     Ok(BmwRoutine0205Values {
         raw_hex: payload[4..]
@@ -1820,8 +2286,8 @@ fn decode_s55_bmw_routine_0205(payload: &[u8]) -> Result<BmwRoutine0205Values, S
             .map(|byte| format!("{byte:02X}"))
             .collect::<String>(),
         software,
-        controller_family: find_run("MEVD"),
-        variant: find_run("DME-MEVD"),
+        controller_family,
+        variant,
         transmission: contains_token("DKG"),
         emissions: contains_token("EU6"),
         internal_token: find_run("6MC"),
@@ -2064,9 +2530,13 @@ fn validate_vehicle_identity(vin: String, dme_identity: String) -> Result<(), St
     Ok(())
 }
 
-fn validate_service_vehicle(stream: &mut TcpStream) -> Result<(), String> {
-    let (vin, raw_identity, fingerprint) = identify_engine(stream)?;
-    validate_vehicle_identity(vin, stable_dme_identity(&fingerprint, &raw_identity)?)
+fn validate_service_vehicle(stream: &mut TcpStream) -> Result<String, String> {
+    let (vin, raw_identity, fingerprint, _, _) = identify_engine(stream)?;
+    validate_vehicle_identity(
+        vin.clone(),
+        stable_dme_identity(&fingerprint, &raw_identity)?,
+    )?;
+    Ok(vin)
 }
 
 fn read_ascii_data_identifier(
@@ -2243,6 +2713,10 @@ where
     F: FnOnce(Arc<AtomicBool>) + Send + 'static,
 {
     stop_session();
+    // Identity binding protects reconnects within one user-started session.
+    // A new session may intentionally connect to another vehicle (for example
+    // switching between the F82 and the N20 bench), so discard the old binding.
+    clear_validated_vehicle_identity();
     // A new connection identifies the vehicle first. Live traffic starts only
     // after the user explicitly starts monitoring.
     stop_monitoring();
@@ -2429,7 +2903,7 @@ fn probe_enet(host: &str, timeout: Duration) -> bool {
         .and_then(|address| TcpStream::connect_timeout(&address, timeout).ok())
         .map(|mut stream| {
             let _ = stream.set_read_timeout(Some(timeout));
-            let _ = stream.write_all(&build_hsfz(TESTER, 0x10, &[0x22, 0xF1, 0x50]));
+            let _ = stream.write_all(&build_hsfz(TESTER, ENGINE_ECU_ADDRESS, &[0x22, 0xF1, 0x50]));
             let deadline = Instant::now() + timeout.max(Duration::from_secs(2));
             let mut buffer = Vec::with_capacity(256);
             let mut scratch = [0u8; 128];
@@ -2445,15 +2919,7 @@ fn probe_enet(host: &str, timeout: Duration) -> bool {
                     Err(_) => return false,
                 }
                 match drain_hsfz(&mut buffer) {
-                    Ok(frames)
-                        if frames.iter().any(|frame| {
-                            frame.message_type == 0x0001
-                                && frame.source == 0x10
-                                && frame.uds.starts_with(&[0x62, 0xF1, 0x50])
-                        }) =>
-                    {
-                        return true
-                    }
+                    Ok(frames) if frames.iter().any(is_engine_probe_reply) => return true,
                     Ok(_) => continue, // transport ACKs are not validation responses
                     Err(_) => return false,
                 }
@@ -2463,8 +2929,107 @@ fn probe_enet(host: &str, timeout: Duration) -> bool {
         .unwrap_or(false)
 }
 
+fn decode_dme_factory_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues, String> {
+    if payload.len() != 49 || payload[25] != 0x06 || payload[33] != 0x08 || payload[41] != 0x08 {
+        return Err("F103 factory identity response has an unsupported layout".into());
+    }
+    let format_record = |record: &[u8]| {
+        let id = u32::from_be_bytes(record[0..4].try_into().expect("record ID length"));
+        format!("{id:08X}{:03}{:03}{:03}", record[4], record[5], record[6])
+    };
+    Ok(EcuFingerprintValues {
+        hardware: format_record(&payload[18..25]),
+        bootloader: format_record(&payload[26..33]),
+        software: format_record(&payload[34..41]),
+        calibration: format_record(&payload[42..49]),
+        ..Default::default()
+    })
+}
+
+fn decode_dme_supplier_identity_bundle(payload: &[u8]) -> Result<EcuFingerprintValues, String> {
+    if payload.len() != 49
+        || payload.get(..4) != Some(&[0x01, 0x01, 0x00, 0x04])
+        || payload[25] != 0x06
+        || payload[33] != 0x08
+        || payload[41] != 0x08
+    {
+        return Err("F102 supplier identity response has an unsupported layout".into());
+    }
+    let format_record = |record: &[u8]| {
+        let id = u32::from_be_bytes(record[0..4].try_into().expect("record ID length"));
+        format!("{id:08X}{:03}{:03}{:03}", record[4], record[5], record[6])
+    };
+    Ok(EcuFingerprintValues {
+        hardware: format_record(&payload[18..25]),
+        bootloader: format_record(&payload[26..33]),
+        software: format_record(&payload[34..41]),
+        calibration: format_record(&payload[42..49]),
+        ..Default::default()
+    })
+}
+
+fn read_supplier_identity(stream: &mut TcpStream) -> Option<EcuFingerprintValues> {
+    let result = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "dme_supplier_identity_bundle")
+        .and_then(|payload| decode_dme_supplier_identity_bundle(&payload));
+    match result {
+        Ok(values) => Some(values),
+        Err(error) => {
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({"type": "supplier_identity_read_failed", "did": "F102", "error": error}),
+            );
+            None
+        }
+    }
+}
+
+fn read_factory_identity(stream: &mut TcpStream) -> Option<EcuFingerprintValues> {
+    let result = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "dme_factory_identity_bundle")
+        .and_then(|payload| decode_dme_factory_identity_bundle(&payload));
+    match result {
+        Ok(values) => Some(values),
+        Err(error) => {
+            transport_diagnostic(
+                TransportDiagnosticsLevel::Normal,
+                json!({"type": "factory_identity_read_failed", "did": "F103", "error": error}),
+            );
+            None
+        }
+    }
+}
+
+fn decode_f101_last_flash_date(payload: &[u8]) -> Option<String> {
+    // MHD labels bytes 4..7 of this captured F101 layout as the last flash
+    // date. Keep the extraction tied to the observed bundle structure.
+    if payload.len() < 57
+        || payload.get(..4) != Some(&[0x01, 0x01, 0x00, 0x05])
+        || payload.get(25) != Some(&0x06)
+    {
+        return None;
+    }
+    let bcd = |value: u8| -> Option<u8> {
+        let high = value >> 4;
+        let low = value & 0x0F;
+        (high <= 9 && low <= 9).then_some(high * 10 + low)
+    };
+    let year = 2000 + u16::from(bcd(payload[4])?);
+    let month = bcd(payload[5])?;
+    let day = bcd(payload[6])?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    Some(format!("{year:04}.{month:02}.{day:02}"))
+}
+
+fn is_engine_probe_reply(frame: &HsfzFrame) -> bool {
+    frame.message_type == 0x0001
+        && frame.source == ENGINE_ECU_ADDRESS
+        && frame.destination == TESTER
+        && frame.uds.starts_with(&[0x62, 0xF1, 0x50])
+}
+
 fn run_vehicle_session(
-    host: String,
+    mut host: String,
     port: u16,
     sink: StreamSink<VehicleEvent>,
     stop: Arc<AtomicBool>,
@@ -2589,6 +3154,9 @@ fn run_vehicle_session(
                                 "{error}; retrying vehicle session ({recovery_attempts}/{maximum_attempts})"
                             ),
                         ));
+                        if is_transient_network_configuration_error(&error) {
+                            refresh_vehicle_host_after_route_loss(&mut host, &stop);
+                        }
                     }
                 }
             }
@@ -2643,6 +3211,9 @@ fn run_vehicle_session(
                         "{error}; waiting for the vehicle network ({recovery_attempts}/{maximum_attempts})"
                     ),
                 ));
+                if is_transient_network_configuration_error(&error) {
+                    refresh_vehicle_host_after_route_loss(&mut host, &stop);
+                }
             }
         }
         if !stop.load(Ordering::Acquire) {
@@ -2661,6 +3232,16 @@ fn run_vehicle_session(
 fn clear_flap_command_sender() {
     if let Ok(mut slot) = FLAP_COMMAND_SENDER.get_or_init(|| Mutex::new(None)).lock() {
         *slot = None;
+    }
+}
+
+fn refresh_vehicle_host_after_route_loss(host: &mut String, stop: &AtomicBool) {
+    match discover_vehicle(stop) {
+        Some(discovered) => {
+            remember_vehicle_host(&discovered);
+            *host = discovered;
+        }
+        None => forget_vehicle_host(),
     }
 }
 
@@ -2821,7 +3402,7 @@ fn poll_connection(
         Instant::now() + Duration::from_secs(5)
     };
     let mut was_monitoring = false;
-    let (vin, ecu_identity, fingerprint) = identify_engine(stream)?;
+    let (vin, ecu_identity, fingerprint, factory, last_flash_date) = identify_engine(stream)?;
     validate_vehicle_identity(
         vin.clone(),
         stable_dme_identity(&fingerprint, &ecu_identity)?,
@@ -2831,7 +3412,43 @@ fn poll_connection(
         ENGINE_ECU_ADDRESS,
         fingerprint,
     ));
+    let factory_read = factory.is_some();
+    if let Some(factory) = factory {
+        let _ = sink.add(VehicleEvent::ecu_factory_identity(
+            ENGINE_ECU_ADDRESS,
+            factory,
+        ));
+    }
+    let supplier = read_supplier_identity(stream);
+    let supplier_read = supplier.is_some();
+    if let Some(supplier) = supplier {
+        let _ = sink.add(VehicleEvent::ecu_supplier_identity(
+            ENGINE_ECU_ADDRESS,
+            supplier,
+        ));
+    }
+    if let Some(date) = last_flash_date {
+        let _ = sink.add(VehicleEvent::ecu_last_flash_date(ENGINE_ECU_ADDRESS, date));
+    }
     enter_extended_session(stream, ENGINE_ECU_ADDRESS)?;
+    if !factory_read {
+        // A transient F103 timeout during initial identification must not
+        // leave the factory card empty for the rest of a connected session.
+        if let Some(values) = read_factory_identity(stream) {
+            let _ = sink.add(VehicleEvent::ecu_factory_identity(
+                ENGINE_ECU_ADDRESS,
+                values,
+            ));
+        }
+    }
+    if !supplier_read {
+        if let Some(values) = read_supplier_identity(stream) {
+            let _ = sink.add(VehicleEvent::ecu_supplier_identity(
+                ENGINE_ECU_ADDRESS,
+                values,
+            ));
+        }
+    }
     // Do not perform the 26-ECU inventory sweep here. On the user's ENET
     // gateway, that burst competes with the first live poll and has been
     // observed immediately before socket resets. The connected DME is already
@@ -3349,6 +3966,35 @@ fn build_clear_dtc_request(group: [u8; 3]) -> [u8; 4] {
     [service.request_sid, group[0], group[1], group[2]]
 }
 
+fn build_dme_reset_request() -> [u8; 2] {
+    [0x11, 0x01]
+}
+
+fn validate_selected_reset_vin(vin: &str) -> Result<(), String> {
+    if vin.len() != 17 || !vin.is_ascii() || !vin.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("Refusing DME reset: selected vehicle VIN is invalid".into());
+    }
+    Ok(())
+}
+
+fn validate_matching_reset_vin(selected: &str, live: &str) -> Result<(), String> {
+    validate_selected_reset_vin(selected)?;
+    if !live.eq_ignore_ascii_case(selected) {
+        return Err(format!(
+            "Refusing DME reset: selected VIN {selected} does not match live DME VIN {live}"
+        ));
+    }
+    Ok(())
+}
+
+fn parse_dme_reset_acknowledgement(response: &[u8]) -> Result<(), String> {
+    if response == [0x51, 0x01] {
+        Ok(())
+    } else {
+        Err("DME returned an unsupported reset acknowledgement".into())
+    }
+}
+
 // Experimental ISTA service-test request captured from an F82/S55 vehicle.
 // This is deliberately not connected to the live transport: the request is
 // for "teach-in exhaust flap / move to installation position", not a proven
@@ -3702,6 +4348,33 @@ mod tests {
     }
 
     #[test]
+    fn discovery_probe_accepts_f82_dme_reply_not_gateway_echo_or_other_ecu() {
+        let mut buffer = build_hsfz(ENGINE_ECU_ADDRESS, TESTER, &[0x62, 0xF1, 0x50, 0x0F]);
+        let reply = drain_hsfz(&mut buffer).unwrap();
+        assert!(is_engine_probe_reply(&reply[0]));
+
+        let mut buffer = build_hsfz(0x10, TESTER, &[0x62, 0xF1, 0x50, 0x0F]);
+        let other_ecu = drain_hsfz(&mut buffer).unwrap();
+        assert!(!is_engine_probe_reply(&other_ecu[0]));
+
+        let mut buffer = vec![
+            0,
+            0,
+            0,
+            5,
+            0,
+            2,
+            TESTER,
+            ENGINE_ECU_ADDRESS,
+            0x22,
+            0xF1,
+            0x50,
+        ];
+        let echo = drain_hsfz(&mut buffer).unwrap();
+        assert!(!is_engine_probe_reply(&echo[0]));
+    }
+
+    #[test]
     fn buffers_partial_and_multiple_frames() {
         let first = build_hsfz(0x10, 0xF4, &[0x62, 0xF1, 0x90, b'A']);
         let second = build_hsfz(0x12, 0xF4, &[0x6C, 1, 0xF3, 0]);
@@ -3873,7 +4546,16 @@ mod tests {
             build_ista_memory_read_request(0x80180100, 0x100).unwrap(),
             [0x23, 0x24, 0x80, 0x18, 0x01, 0x00, 0x01, 0x00]
         );
-        assert!(build_ista_memory_read_request(0x8018, 0x101).is_err());
+        assert_eq!(BM3_S55_READ_LENGTH / BM3_S55_READ_CHUNK, 127);
+        assert_eq!(BM3_S55_READ_LENGTH % BM3_S55_READ_CHUNK, 0xDFC);
+        assert_eq!(
+            build_ista_memory_read_request(0x801F_EE04, 0xDFC).unwrap(),
+            [0x23, 0x24, 0x80, 0x1F, 0xEE, 0x04, 0x0D, 0xFC]
+        );
+        assert_eq!(
+            build_ista_memory_read_request(0x8018, 0x101).unwrap(),
+            [0x23, 0x24, 0x00, 0x00, 0x80, 0x18, 0x01, 0x01]
+        );
         let data = [0xA5; 0x100];
         let mut response = vec![0x63];
         response.extend_from_slice(&data);
@@ -3893,6 +4575,39 @@ mod tests {
         assert!(parse_clear_dtc_response(&[0x7F, 0x14, 0x78])
             .unwrap_err()
             .contains("processing"));
+    }
+
+    #[test]
+    fn builds_and_validates_broadcast_dme_reset() {
+        assert_eq!(BROADCAST_ECU_ADDRESS, 0xDF);
+        assert_eq!(build_dme_reset_request(), [0x11, 0x01]);
+        assert_eq!(
+            build_hsfz(TESTER, BROADCAST_ECU_ADDRESS, &build_dme_reset_request()),
+            [0, 0, 0, 4, 0, 1, 0xF4, 0xDF, 0x11, 0x01]
+        );
+        let positive = HsfzFrame {
+            message_type: 1,
+            source: ENGINE_ECU_ADDRESS,
+            destination: TESTER,
+            uds: vec![0x51, 0x01],
+        };
+        let unrelated_ecu = HsfzFrame {
+            source: 0x40,
+            ..positive
+        };
+        assert!(is_application_response(&unrelated_ecu));
+        assert_ne!(unrelated_ecu.source, ENGINE_ECU_ADDRESS);
+        assert_eq!(parse_dme_reset_acknowledgement(&[0x51, 0x01]), Ok(()));
+        assert!(parse_dme_reset_acknowledgement(&[0x51]).is_err());
+    }
+
+    #[test]
+    fn dme_reset_requires_matching_selected_and_live_vins() {
+        assert!(validate_selected_reset_vin("WBA3A52010F360747").is_ok());
+        assert!(validate_selected_reset_vin("DEMOF82S55MOBILE").is_err());
+        assert!(validate_selected_reset_vin("WBA3A52010F36074").is_err());
+        assert!(validate_matching_reset_vin("WBA3A52010F360747", "wba3a52010f360747").is_ok());
+        assert!(validate_matching_reset_vin("WBA3A52010F360747", "WBA3A52010F360748").is_err());
     }
 
     #[test]
@@ -3974,6 +4689,12 @@ mod tests {
         assert_eq!(s55_bundle.did, 0xF101);
         assert_eq!(s55_bundle.response_sid, 0x62);
         assert_eq!(s55_bundle.encoding, "binary");
+        let factory = identifiers
+            .iter()
+            .find(|item| item.id == "dme_factory_identity_bundle")
+            .unwrap();
+        assert_eq!(factory.did, 0xF103);
+        assert_eq!(factory.exact_length, Some(49));
 
         let flash_counter = identifiers
             .iter()
@@ -4035,6 +4756,37 @@ mod tests {
     }
 
     #[test]
+    fn decodes_captured_n20_factory_and_current_identity() {
+        let decode_hex = |hex: &str| {
+            (0..hex.len())
+                .step_by(2)
+                .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let current = decode_s55_dme_identity_bundle(&decode_hex(N20_BENCH_F101)).unwrap();
+        let mut current_payload = decode_hex(N20_BENCH_F101);
+        assert_eq!(
+            decode_f101_last_flash_date(&current_payload),
+            Some("2023.02.07".into())
+        );
+        current_payload[5] = 0x13;
+        assert_eq!(decode_f101_last_flash_date(&current_payload), None);
+        let factory = decode_dme_factory_identity_bundle(&decode_hex(N20_BENCH_F103)).unwrap();
+        let supplier = decode_dme_supplier_identity_bundle(&decode_hex(N20_BENCH_F102)).unwrap();
+        assert_eq!(current.hardware, factory.hardware);
+        assert_eq!(supplier.hardware, factory.hardware);
+        assert_eq!(supplier.bootloader, factory.bootloader);
+        assert_eq!(supplier.software, factory.software);
+        assert_eq!(supplier.calibration, "00001CA1029110000");
+        assert_eq!(current.software, "00001C9F029150001");
+        assert_eq!(factory.bootloader, "00001901001049001");
+        assert_eq!(factory.software, "00001C9F029110002");
+        assert_eq!(factory.calibration, "00001CDB029110009");
+        assert!(decode_dme_factory_identity_bundle(&decode_hex(N20_BENCH_F103)[..48]).is_err());
+        assert!(decode_dme_supplier_identity_bundle(&decode_hex(N20_BENCH_F102)[..48]).is_err());
+    }
+
+    #[test]
     fn decodes_mhd_dme_flash_counter_as_big_endian_u32() {
         assert_eq!(decode_dme_flash_counter(&[0x00, 0x00, 0x00, 0x05]), Some(5));
         assert_eq!(decode_dme_flash_counter(&[0x00, 0x01]), None);
@@ -4071,13 +4823,76 @@ mod tests {
             b'B', b'G', b'2', b'-', b'B', b'3', b'0', b'-', b'F', b'0', b'8', b'0', b'-', b'D',
             b'K', b'G', b'-', b'E', b'U', b'6', 0x00, b'6', b'M', b'C', b'9', b'E', b'D',
         ];
-        let values = decode_s55_bmw_routine_0205(&payload).unwrap();
+        let values = decode_bmw_routine_0205(&payload).unwrap();
         assert_eq!(values.software, "00001A84029040001");
         assert_eq!(values.controller_family, "MEVD17.2.G");
         assert_eq!(values.variant, "DME-MEVD17.2.G-S55-BG2-B30-F080-DKG-EU6");
         assert_eq!(values.transmission, "DKG");
         assert_eq!(values.emissions, "EU6");
         assert_eq!(values.internal_token, "6MC9ED");
+    }
+
+    #[test]
+    fn builds_captured_mhd_0205_requests_from_current_bootloader_and_calibration_ids() {
+        assert_eq!(
+            build_bmw_routine_0205_request("00001CDB029150003", 0x08).unwrap(),
+            [0x31, 0x01, 0x02, 0x05, 0x08, 0x00, 0x00, 0x1C, 0xDB, 0x1D, 0x96, 0x03]
+        );
+        assert_eq!(
+            build_bmw_routine_0205_request("00001901001049002", 0x06).unwrap(),
+            [0x31, 0x01, 0x02, 0x05, 0x06, 0x00, 0x00, 0x19, 0x01, 0x01, 0x31, 0x02]
+        );
+        assert!(build_bmw_routine_0205_request("00001901001049002", 0x07).is_err());
+    }
+
+    #[test]
+    fn decodes_captured_mhd_n20_0205_calibration_response() {
+        let mut payload = vec![
+            0x71, 0x01, 0x02, 0x05, 0xFF, 0x01, 0x08, 0x00, 0x00, 0x1C, 0x9F, 0x1D, 0x96, 0x01,
+            b'#',
+        ];
+        payload.extend_from_slice(b"MEVD17.2.9________#C1#DST#MEVD17.2.P-N20-Mo-B20-O0-F030-EU6-HGAG_-LL-RL____________________#9VT9G40B#9G4LAHX2");
+        let values = decode_bmw_routine_0205(&payload).unwrap();
+        assert_eq!(values.software, "00001C9F029150001");
+        assert_eq!(values.controller_family, "MEVD17.2.9");
+        assert!(values
+            .variant
+            .starts_with("MEVD17.2.P-N20-Mo-B20-O0-F030-EU6"));
+        assert_eq!(values.emissions, "EU6");
+    }
+
+    #[test]
+    fn decodes_captured_mhd_n20_0205_bootloader_response() {
+        let mut payload = vec![
+            0x71, 0x01, 0x02, 0x05, 0x50, 0x02, 0x01, 0x00, 0x00, 0x19, 0xA6, 0x01, 0x13, 0x03,
+            0x01, 0x00, 0x00, 0x13, 0xE4, 0x01, 0x0C, 0x02, b'#',
+        ];
+        payload.extend_from_slice(b"DME-MEVD17.2.9_____#C1#BTL##MEVD17.2.9-CB_L6C-D6.2.0_G.5.18.1");
+        let values = decode_bmw_routine_0205(&payload).unwrap();
+        assert_eq!(values.controller_family, "MEVD17.2.9");
+        assert_eq!(values.variant, "MEVD17.2.9-CB_L6C-D6.2.0_G.5.18.1");
+    }
+
+    #[test]
+    fn merges_bmw_0205_results_from_calibration_and_bootloader_reads() {
+        let mut calibration = BmwRoutine0205Values::default();
+        calibration.raw_hex = "cal-raw".into();
+        calibration.software = "software-id".into();
+        calibration.controller_family = "MEVD17.2.9".into();
+        calibration.variant = "MEVD17.2.P-N20".into();
+        calibration.emissions = "EU6".into();
+        let mut bootloader = BmwRoutine0205Values::default();
+        bootloader.raw_hex = "boot-raw".into();
+        bootloader.controller_family = "MEVD17.2.9".into();
+        bootloader.variant = "MEVD17.2.9-CB".into();
+        let values = merge_bmw_routine_0205_values(Some(calibration), Some(bootloader));
+        assert_eq!(values.software, "software-id");
+        assert_eq!(
+            values.variant,
+            "Software: MEVD17.2.P-N20; bootloader: MEVD17.2.9-CB"
+        );
+        assert_eq!(values.raw_hex, "CAL cal-raw | BTLD boot-raw");
+        assert_eq!(values.emissions, "EU6");
     }
 
     #[test]

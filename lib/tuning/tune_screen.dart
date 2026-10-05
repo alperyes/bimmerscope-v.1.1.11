@@ -6,7 +6,9 @@ import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:bmw_app/vehicle/vehicle_capabilities.dart';
 import 'package:bmw_app/vehicle/vehicle_identity.dart';
+import 'package:bmw_app/vehicle/dme_identifier_format.dart';
 import 'package:bmw_app/tuning/stock_file_store.dart';
+import 'package:bmw_app/tuning/read_dme2_screen.dart';
 import 'package:bmw_app/tuning/tune_product.dart';
 import 'package:bmw_app/tuning/tuner_package.dart';
 import 'package:bmw_app/logging/data_logger.dart';
@@ -23,7 +25,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:crypto/crypto.dart';
 import 'package:lottie/lottie.dart';
 
 class TuneScreen extends StatefulWidget {
@@ -51,6 +52,15 @@ class TuneScreen extends StatefulWidget {
     required this.engineEcuSgbdIndex,
     required this.engineEcuSerialNumber,
     required this.engineEcuManufacturingDate,
+    required this.engineEcuLastFlashDate,
+    required this.engineFactoryHardware,
+    required this.engineFactoryBootloader,
+    required this.engineFactorySoftware,
+    required this.engineFactoryCalibration,
+    required this.engineSupplierHardware,
+    required this.engineSupplierBootloader,
+    required this.engineSupplierSoftware,
+    required this.engineSupplierCalibration,
     required this.engineEcuCodingId,
     required this.engineEcuCvn,
     required this.sessionId,
@@ -85,6 +95,15 @@ class TuneScreen extends StatefulWidget {
   final String? engineEcuSgbdIndex;
   final String? engineEcuSerialNumber;
   final String? engineEcuManufacturingDate;
+  final String? engineEcuLastFlashDate;
+  final String? engineFactoryHardware;
+  final String? engineFactoryBootloader;
+  final String? engineFactorySoftware;
+  final String? engineFactoryCalibration;
+  final String? engineSupplierHardware;
+  final String? engineSupplierBootloader;
+  final String? engineSupplierSoftware;
+  final String? engineSupplierCalibration;
   final String? engineEcuCodingId;
   final String? engineEcuCvn;
   final String sessionId;
@@ -107,10 +126,21 @@ class _TuneScreenState extends State<TuneScreen> {
     'Degraded',
   }.contains(widget.connectionLabel);
 
+  bool get _dmeRead2Available {
+    final engine = identifyVehicle(widget.vin)?.engine;
+    return _actionsAvailable &&
+        !widget.demoMode &&
+        !widget.simulatorMode &&
+        (engine == 'S55' ||
+            (engine == 'N20' && widget.vin == 'WBA3A52010F360747'));
+  }
+
   File? importedStockFile;
   int? importedStockFileSize;
   String? importedStockFileHash;
-  bool readingEcu = false;
+  CalibrationArtifactInspection? stockInspection;
+  String? stockSource;
+  bool readingEcu2 = false;
   final stockFileStore = StockFileStore();
   final tunerPackageStore = TunerPackageStore();
   final tunerRequestStore = TunerRequestStore();
@@ -277,12 +307,32 @@ class _TuneScreenState extends State<TuneScreen> {
   }
 
   Future<void> setStockFile(File file) async {
-    final bytes = await file.readAsBytes();
+    final inspection = await inspectCalibrationArtifact(file);
+    final metadataFile = File('${file.path}.metadata.json');
+    final legacyMetadataFile = File('${file.path}.json');
+    final sidecar = await metadataFile.exists()
+        ? metadataFile
+        : legacyMetadataFile;
+    String? source;
+    if (await sidecar.exists()) {
+      try {
+        final decoded = jsonDecode(await sidecar.readAsString());
+        if (decoded is Map<String, dynamic>) {
+          if (decoded['sha256'] == inspection.sha256) {
+            source = decoded['source'] as String?;
+          }
+        }
+      } catch (_) {
+        // Keep the file inspectable if optional metadata is damaged.
+      }
+    }
     if (!mounted) return;
     setState(() {
       importedStockFile = file;
-      importedStockFileSize = bytes.length;
-      importedStockFileHash = sha256.convert(bytes).toString();
+      importedStockFileSize = inspection.size;
+      importedStockFileHash = inspection.sha256;
+      stockInspection = inspection;
+      stockSource = source;
     });
   }
 
@@ -531,25 +581,31 @@ class _TuneScreenState extends State<TuneScreen> {
       ],
     );
     if (file == null || !mounted) return;
+    final inspection = await inspectCalibrationArtifact(File(file.path));
     final backup = await stockFileStore.importFile(
       sourcePath: file.path,
       vin: widget.vin,
+      metadata: {
+        'source': 'imported_file',
+        'importedAt': DateTime.now().toUtc().toIso8601String(),
+        'workspaceVin': widget.vin,
+        'originalFileName': file.name,
+        'inspection': inspection.toJson(),
+        'readStatus': 'compatibility_unverified',
+      },
     );
     await setStockFile(backup.file);
   }
 
-  Future<void> readEcuCalibration() async {
-    if (readingEcu ||
-        widget.connectionLabel != 'Connected' ||
-        widget.simulatorMode) {
-      return;
-    }
+  Future<void> readEcuCalibration2() async {
+    if (readingEcu2 || !_dmeRead2Available) return;
+    final isN20Reference = identifyVehicle(widget.vin)?.engine == 'N20';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Read calibration from ECU?'),
+        title: const Text('Read DME 2?'),
         content: const Text(
-          'This performs a read-only 512 KiB ISTA-pattern read and saves an immutable ECU-read backup. It does not write to the vehicle.',
+          'Experimental read-only 0x23 memory reads over 0x80180000–0x801FFBFF, using up to 4,092-byte chunks. The captured BM3 flow also sends an unexplained 0x31 routine to ECU 0x40; this prototype omits that step and may not complete. It does not write to the DME.',
         ),
         actions: [
           TextButton(
@@ -558,28 +614,40 @@ class _TuneScreenState extends State<TuneScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Read ECU'),
+            child: const Text('Read DME 2'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => readingEcu = true);
+    setState(() => readingEcu2 = true);
+    var sessionPaused = false;
     try {
-      final bytes = await rust_vehicle.readIstaS55Calibration();
+      await widget.onBeforeVehicleCheck();
+      sessionPaused = true;
+      final bytes = await rust_vehicle.readBm3S55Calibration();
       final backup = await stockFileStore.saveBytes(
         bytes: bytes,
         vin: widget.vin,
-        sourceName: 'ecu_read_ista_s55.bin',
+        sourceName: isN20Reference
+            ? 'n20_bench_80180000_7fc00.bin'
+            : 'ecu_read_bm3_pattern_s55.bin',
         metadata: {
           'source': 'live_enet',
           'readStatus': 'compatibility_unverified',
-          'profile': 'ista_s55_6MC9ED0B',
+          'readMethod': 'bm3_pattern_prototype',
+          'profile': isN20Reference
+              ? 'n20_bench_00001C9F1D9601_80180000_7FC00'
+              : 'bm3_s55_00001C9F029150001_80180000_7FC00',
           'dmeAddress': 0x12,
-          'softwareToken': '6MC9ED0B',
+          'softwareToken': isN20Reference
+              ? '00001C9F1D9601'
+              : '00001C9F029150001',
           'startAddress': '0x80180000',
-          'length': 0x80000,
-          'chunkSize': 0x100,
+          'length': 0x7FC00,
+          'chunkSize': 0xFFC,
+          'fullCalibrationRead': false,
+          'readKind': 'memory_region',
           'responseSid': '0x63',
           'vin': widget.vin,
           'sessionId': widget.sessionId,
@@ -594,17 +662,54 @@ class _TuneScreenState extends State<TuneScreen> {
       await setStockFile(backup.file);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ECU read saved: ${backup.fileName}')),
+          SnackBar(content: Text('DME read 2 saved: ${backup.fileName}')),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('ECU read stopped: $error')));
+        ).showSnackBar(SnackBar(content: Text('DME read stopped: $error')));
       }
     } finally {
-      if (mounted) setState(() => readingEcu = false);
+      if (sessionPaused) {
+        try {
+          await widget.onAfterVehicleCheck();
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Vehicle reconnect failed: $error')),
+            );
+          }
+        }
+      }
+      if (mounted) setState(() => readingEcu2 = false);
+    }
+  }
+
+  Future<void> openReadDme2Page() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ReadDme2Screen(
+          vin: widget.vin,
+          isN20Reference: identifyVehicle(widget.vin)?.engine == 'N20',
+          canRead: () => mounted && _dmeRead2Available,
+          onRead: readEcuCalibration2,
+          onCancel: rust_vehicle.cancelBm3S55Calibration,
+          store: stockFileStore,
+        ),
+      ),
+    );
+    final selected = importedStockFile;
+    if (selected != null && !await selected.exists() && mounted) {
+      setState(() {
+        importedStockFile = null;
+        importedStockFileSize = null;
+        importedStockFileHash = null;
+        stockInspection = null;
+        stockSource = null;
+      });
+      await loadBackup();
     }
   }
 
@@ -1086,6 +1191,15 @@ class _TuneScreenState extends State<TuneScreen> {
         bootloader: widget.engineEcuBootloader,
         calibration: widget.engineEcuCalibration,
         manufacturingDate: widget.engineEcuManufacturingDate,
+        lastFlashDate: widget.engineEcuLastFlashDate,
+        factoryHardware: widget.engineFactoryHardware,
+        factoryBootloader: widget.engineFactoryBootloader,
+        factorySoftware: widget.engineFactorySoftware,
+        factoryCalibration: widget.engineFactoryCalibration,
+        supplierHardware: widget.engineSupplierHardware,
+        supplierBootloader: widget.engineSupplierBootloader,
+        supplierSoftware: widget.engineSupplierSoftware,
+        supplierCalibration: widget.engineSupplierCalibration,
         codingId: widget.engineEcuCodingId,
       ),
     ),
@@ -1179,7 +1293,7 @@ class _TuneScreenState extends State<TuneScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1189,7 +1303,37 @@ class _TuneScreenState extends State<TuneScreen> {
                   connectionLabel: widget.connectionLabel,
                   onCheckVehicle: showTuneReadiness,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    key: const Key('tune-read-dme-2'),
+                    onPressed: readingEcu2 ? null : openReadDme2Page,
+                    icon: readingEcu2
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.memory_outlined),
+                    label: Text(readingEcu2 ? 'Reading…' : 'Read DME 2'),
+                  ),
+                ),
+                if (readingEcu2)
+                  TextButton.icon(
+                    onPressed: rust_vehicle.cancelBm3S55Calibration,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Cancel DME read'),
+                  ),
+                const SizedBox(height: 8),
+                _DmeStatusStrip(
+                  isDark: widget.isDark,
+                  softwareId: widget.engineEcuSoftware,
+                  stockSource: importedStockFile == null
+                      ? null
+                      : stockSource ?? 'unknown',
+                ),
+                const SizedBox(height: 8),
                 _TuneActionMenu(
                   isDark: widget.isDark,
                   enabled: _actionsAvailable,
@@ -1231,7 +1375,6 @@ class _TuneScreenState extends State<TuneScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
                 Builder(
                   builder: (context) {
                     final workspace = Container(
@@ -1364,6 +1507,42 @@ class _TuneScreenState extends State<TuneScreen> {
                                         context,
                                       ).textTheme.bodySmall,
                                     ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      stockSource == 'live_enet'
+                                          ? 'Source: ECU read · compatibility unverified'
+                                          : 'Source: imported file · compatibility unverified',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                    if (stockInspection?.filenameVin != null)
+                                      Text(
+                                        'Filename VIN: ${stockInspection!.filenameVin}${stockInspection!.filenameVin == widget.vin ? '' : ' · differs from active vehicle'}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    if (stockInspection?.filenameEcuId != null)
+                                      Text(
+                                        'Filename ECU ID: ${stockInspection!.filenameEcuId}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    if (stockInspection?.binaryMarker != null)
+                                      Text(
+                                        'BIN marker: ${stockInspection!.binaryMarker}',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    SelectableText(
+                                      'SHA-256: $importedStockFileHash',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
                                   ],
                                   const SizedBox(height: 12),
                                   OutlinedButton.icon(
@@ -1377,35 +1556,10 @@ class _TuneScreenState extends State<TuneScreen> {
                                           : 'Replace stock file',
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  OutlinedButton.icon(
-                                    onPressed: readingEcu
-                                        ? null
-                                        : readEcuCalibration,
-                                    icon: readingEcu
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(Icons.memory_outlined),
-                                    label: Text(
-                                      readingEcu
-                                          ? 'Reading ECU…'
-                                          : 'Read calibration from ECU',
-                                    ),
-                                  ),
-                                  if (readingEcu) ...[
-                                    const SizedBox(height: 8),
-                                    TextButton.icon(
-                                      onPressed:
-                                          rust_vehicle.cancelIstaS55Calibration,
-                                      icon: const Icon(
-                                        Icons.stop_circle_outlined,
-                                      ),
-                                      label: const Text('Cancel ECU read'),
+                                  if (widget.vin == 'WBA3A52010F360747') ...[
+                                    const SizedBox(height: 6),
+                                    const Text(
+                                      'Bench DME 00001C9F1D9601: file import is available. The supplied capture shows identity and short memory probes, but no complete BIN read sequence yet.',
                                     ),
                                   ],
                                   if (importedStockFile != null) ...[
@@ -1747,13 +1901,6 @@ class _TuneScreenState extends State<TuneScreen> {
                         : const SizedBox.shrink();
                   },
                 ),
-                const SizedBox(height: 12),
-                _VehicleSnapshotStrip(
-                  isDark: widget.isDark,
-                  connectionLabel: widget.connectionLabel,
-                  vin: widget.vin,
-                  mileageKm: widget.mileageKm,
-                ),
               ],
             ),
           ),
@@ -2036,27 +2183,33 @@ class _TuneProductTag extends StatelessWidget {
   );
 }
 
-class _VehicleSnapshotStrip extends StatelessWidget {
-  const _VehicleSnapshotStrip({
+class _DmeStatusStrip extends StatelessWidget {
+  const _DmeStatusStrip({
     required this.isDark,
-    required this.connectionLabel,
-    required this.vin,
-    required this.mileageKm,
+    required this.softwareId,
+    required this.stockSource,
   });
 
   final bool isDark;
-  final String connectionLabel;
-  final String vin;
-  final double? mileageKm;
+  final String? softwareId;
+  final String? stockSource;
 
   @override
   Widget build(BuildContext context) {
     final muted = AppPalette.secondary(isDark);
-    final connected = connectionLabel == 'Connected';
-    final vehicleId = vin == 'Not identified' || vin.isEmpty ? '—' : vin;
-    final mileage = mileageKm == null ? '—' : '${mileageKm!.round()} km';
+    final software = softwareId?.trim();
+    final displaySoftware = software != null && software.startsWith('0000')
+        ? software.substring(4)
+        : software;
+    final backup = switch (stockSource) {
+      'live_enet' => 'ECU read',
+      'imported_file' => 'Imported',
+      null => 'None',
+      _ => 'Saved',
+    };
 
     return Container(
+      key: const Key('tune-dme-status-strip'),
       padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 8),
       decoration: BoxDecoration(
         color: AppPalette.surface(isDark),
@@ -2066,28 +2219,30 @@ class _VehicleSnapshotStrip extends StatelessWidget {
         children: [
           Expanded(
             child: _item(
-              icon: connected ? Icons.link_rounded : Icons.link_off_rounded,
-              label: 'Connection',
-              value: connectionLabel,
-              valueColor: connected ? AppPalette.green : muted,
+              icon: Icons.memory_outlined,
+              label: 'DME software',
+              value: displaySoftware == null || displaySoftware.isEmpty
+                  ? 'Not read'
+                  : displaySoftware,
               muted: muted,
             ),
           ),
           _divider(muted),
           Expanded(
             child: _item(
-              icon: Icons.confirmation_number_outlined,
-              label: 'VIN',
-              value: vehicleId,
+              icon: Icons.lock_outline_rounded,
+              label: 'Unlock status',
+              value: 'Unverified',
               muted: muted,
             ),
           ),
           _divider(muted),
           Expanded(
             child: _item(
-              icon: Icons.route_outlined,
-              label: 'Mileage',
-              value: mileage,
+              icon: Icons.save_outlined,
+              label: 'Stock backup',
+              value: backup,
+              valueColor: stockSource == null ? null : AppPalette.green,
               muted: muted,
             ),
           ),
@@ -2178,9 +2333,9 @@ class _TuneActionMenu extends StatelessWidget {
               itemCount: primaryActions.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                mainAxisExtent: 152,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                mainAxisExtent: 100,
               ),
               itemBuilder: (context, index) => _TuneActionTile(
                 isDark: isDark,
@@ -2191,7 +2346,7 @@ class _TuneActionMenu extends StatelessWidget {
           },
         ),
         if (requestAction != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _TuneRequestTile(
             isDark: isDark,
             enabled: enabled,
@@ -2232,31 +2387,31 @@ class _TuneActionTile extends StatelessWidget {
           child: Opacity(
             opacity: enabled ? 1 : .45,
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Container(
-                        width: 42,
-                        height: 42,
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
                           color: AppPalette.blue.withValues(
                             alpha: isDark ? .18 : .1,
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
                           item.icon,
                           color: AppPalette.blue,
-                          size: 21,
+                          size: 18,
                         ),
                       ),
                       const Spacer(),
                       Icon(
                         Icons.chevron_right_rounded,
-                        size: 22,
+                        size: 19,
                         color: AppPalette.secondary(isDark),
                       ),
                     ],
@@ -2267,19 +2422,9 @@ class _TuneActionTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppPalette.secondary(isDark),
-                      height: 1.2,
+                      fontSize: 13,
+                      height: 1.12,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
@@ -2317,17 +2462,17 @@ class _TuneRequestTile extends StatelessWidget {
         child: Opacity(
           opacity: enabled ? 1 : .45,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
             child: Row(
               children: [
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: AppPalette.blue.withValues(alpha: isDark ? .2 : .12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(item.icon, color: AppPalette.blue, size: 21),
+                  child: Icon(item.icon, color: AppPalette.blue, size: 19),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -2527,6 +2672,15 @@ class _EcuIdentityPage extends StatelessWidget {
     required this.bootloader,
     required this.calibration,
     required this.manufacturingDate,
+    required this.lastFlashDate,
+    required this.factoryHardware,
+    required this.factoryBootloader,
+    required this.factorySoftware,
+    required this.factoryCalibration,
+    required this.supplierHardware,
+    required this.supplierBootloader,
+    required this.supplierSoftware,
+    required this.supplierCalibration,
     required this.codingId,
   });
 
@@ -2538,21 +2692,20 @@ class _EcuIdentityPage extends StatelessWidget {
   final String? bootloader;
   final String? calibration;
   final String? manufacturingDate;
+  final String? lastFlashDate;
+  final String? factoryHardware;
+  final String? factoryBootloader;
+  final String? factorySoftware;
+  final String? factoryCalibration;
+  final String? supplierHardware;
+  final String? supplierBootloader;
+  final String? supplierSoftware;
+  final String? supplierCalibration;
   final String? codingId;
 
   @override
   Widget build(BuildContext context) {
     final muted = AppPalette.secondary(isDark);
-    final fields = <(String, String?)>[
-      ('VIN', vin),
-      ('Hardware ID (HWEL)', hardware),
-      ('Software ID (SWFL)', software),
-      ('Bootloader ID (BTLD)', bootloader),
-      ('Calibration ID (SWFL)', calibration),
-      ('Raw ECU ID (F1 50)', identity),
-      ('Manufactured', manufacturingDate),
-      ('Coding ID (CAFD)', codingId),
-    ];
     return Scaffold(
       backgroundColor: AppPalette.background(isDark),
       appBar: AppBar(
@@ -2586,31 +2739,117 @@ class _EcuIdentityPage extends StatelessWidget {
       body: SafeArea(
         top: false,
         child: LayoutBuilder(
-          builder: (context, constraints) {
-            final itemWidth = (constraints.maxWidth - 42) / 2;
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 18,
-                children: [
-                  for (final field in fields)
-                    SizedBox(
-                      width: itemWidth,
-                      child: _EcuIdentityField(
-                        label: field.$1,
-                        value: field.$2,
-                        muted: muted,
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _identityFields([
+                  ('VIN', vin),
+                  ('Diagnostic ECU ID', identity),
+                  ('ECU Manufactured', manufacturingDate),
+                ], muted),
+                const SizedBox(height: 20),
+                _identityGroup(
+                  title: 'Factory software',
+                  accent: muted,
+                  muted: muted,
+                  fields: [
+                    ('Hardware ID (HWEL)', factoryHardware),
+                    ('Bootloader ID (BTLD)', factoryBootloader),
+                    ('Software ID (SWFL)', factorySoftware),
+                    ('Calibration ID (SWFL)', factoryCalibration),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _identityGroup(
+                  title: 'Supplier software',
+                  accent: muted,
+                  muted: muted,
+                  fields: [
+                    ('Hardware ID (HWEL)', supplierHardware),
+                    ('Bootloader ID (BTLD)', supplierBootloader),
+                    ('Software ID (SWFL)', supplierSoftware),
+                    ('Calibration ID (SWFL)', supplierCalibration),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _identityGroup(
+                  title: 'Current software',
+                  accent: AppPalette.blue,
+                  muted: muted,
+                  fields: [
+                    ('Hardware ID (HWEL)', hardware),
+                    ('Bootloader ID (BTLD)', bootloader),
+                    ('Software ID (SWFL)', software),
+                    ('Calibration ID (SWFL)', calibration),
+                    ('Coding ID (CAFD)', codingId),
+                    ('Last flash date', lastFlashDate),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
+
+  Widget _identityGroup({
+    required String title,
+    required Color accent,
+    required Color muted,
+    required List<(String, String?)> fields,
+  }) => Container(
+    padding: const EdgeInsets.fromLTRB(14, 14, 12, 12),
+    decoration: BoxDecoration(
+      color: accent.withValues(alpha: .08),
+      borderRadius: BorderRadius.circular(12),
+      border: Border(left: BorderSide(color: accent, width: 4)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: accent,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _identityFields(fields, muted),
+      ],
+    ),
+  );
+
+  Widget _identityFields(List<(String, String?)> fields, Color muted) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth < 350
+              ? constraints.maxWidth
+              : (constraints.maxWidth - 10) / 2;
+          return Wrap(
+            spacing: 10,
+            runSpacing: 18,
+            children: [
+              for (final field in fields)
+                SizedBox(
+                  width: itemWidth,
+                  child: _EcuIdentityField(
+                    label: field.$1,
+                    value: field.$2,
+                    muted: muted,
+                  ),
+                ),
+            ],
+          );
+        },
+      );
 }
 
 class _EcuIdentityField extends StatelessWidget {
@@ -2627,6 +2866,7 @@ class _EcuIdentityField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shown = value?.trim().isNotEmpty == true ? value!.trim() : 'Not read';
+    final raw = rawDmeComponentId(shown);
     final valueColor = shown == 'Not read'
         ? muted.withValues(alpha: .82)
         : Theme.of(context).colorScheme.onSurface;
@@ -2647,7 +2887,7 @@ class _EcuIdentityField extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           SelectableText(
-            shown,
+            formatDmeComponentId(shown),
             maxLines: 1,
             textAlign: TextAlign.start,
             style: TextStyle(
@@ -2658,6 +2898,18 @@ class _EcuIdentityField extends StatelessWidget {
               fontFamily: 'monospace',
             ),
           ),
+          if (raw != null) ...[
+            const SizedBox(height: 5),
+            SelectableText(
+              raw,
+              maxLines: 1,
+              style: TextStyle(
+                color: muted,
+                fontSize: 11,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -2909,6 +3161,7 @@ class _TuneReadinessPanel extends StatelessWidget {
       container: true,
       label: 'Tune. $statusDetail',
       child: Container(
+        key: const Key('tune-hero-card'),
         height: appTopActionCardHeight,
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
         decoration: BoxDecoration(
@@ -2941,12 +3194,8 @@ class _TuneReadinessPanel extends StatelessWidget {
                             ),
                           )
                         : Icon(
-                            connected
-                                ? Icons.check_circle_rounded
-                                : Icons.link_off_rounded,
-                            key: ValueKey(
-                              connected ? 'ready-icon' : 'offline-icon',
-                            ),
+                            Icons.tune_rounded,
+                            key: const ValueKey('tune-icon'),
                             color: statusColor,
                             size: 22,
                           ),

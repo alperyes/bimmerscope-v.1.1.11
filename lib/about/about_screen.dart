@@ -52,7 +52,13 @@ class AboutScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                _AboutRow(label: 'Version', value: BuildInfo.version),
+                FutureBuilder<String>(
+                  future: BuildInfo.version,
+                  builder: (context, snapshot) => _AboutRow(
+                    label: 'Version',
+                    value: snapshot.data ?? 'Version unavailable',
+                  ),
+                ),
                 const Divider(height: 1),
                 _AboutRow(label: 'Build date', value: BuildInfo.date),
                 const Divider(height: 1),
@@ -70,7 +76,7 @@ class AboutScreen extends StatelessWidget {
           _valueCard(isDark: isDark),
           const SizedBox(height: 18),
           Text(
-            'Diagnostics, monitoring, logging, flap control, and read-only S55 preparation.',
+            'Diagnose, monitor, log, control flaps, and review read-only S55 preparation.',
             style: TextStyle(color: secondary, height: 1.45),
             textAlign: TextAlign.center,
           ),

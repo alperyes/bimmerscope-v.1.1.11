@@ -16,6 +16,9 @@ class CalibrationArtifactInspection {
     required this.declaredCompatibility,
     required this.signatureStatus,
     required this.notes,
+    this.filenameVin,
+    this.filenameEcuId,
+    this.binaryMarker,
   });
 
   final String fileName;
@@ -28,6 +31,11 @@ class CalibrationArtifactInspection {
   final String signatureStatus;
   final List<String> notes;
 
+  /// Filename claims are unverified and are never treated as ECU evidence.
+  final String? filenameVin;
+  final String? filenameEcuId;
+  final String? binaryMarker;
+
   Map<String, dynamic> toJson() => {
     'file_name': fileName,
     'sha256': sha256,
@@ -38,6 +46,9 @@ class CalibrationArtifactInspection {
     'declared_compatibility': declaredCompatibility,
     'signature_status': signatureStatus,
     'notes': notes,
+    'filename_vin': filenameVin,
+    'filename_ecu_id': filenameEcuId,
+    'binary_marker': binaryMarker,
   };
 }
 
@@ -56,6 +67,11 @@ Future<CalibrationArtifactInspection> inspectCalibrationArtifact(
     }
   } catch (_) {}
   if (manifest == null) {
+    final nameMatch = RegExp(
+      r'([A-HJ-NPR-Z0-9]{17})_([0-9A-F]{14})',
+      caseSensitive: false,
+    ).firstMatch(fileName);
+    final marker = _binaryMarker(bytes);
     return CalibrationArtifactInspection(
       fileName: fileName,
       sha256: digest,
@@ -65,8 +81,11 @@ Future<CalibrationArtifactInspection> inspectCalibrationArtifact(
       revision: null,
       declaredCompatibility: null,
       signatureStatus: 'not_verifiable',
+      filenameVin: nameMatch?.group(1)?.toUpperCase(),
+      filenameEcuId: nameMatch?.group(2)?.toUpperCase(),
+      binaryMarker: marker,
       notes: const [
-        'Raw calibration artifacts are retained for professional review only.',
+        'Filename identifiers and binary markers do not verify ECU compatibility.',
       ],
     );
   }
@@ -83,4 +102,11 @@ Future<CalibrationArtifactInspection> inspectCalibrationArtifact(
       'Manifest signatures require an approved provider public key before they can be trusted.',
     ],
   );
+}
+
+String? _binaryMarker(List<int> bytes) {
+  // A narrow, passive inspection of the file header. Do not interpret map
+  // addresses or claim a format from arbitrary printable data elsewhere.
+  final prefix = latin1.decode(bytes.take(256).toList());
+  return RegExp(r'MEVD17[._0-9A-Za-z]{1,20}').firstMatch(prefix)?.group(0);
 }

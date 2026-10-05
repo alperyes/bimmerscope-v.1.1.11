@@ -14,6 +14,11 @@ class StockFileBackup {
 }
 
 class StockFileStore {
+  StockFileStore({Future<Directory> Function()? directoryProvider})
+    : _directoryProvider = directoryProvider;
+
+  final Future<Directory> Function()? _directoryProvider;
+
   Future<StockFileBackup?> load(String vin) async {
     final files = await loadAll(vin);
     if (files.isEmpty) return null;
@@ -27,7 +32,14 @@ class StockFileStore {
         .list()
         .where(
           (entry) =>
-              entry is File && entry.uri.pathSegments.last.startsWith(prefix),
+              entry is File &&
+              entry.uri.pathSegments.last.startsWith(prefix) &&
+              !entry.path.endsWith('.metadata.json') &&
+              !RegExp(
+                r'\.(bin|ori|hex|json)\.json$',
+                caseSensitive: false,
+              ).hasMatch(entry.path) &&
+              !entry.path.endsWith('.part'),
         )
         .cast<File>()
         .toList();
@@ -38,6 +50,7 @@ class StockFileStore {
   Future<StockFileBackup> importFile({
     required String sourcePath,
     required String vin,
+    Map<String, Object?>? metadata,
   }) async {
     final source = File(sourcePath);
     final directory = await _directory();
@@ -63,6 +76,18 @@ class StockFileStore {
     if (await temporary.exists()) await temporary.delete();
     await source.copy(temporary.path);
     await temporary.rename(destination.path);
+    if (metadata != null) {
+      final sidecar = File('${destination.path}.metadata.json');
+      await sidecar.writeAsString(
+        const JsonEncoder.withIndent('  ').convert({
+          ...metadata,
+          'artifact': destination.uri.pathSegments.last,
+          'sha256': sha256.convert(await destination.readAsBytes()).toString(),
+          'byteCount': await destination.length(),
+        }),
+        flush: true,
+      );
+    }
     return StockFileBackup(file: destination, vin: vin);
   }
 
@@ -97,7 +122,27 @@ class StockFileStore {
     return StockFileBackup(file: destination, vin: vin);
   }
 
+  Future<void> deleteBackup({required File file, required String vin}) async {
+    final backups = await loadAll(vin);
+    if (!backups.any(
+      (backup) => backup.file.absolute.uri.normalizePath() ==
+          file.absolute.uri.normalizePath(),
+    )) {
+      throw const FileSystemException('Saved BIN is not available for this vehicle');
+    }
+    await file.delete();
+    for (final suffix in ['.metadata.json', '.json']) {
+      final sidecar = File('${file.path}$suffix');
+      if (await sidecar.exists()) await sidecar.delete();
+    }
+  }
+
   Future<Directory> _directory() async {
+    if (_directoryProvider != null) {
+      final directory = await _directoryProvider();
+      if (!await directory.exists()) await directory.create(recursive: true);
+      return directory;
+    }
     final documents = await getApplicationDocumentsDirectory();
     final directory = Directory('${documents.path}/BimmerScope/stock_backups');
     if (!await directory.exists()) await directory.create(recursive: true);
