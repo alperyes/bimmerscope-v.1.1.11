@@ -59,4 +59,23 @@ void main() {
       isFalse,
     );
   });
+
+  test('enables flap control for F30 328i but not F30 320i', () {
+    final f30_328i = identifyVehicle('WBA3A53010F360747')!;
+    final f30_320i = identifyVehicle('WBA3B10010F360747')!;
+
+    expect(f30_328i.profile.supports(VehicleCapability.flapControl), isTrue);
+    expect(f30_320i.profile.supports(VehicleCapability.flapControl), isFalse);
+  });
+
+  test('assigns the F22 228i its F-series N20 profile', () {
+    final f22_228i = identifyVehicle('WBA1F5100E0000000')!;
+    final profile = f22_228i.profile;
+
+    expect(profile.id, 'f22-f-series-n20');
+    expect(profile.chassis, 'F22');
+    expect(profile.ecu?.family, EcuFamily.mevd1724);
+    expect(profile.supports(VehicleCapability.diagnostics), isTrue);
+    expect(profile.supports(VehicleCapability.flapControl), isFalse);
+  });
 }

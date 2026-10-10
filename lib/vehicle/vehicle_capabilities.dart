@@ -135,6 +135,11 @@ const _readOnlyCalibrationReview = {
   VehicleCapability.calibrationRead,
 };
 
+const _f30N20_328iCapabilities = {
+  ..._readOnlyCalibrationReview,
+  VehicleCapability.flapControl,
+};
+
 const vehicleProfiles = <VehicleProfile>[
   VehicleProfile(
     id: 'f82-s55',
@@ -262,12 +267,49 @@ bool _identityMatchesFamily(String ecuIdentity, EcuFamily family) {
 }
 
 VehicleProfile profileFor(VehicleIdentity identity) {
+  if (identity.chassis == 'F30' &&
+      identity.engine == 'N20' &&
+      identity.model.toUpperCase() == '328I') {
+    return const VehicleProfile(
+      id: 'f30-n20-328i',
+      label: 'F30 328i · N20',
+      chassis: 'F30',
+      engines: ['N20'],
+      capabilities: _f30N20_328iCapabilities,
+      ecu: EcuIdentity(name: 'DME', family: EcuFamily.mevd1724),
+      confidence: ProfileConfidence.familyMatch,
+    );
+  }
   for (final profile in vehicleProfiles) {
     if (profile.chassis == identity.chassis &&
         (profile.engines.isEmpty ||
             profile.engines.contains(identity.engine))) {
       return profile;
     }
+    if (profile.chassis == 'F-series' &&
+        identity.chassis.startsWith('F') &&
+        profile.engines.contains(identity.engine)) {
+      return VehicleProfile(
+        id: '${identity.chassis.toLowerCase()}-${profile.id}',
+        label: '${identity.chassis} ${identity.model} · ${identity.engine}',
+        chassis: identity.chassis,
+        engines: profile.engines,
+        capabilities: profile.capabilities,
+        ecu: profile.ecu,
+        confidence: ProfileConfidence.familyMatch,
+      );
+    }
+  }
+  if (identity.chassis.startsWith('F')) {
+    return VehicleProfile(
+      id: '${identity.chassis.toLowerCase()}-vehicle-only',
+      label: '${identity.chassis} ${identity.model}',
+      chassis: identity.chassis,
+      engines: identity.engine.isEmpty ? const [] : [identity.engine],
+      capabilities: _readOnly,
+      ecu: null,
+      confidence: ProfileConfidence.vehicleOnly,
+    );
   }
   return const VehicleProfile(
     id: 'unsupported-f-series',

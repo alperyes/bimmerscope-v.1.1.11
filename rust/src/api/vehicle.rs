@@ -774,6 +774,14 @@ pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefi
             Some(4),
         ),
         data_identifier(
+            "n20_bench_battery_voltage",
+            "N20 bench DME battery voltage",
+            0x586A,
+            0x62,
+            "unsigned_u16_be",
+            Some(2),
+        ),
+        data_identifier(
             "s55_ecu_manufacturing_date",
             "S55 ECU manufacturing date",
             0xF18B,
@@ -1190,6 +1198,14 @@ impl VehicleEvent {
             transport_recovery_action: String::new(),
             transport_recovery_result: String::new(),
         }
+    }
+
+    fn vehicle_voltage(raw_value: u16) -> Self {
+        let mut event = Self::status("vehicle_voltage", "DME battery voltage (0x586A)");
+        event.ecu_address = ENGINE_ECU_ADDRESS;
+        event.raw_value = u32::from(raw_value);
+        event.value = f64::from(raw_value) * 0.00025 + 6.0;
+        event
     }
 
     fn sensor_with_transport(
@@ -1915,6 +1931,7 @@ pub fn experimental_exhaust_flap_set_position(mode: String) -> Result<(), String
     {
         return Err("Active DME identity has not been validated".into());
     }
+    validate_flap_control_vehicle()?;
     let sender = FLAP_COMMAND_SENDER
         .get_or_init(|| Mutex::new(None))
         .lock()
@@ -1934,6 +1951,36 @@ pub fn experimental_exhaust_flap_set_position(mode: String) -> Result<(), String
     reply_rx
         .recv_timeout(Duration::from_secs(5))
         .map_err(|_| "Timed out waiting for the live vehicle session".to_string())?
+}
+
+fn validate_flap_control_vehicle() -> Result<(), String> {
+    let binding = LAST_VALIDATED_VEHICLE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| "Vehicle identity lock poisoned".to_string())?;
+    let Some(vehicle) = binding.as_ref() else {
+        return Err("Active DME identity has not been validated".into());
+    };
+    // The N20 command path is enabled only for the identified bench DME. Keep
+    // the existing F82/S55 support and reject other vehicles at the Rust API
+    // boundary as well as in the Flutter capability gate.
+    if vehicle.vin == N20_BENCH_VIN
+        || vehicle.vin.starts_with("WBS3R92")
+        || is_f30_n20_328i_vin(&vehicle.vin)
+    {
+        Ok(())
+    } else {
+        Err("Exhaust flap control is not enabled for this vehicle profile".into())
+    }
+}
+
+fn is_f30_n20_328i_vin(vin: &str) -> bool {
+    const F30_N20_328I_TYPE_KEYS: &[&str] = &[
+        "3A50", "3A53", "3A57", "3A58", "3A59", "3B33", "3B37", "3B54", "3F35", "3F39", "3F55",
+        "3F59", "8E54", "8E70", "8E71", "8E73", "8E74", "8E77", "8M70", "8N50",
+    ];
+    vin.get(3..7)
+        .is_some_and(|type_key| F30_N20_328I_TYPE_KEYS.contains(&type_key))
 }
 
 #[frb(sync)]
@@ -2567,6 +2614,16 @@ fn read_data_identifier(
         return Err(format!("{} returned an invalid length", definition.name));
     }
     Ok(value.to_vec())
+}
+
+fn read_n20_bench_vehicle_voltage(stream: &mut TcpStream) -> Result<u16, String> {
+    let value = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "n20_bench_battery_voltage")?;
+    let raw = u16::from_be_bytes([value[0], value[1]]);
+    let voltage = f64::from(raw) * 0.00025 + 6.0;
+    if !(6.0..=22.0).contains(&voltage) {
+        return Err(format!("DME voltage out of range: {voltage:.2} V"));
+    }
+    Ok(raw)
 }
 
 fn enter_extended_session(stream: &mut TcpStream, ecu: u8) -> Result<(), String> {
@@ -3460,12 +3517,14 @@ fn poll_connection(
             "Live DME responding at 0x{ENGINE_ECU_ADDRESS:02X}; full ECU inventory deferred to an explicit diagnostics scan"
         ),
     ));
+    let n20_bench_voltage_supported = vin == N20_BENCH_VIN;
     let _ = sink.add(VehicleEvent::vin(vin));
     let _ = sink.add(VehicleEvent::status(
         "connected",
         "Diagnostic session active; live monitoring is paused",
     ));
     let _ = sink.add(VehicleEvent::status("identified", "Vehicle identified"));
+    let mut next_vehicle_voltage_read = Instant::now();
     while !stop.load(Ordering::Acquire) {
         let monitoring = monitoring_enabled().load(Ordering::Acquire);
         if monitoring != was_monitoring {
@@ -3490,6 +3549,7 @@ fn poll_connection(
                         ENGINE_ECU_ADDRESS,
                         &[0x2C, 0x03, DYNAMIC_DID_HIGH, DYNAMIC_DID_LOW],
                     )?;
+                    next_vehicle_voltage_read = Instant::now() + Duration::from_secs(1);
                 }
                 let _ = sink.add(VehicleEvent::status(
                     "monitoring_stopped",
@@ -3531,6 +3591,27 @@ fn poll_connection(
                 sensors = selected_sensors(&all_sensors);
                 index %= sensors.len();
             }
+        }
+        // A separate read for the Vehicle page. Keep it on this socket and
+        // outside the F300 polling transaction so replies cannot be mixed.
+        if n20_bench_voltage_supported
+            && !monitoring
+            && pending.is_none()
+            && flap_ack_deadline.is_none()
+            && Instant::now() >= next_vehicle_voltage_read
+        {
+            match read_n20_bench_vehicle_voltage(stream) {
+                Ok(raw) => {
+                    let _ = sink.add(VehicleEvent::vehicle_voltage(raw));
+                }
+                Err(error) => {
+                    let _ = sink.add(VehicleEvent::status(
+                        "vehicle_voltage_unavailable",
+                        error,
+                    ));
+                }
+            }
+            next_vehicle_voltage_read = Instant::now() + Duration::from_secs(10);
         }
         match stream.read(&mut scratch) {
             Ok(0) => {
@@ -4017,8 +4098,8 @@ fn build_exhaust_flap_cycle_request(control: [u8; 2]) -> [u8; 8] {
 
 fn build_live_exhaust_flap_request(control: [u8; 2]) -> [u8; 8] {
     if control == [0x14, 0x7A] {
-        // Match the BM3-captured live Open request. Keep the separate
-        // experimental ISTA service-test builder unchanged.
+        // The BM3-observed Open variant remains a distinct user-selectable
+        // mode. The BimmerScope cycle variant keeps its original 0A FF bytes.
         [0x2F, 0x60, 0xFD, 0x03, 0x14, 0x7A, 0xFA, 0xFF]
     } else {
         build_exhaust_flap_cycle_request(control)
@@ -4534,6 +4615,13 @@ mod tests {
             parse_exhaust_flap_io_response(&[0x6F, 0x60, 0xFD, 0x03], [0x14, 0x7A]),
             Ok(())
         );
+    }
+
+    #[test]
+    fn flap_vin_allowlist_matches_f30_328i_and_excludes_320i() {
+        assert!(is_f30_n20_328i_vin("WBA3A53010F360747"));
+        assert!(is_f30_n20_328i_vin("WBA8E71010F360747"));
+        assert!(!is_f30_n20_328i_vin("WBA3B10010F360747"));
     }
 
     #[test]

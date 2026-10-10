@@ -117,6 +117,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   final ValueNotifier<String> connectionStatus = ValueNotifier('Not connected');
   String vin = 'Not identified';
   double? mileageKm;
+  double? vehicleDmeVoltage;
+  DateTime? vehicleDmeVoltageAt;
   bool engineEcuDetected = false;
   String flapMode = 'auto';
   bool flapAutoApply = false;
@@ -406,6 +408,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   void clearVehicleIdentity() {
     vin = 'Not identified';
     mileageKm = null;
+    vehicleDmeVoltage = null;
+    vehicleDmeVoltageAt = null;
     flapMode = 'auto';
     engineEcuDetected = false;
     engineEcuIdentity = null;
@@ -1768,6 +1772,12 @@ class _DashboardScreenState extends State<DashboardScreen>
         engineEcuLastFlashDate = event.message.isEmpty ? null : event.message;
       } else if (event.kind == 'mileage') {
         mileageKm = event.value;
+      } else if (event.kind == 'vehicle_voltage') {
+        vehicleDmeVoltage = event.value;
+        vehicleDmeVoltageAt = DateTime.now();
+      } else if (event.kind == 'vehicle_voltage_unavailable') {
+        vehicleDmeVoltage = null;
+        vehicleDmeVoltageAt = null;
       } else {
         const phases = {
           'connected',
@@ -2936,6 +2946,57 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 );
                               },
                             ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: Container(
+                      key: const Key('vehicle-dme-voltage'),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppPalette.surface(widget.isDark),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.battery_charging_full_rounded),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('DME voltage · 0x586A'),
+                                Text(
+                                  vin == 'WBA3A52010F360747'
+                                      ? monitoringActive
+                                            ? 'Paused during live monitoring'
+                                            : 'N20 bench · refreshes every 10 seconds'
+                                      : 'Validated on the N20 bench DME only',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppPalette.secondary(widget.isDark),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            vin == 'WBA3A52010F360747' &&
+                                    !monitoringActive &&
+                                    vehicleDmeVoltage != null &&
+                                    vehicleDmeVoltageAt != null &&
+                                    DateTime.now()
+                                            .difference(vehicleDmeVoltageAt!)
+                                            .inSeconds <
+                                        30
+                                ? '${vehicleDmeVoltage!.toStringAsFixed(2)} V'
+                                : '—',
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),
@@ -4722,6 +4783,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                       : const Color(0xFF123B86),
                   disabledBackgroundColor: Colors.white.withValues(alpha: .18),
                   disabledForegroundColor: Colors.white.withValues(alpha: .65),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
@@ -4905,13 +4970,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                     ? Icons.stop_circle_outlined
                     : Icons.play_circle_outline_rounded,
               ),
-              label: Text(monitoringActive ? 'Stop' : 'Start'),
+              label: Text(
+                monitoringActive ? 'Stop' : 'Start',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(48),
                 backgroundColor: monitoringActive
                     ? AppPalette.red
                     : AppPalette.blue,
                 foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),
@@ -5241,6 +5316,54 @@ class VehicleDetailsScreen extends StatelessWidget {
                 _value(engineEcuDiagnosticSession),
                 secondary,
               ),
+              if ([
+                engineEcuBmwControllerFamily,
+                engineEcuBmwVariant,
+                engineEcuBmwRoutine0205Software,
+                engineEcuBmwTransmission,
+                engineEcuBmwEmissions,
+                engineEcuBmwInternalToken,
+              ].any((value) => value != null && value.isNotEmpty)) ...[
+                const SizedBox(height: 16),
+                _identityGroup(
+                  title: 'BMW routine 0x0205',
+                  accent: AppPalette.blue,
+                  children: [
+                    _detail(
+                      'Controller family',
+                      _value(engineEcuBmwControllerFamily),
+                      secondary,
+                    ),
+                    _detail(
+                      'Variant',
+                      _value(engineEcuBmwVariant),
+                      secondary,
+                      identifier: true,
+                    ),
+                    _detail(
+                      'Software identifier',
+                      _value(engineEcuBmwRoutine0205Software),
+                      secondary,
+                      identifier: true,
+                    ),
+                    _detail(
+                      'Transmission token',
+                      _value(engineEcuBmwTransmission),
+                      secondary,
+                    ),
+                    _detail(
+                      'Emissions token',
+                      _value(engineEcuBmwEmissions),
+                      secondary,
+                    ),
+                    _detail(
+                      'Internal token',
+                      _value(engineEcuBmwInternalToken),
+                      secondary,
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ],

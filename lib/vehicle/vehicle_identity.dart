@@ -70,7 +70,7 @@ VehicleIdentity? identifyVehicle(String vin) {
   }
 
   // Exact N20 bench vehicle used for the capture-derived reference probes.
-  if (vin == 'WBA3A52010F360747') {
+  if (vin.trim().toUpperCase() == 'WBA3A52010F360747') {
     return VehicleIdentity(
       chassis: 'F30',
       model: '328i',
@@ -103,11 +103,68 @@ VehicleIdentity? identifyVehicle(String vin) {
     );
   }
 
+  // BMW F-generation VINs carry the four-character type key in positions
+  // 4–7. Resolve only complete F-series registry rows, and refuse ambiguous
+  // keys rather than guessing the vehicle model or engine.
+  if (normalized.length == 17 &&
+      normalized.codeUnits.every(
+        (unit) =>
+            (unit >= 0x30 && unit <= 0x39) || (unit >= 0x41 && unit <= 0x5A),
+      )) {
+    final typeKey = normalized.substring(3, 7);
+    final records = psdzVehicleRegistry
+        .where(
+          (entry) =>
+              entry['typeKey'] == typeKey &&
+              entry['series']?.startsWith('F') == true &&
+              entry['chassis']?.startsWith('F') == true &&
+              entry['model']?.isNotEmpty == true &&
+              entry['engineFamily']?.isNotEmpty == true &&
+              entry['engineVariant']?.isNotEmpty == true,
+        )
+        .toList(growable: false);
+    final identities = records
+        .map(
+          (entry) =>
+              '${entry['chassis']}|${entry['model']?.toUpperCase()}|'
+              '${entry['engineFamily']}|${entry['engineVariant']}',
+        )
+        .toSet();
+    if (records.isNotEmpty && identities.length == 1) {
+      final record = records.first;
+      return VehicleIdentity(
+        chassis: record['chassis']!,
+        model: _displayModel(record['model']!),
+        engine: record['engineFamily']!,
+        transmission: _transmissionFromHint(record['gearboxHint']),
+        modelYear: modelYear,
+        typeKey: typeKey,
+        market: '',
+        steering: '',
+        bodyStyle: record['bodyStyle'] ?? '',
+        gearboxHint: '',
+      );
+    }
+  }
+
   // An otherwise well-formed VIN is not enough to establish a supported
   // vehicle profile. Keep unknown identities absent so capability-gated
   // workflows cannot become available while disconnected or unverified.
   return null;
 }
+
+String _displayModel(String value) {
+  final model = value.trim();
+  if (model.isEmpty) return model;
+  if (RegExp(r'^\d').hasMatch(model)) return model.toLowerCase();
+  return '${model[0].toUpperCase()}${model.substring(1).toLowerCase()}';
+}
+
+String _transmissionFromHint(String? hint) => switch (hint?.toUpperCase()) {
+  'M' => 'Manual',
+  'A' => 'Automatic',
+  _ => 'Unknown',
+};
 
 int? _modelYearFromVin(String vin) {
   if (vin.length < 10) return null;

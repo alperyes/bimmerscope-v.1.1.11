@@ -538,14 +538,9 @@ class _TuneScreenState extends State<TuneScreen> {
               icon: const Icon(Icons.garage_outlined),
               label: const Text('Open vehicle garage'),
             ),
-            if (n20Check != null)
-              Text(
-                n20Check.result?.detail ??
-                    'N20 bench check failed: ${n20Check.error}',
-                style: const TextStyle(fontSize: 12),
-              )
-            else if (simulatorUnlockStatus == null ||
-                simulatorUnlockStatus == 'unknown')
+            if (n20Check == null &&
+                (simulatorUnlockStatus == null ||
+                    simulatorUnlockStatus == 'unknown'))
               const Text(
                 'DME preflight requires a validated VIN, hardware, software, bootloader, and calibration fingerprint.',
                 style: TextStyle(fontSize: 12),
@@ -603,7 +598,7 @@ class _TuneScreenState extends State<TuneScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Read DME 2?'),
+        title: const Text('Read DME?'),
         content: const Text(
           'Experimental read-only 0x23 memory reads over 0x80180000–0x801FFBFF, using up to 4,092-byte chunks. The captured BM3 flow also sends an unexplained 0x31 routine to ECU 0x40; this prototype omits that step and may not complete. It does not write to the DME.',
         ),
@@ -614,7 +609,7 @@ class _TuneScreenState extends State<TuneScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Read DME 2'),
+            child: const Text('Read DME'),
           ),
         ],
       ),
@@ -1316,7 +1311,7 @@ class _TuneScreenState extends State<TuneScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.memory_outlined),
-                    label: Text(readingEcu2 ? 'Reading…' : 'Read DME 2'),
+                    label: Text(readingEcu2 ? 'Reading…' : 'Read DME'),
                   ),
                 ),
                 if (readingEcu2)
@@ -3241,7 +3236,10 @@ class _TuneReadinessPanel extends StatelessWidget {
                   disabledForegroundColor: Colors.white.withValues(alpha: .65),
                 ),
                 icon: const Icon(Icons.manage_search_rounded, size: 20),
-                label: const Text('Check vehicle'),
+                label: const Text(
+                  'Check vehicle',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
               ),
             ),
           ],

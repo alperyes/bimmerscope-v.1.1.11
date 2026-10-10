@@ -437,7 +437,13 @@ class _LoggingScreenState extends State<LoggingScreen> {
                       : Icons.fiber_manual_record_rounded,
                   size: 20,
                 ),
-                label: Text(widget.isRecording ? 'Stop recording' : 'Record'),
+                label: Text(
+                  widget.isRecording ? 'Stop recording' : 'Record',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ],

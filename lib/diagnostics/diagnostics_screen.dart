@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bmw_app/src/rust/api/vehicle.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/section_title.dart';
@@ -559,7 +561,13 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                       ),
                     )
                   : const Icon(Icons.manage_search_rounded, size: 20),
-              label: Text(scanning ? 'Scanning' : 'Scan'),
+              label: Text(
+                scanning ? 'Scanning' : 'Scan',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],
@@ -921,10 +929,33 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Clear stored DTCs?'),
-        content: const Text(
-          '• Only continue with the vehicle stationary, ignition on, and the '
-          'cause of the fault understood.\n'
-          '• The command cannot be undone.',
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('•'),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Only continue with the vehicle stationary, ignition on, '
+                    'and the cause of the fault understood.',
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('•'),
+                SizedBox(width: 10),
+                Expanded(child: Text('The command cannot be undone.')),
+              ],
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -1017,11 +1048,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Reset DME?'),
-        content: const Text(
-          'This sends the captured 11 01 reset request to broadcast address '
-          '0xDF. Other vehicle modules may reset too. Keep the vehicle '
-          'stationary and the ignition on.',
-        ),
+        content: const Text('Keep the vehicle stationary and the ignition on.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1040,6 +1067,42 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
     if (confirmed != true || !mounted) return;
     final selectedVin = widget.vin.trim();
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final progressRoute = DialogRoute<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                const _ResetProgressMark(),
+                const SizedBox(height: 20),
+                const Text(
+                  'In progress',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 24),
+                const LinearProgressIndicator(color: AppPalette.orange),
+                const SizedBox(height: 24),
+                Text(
+                  'Resetting ECU…',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: AppPalette.secondary(widget.isDark),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    unawaited(navigator.push(progressRoute));
     setState(() {
       error = null;
       resettingDme = true;
@@ -1056,15 +1119,42 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       } finally {
         await widget.onAfterVehicleScan!.call();
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('DME reset acknowledged.')),
-        );
-      }
     } catch (exception) {
       if (mounted) setState(() => error = exception.toString());
     } finally {
+      if (progressRoute.isActive) navigator.removeRoute(progressRoute);
       if (mounted) setState(() => resettingDme = false);
+    }
+    if (mounted && error == null) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const Icon(
+                Icons.check_circle_rounded,
+                size: 56,
+                color: AppPalette.green,
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Success',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              const Text('DME has been successfully reset.'),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -1374,6 +1464,78 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       ),
     );
   }
+}
+
+class _ResetProgressMark extends StatefulWidget {
+  const _ResetProgressMark();
+
+  @override
+  State<_ResetProgressMark> createState() => _ResetProgressMarkState();
+}
+
+class _ResetProgressMarkState extends State<_ResetProgressMark>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 96,
+    height: 96,
+    child: AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => Stack(
+        alignment: Alignment.center,
+        children: [
+          _pulseRing(_controller.value),
+          _pulseRing((_controller.value + .5) % 1),
+          Container(
+            width: 58,
+            height: 58,
+            decoration: const BoxDecoration(
+              color: AppPalette.orange,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x668F4B00),
+                  blurRadius: 18,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.memory_rounded,
+              size: 34,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _pulseRing(double progress) => Transform.scale(
+    scale: .62 + progress * .38,
+    child: Opacity(
+      opacity: (1 - progress) * .72,
+      child: Container(
+        width: 88,
+        height: 88,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppPalette.orange, width: 1.5),
+        ),
+      ),
+    ),
+  );
 }
 
 const previewFaults = <DiagnosticTroubleCode>[
