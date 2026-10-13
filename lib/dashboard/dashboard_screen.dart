@@ -168,7 +168,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool landscape = false;
   String? fullscreenGaugeId;
   String? resizingSensorId;
-  int selectedTab = ProductConfig.tuningEnabled ? 4 : 0;
+  int selectedTab = 0;
   Timer? loggingTimer;
   Timer? telemetryWatchdog;
   Timer? _layoutSaveTimer;
@@ -2957,7 +2957,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                     child: Container(
                       key: const Key('vehicle-dme-voltage'),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
                       decoration: BoxDecoration(
                         color: AppPalette.surface(widget.isDark),
                         borderRadius: BorderRadius.circular(16),
@@ -2970,24 +2973,22 @@ class _DashboardScreenState extends State<DashboardScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('DME voltage · 0x586A'),
-                                Text(
-                                  vin == 'WBA3A52010F360747'
-                                      ? monitoringActive
-                                            ? 'Paused during live monitoring'
-                                            : 'N20 bench · refreshes every 10 seconds'
-                                      : 'Validated on the N20 bench DME only',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppPalette.secondary(widget.isDark),
+                                const Text('Voltage'),
+                                if (monitoringActive)
+                                  Text(
+                                    'Paused during live monitoring',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppPalette.secondary(
+                                        widget.isDark,
+                                      ),
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                           ),
                           Text(
-                            vin == 'WBA3A52010F360747' &&
-                                    !monitoringActive &&
+                            !monitoringActive &&
                                     vehicleDmeVoltage != null &&
                                     vehicleDmeVoltageAt != null &&
                                     DateTime.now()
@@ -2996,7 +2997,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                                         30
                                 ? '${vehicleDmeVoltage!.toStringAsFixed(2)} V'
                                 : '—',
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
@@ -3197,6 +3201,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           mileageKm: mileageKm,
           engineEcuDetected: engineEcuDetected,
           engineEcuIdentity: engineEcuIdentity,
+          engineEcuSerialNumber: engineEcuSerialNumber,
           engineEcuHardware: engineEcuHardware,
           engineEcuSoftware: engineEcuSoftware,
           engineEcuBootloader: engineEcuBootloader,
@@ -5095,6 +5100,7 @@ class VehicleDetailsScreen extends StatelessWidget {
     required this.mileageKm,
     required this.engineEcuDetected,
     required this.engineEcuIdentity,
+    this.engineEcuSerialNumber,
     this.engineEcuHardware,
     this.engineEcuSoftware,
     this.engineEcuBootloader,
@@ -5129,6 +5135,7 @@ class VehicleDetailsScreen extends StatelessWidget {
   final double? mileageKm;
   final bool engineEcuDetected;
   final String? engineEcuIdentity;
+  final String? engineEcuSerialNumber;
   final String? engineEcuHardware;
   final String? engineEcuSoftware;
   final String? engineEcuBootloader;
@@ -5199,6 +5206,12 @@ class VehicleDetailsScreen extends StatelessWidget {
                 'Diagnostic ECU ID',
                 engineEcuDetected ? (engineEcuIdentity ?? 'Detected') : '-',
                 secondary,
+              ),
+              _detail(
+                'ECU serial number (F18C)',
+                _value(engineEcuSerialNumber),
+                secondary,
+                identifier: true,
               ),
               _identityGroup(
                 title: 'Factory software',

@@ -4,6 +4,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  testWidgets('manual message opens for a connected vehicle', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    Future<void> noop() async {}
+    Widget screen({required bool simulator}) => MaterialApp(
+      home: Scaffold(
+        body: DiagnosticsScreen(
+          isDark: true,
+          onToggleTheme: () {},
+          onShowGuide: () {},
+          connectionLabel: 'Connected',
+          vin: 'WBA3A52010F360747',
+          simulatorMode: simulator,
+          onBeforeVehicleScan: noop,
+          onAfterVehicleScan: noop,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(screen(simulator: true));
+    await tester.pumpAndSettle();
+    final button = find.byKey(const Key('diagnostics-manual-message-button'));
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+
+    await tester.pumpWidget(screen(simulator: false));
+    await tester.pumpAndSettle();
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNotNull);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('UDS request (hex bytes)'), findsOneWidget);
+    expect(find.text('Send message'), findsOneWidget);
+  });
+
   testWidgets('diagnostics status follows scan availability', (tester) async {
     SharedPreferences.setMockInitialValues({});
 
@@ -79,7 +112,7 @@ void main() {
     expect(tester.widget<OutlinedButton>(resetButton).onPressed, isNotNull);
     await tester.tap(resetButton);
     await tester.pumpAndSettle();
-    expect(find.textContaining('broadcast address 0xDF'), findsOneWidget);
+    expect(find.textContaining('Turn the engine off'), findsOneWidget);
     expect(operations, isEmpty);
 
     await tester.tap(find.text('Cancel'));
@@ -91,6 +124,6 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Reset DME'));
     await tester.pumpAndSettle();
     expect(operations, ['pause', 'reset:WBA3A52010F360747', 'resume']);
-    expect(find.text('DME reset acknowledged.'), findsOneWidget);
+    expect(find.text('DME has been successfully reset.'), findsOneWidget);
   });
 }

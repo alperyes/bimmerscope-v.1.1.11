@@ -1181,6 +1181,7 @@ class _TuneScreenState extends State<TuneScreen> {
         isDark: widget.isDark,
         vin: widget.vin,
         identity: widget.engineEcuIdentity,
+        serialNumber: widget.engineEcuSerialNumber,
         hardware: widget.engineEcuHardware,
         software: widget.engineEcuSoftware,
         bootloader: widget.engineEcuBootloader,
@@ -2662,6 +2663,7 @@ class _EcuIdentityPage extends StatelessWidget {
     required this.isDark,
     required this.vin,
     required this.identity,
+    required this.serialNumber,
     required this.hardware,
     required this.software,
     required this.bootloader,
@@ -2682,6 +2684,7 @@ class _EcuIdentityPage extends StatelessWidget {
   final bool isDark;
   final String vin;
   final String? identity;
+  final String? serialNumber;
   final String? hardware;
   final String? software;
   final String? bootloader;
@@ -2742,6 +2745,7 @@ class _EcuIdentityPage extends StatelessWidget {
                 _identityFields([
                   ('VIN', vin),
                   ('Diagnostic ECU ID', identity),
+                  ('ECU serial number (F18C)', serialNumber),
                   ('ECU Manufactured', manufacturingDate),
                 ], muted),
                 const SizedBox(height: 20),

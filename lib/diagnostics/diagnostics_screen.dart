@@ -4,7 +4,9 @@ import 'package:bmw_app/src/rust/api/vehicle.dart';
 import 'package:bmw_app/design/app_palette.dart';
 import 'package:bmw_app/design/section_title.dart';
 import 'package:bmw_app/diagnostics/fault_definitions.dart';
+import 'package:bmw_app/vehicle/vehicle_identity.dart';
 import 'package:bmw_app/diagnostics/memory_read_screen.dart';
+import 'package:bmw_app/diagnostics/manual_diagnostic_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
@@ -349,6 +351,37 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     : null,
                 icon: const Icon(Icons.memory_rounded),
                 label: const Text('Read DME memory'),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: OutlinedButton.icon(
+                key: const Key('diagnostics-manual-message-button'),
+                onPressed:
+                    _vehicleAvailable &&
+                        !widget.previewMode &&
+                        !widget.demoMode &&
+                        !widget.simulatorMode &&
+                        !scanning &&
+                        !clearing &&
+                        !resettingDme &&
+                        widget.vin.length == 17 &&
+                        widget.onBeforeVehicleScan != null &&
+                        widget.onAfterVehicleScan != null
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ManualDiagnosticScreen(
+                            vin: widget.vin,
+                            onBeforeSend: widget.onBeforeVehicleScan!,
+                            onAfterSend: widget.onAfterVehicleScan!,
+                          ),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.terminal_rounded),
+                label: const Text('Manual diagnostic message'),
               ),
             ),
           ),
@@ -781,7 +814,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   Widget _historyFaultDetail(DiagnosticTroubleCode fault) {
-    final definition = faultDefinition(fault.code);
+    final definition = faultDefinition(
+      fault.code,
+      engine: identifyVehicle(widget.vin)?.engine,
+      ecu: fault.ecu,
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -846,7 +883,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         'CODE | STATUS | ECU | DESCRIPTION',
         ...faults.map(
           (fault) =>
-              '${fault.code} | ${fault.statusText} | ${fault.ecu} | ${faultDefinition(fault.code)?.title ?? 'Definition unavailable'}',
+              '${fault.code} | ${fault.statusText} | ${fault.ecu} | ${faultDefinition(fault.code, engine: identifyVehicle(widget.vin)?.engine, ecu: fault.ecu)?.title ?? 'Definition unavailable'}',
         ),
       ]);
     }
@@ -1048,7 +1085,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Reset DME?'),
-        content: const Text('Keep the vehicle stationary and the ignition on.'),
+        content: const Text(
+          'Turn the engine off before resetting the DME. Keep the ignition on and the vehicle stationary.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1075,20 +1114,35 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         canPop: false,
         child: AlertDialog(
           content: SizedBox(
-            width: 320,
+            width: 260,
+            height: 200,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const SizedBox(height: 8),
-                const _ResetProgressMark(),
-                const SizedBox(height: 20),
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    color: AppPalette.orange,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.memory_rounded,
+                    size: 30,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 16),
                 const Text(
                   'In progress',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 24),
-                const LinearProgressIndicator(color: AppPalette.orange),
-                const SizedBox(height: 24),
+                const SizedBox(height: 18),
+                const SizedBox(
+                  width: double.infinity,
+                  child: LinearProgressIndicator(color: AppPalette.orange),
+                ),
+                const SizedBox(height: 14),
                 Text(
                   'Resetting ECU…',
                   style: TextStyle(
@@ -1340,7 +1394,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   );
 
   Widget faultCard(DiagnosticTroubleCode fault) {
-    final definition = faultDefinition(fault.code);
+    final definition = faultDefinition(
+      fault.code,
+      engine: identifyVehicle(widget.vin)?.engine,
+      ecu: fault.ecu,
+    );
     final muted = AppPalette.secondary(widget.isDark);
     final dateLabel = scannedAt == null
         ? 'Not scanned'
@@ -1464,78 +1522,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       ),
     );
   }
-}
-
-class _ResetProgressMark extends StatefulWidget {
-  const _ResetProgressMark();
-
-  @override
-  State<_ResetProgressMark> createState() => _ResetProgressMarkState();
-}
-
-class _ResetProgressMarkState extends State<_ResetProgressMark>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1800),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 96,
-    height: 96,
-    child: AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) => Stack(
-        alignment: Alignment.center,
-        children: [
-          _pulseRing(_controller.value),
-          _pulseRing((_controller.value + .5) % 1),
-          Container(
-            width: 58,
-            height: 58,
-            decoration: const BoxDecoration(
-              color: AppPalette.orange,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x668F4B00),
-                  blurRadius: 18,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.memory_rounded,
-              size: 34,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _pulseRing(double progress) => Transform.scale(
-    scale: .62 + progress * .38,
-    child: Opacity(
-      opacity: (1 - progress) * .72,
-      child: Container(
-        width: 88,
-        height: 88,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: AppPalette.orange, width: 1.5),
-        ),
-      ),
-    ),
-  );
 }
 
 const previewFaults = <DiagnosticTroubleCode>[

@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 345582499;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1239770903;
 
 // Section: executor
 
@@ -897,6 +897,45 @@ fn wire__crate__api__vehicle__scan_engine_diagnostics_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::vehicle::scan_engine_diagnostics()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__vehicle__send_manual_diagnostic_message_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "send_manual_diagnostic_message",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_target = <u8>::sse_decode(&mut deserializer);
+            let api_request = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_expected_vin = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::vehicle::send_manual_diagnostic_message(
+                        api_target,
+                        api_request,
+                        api_expected_vin,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -1910,17 +1949,23 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        29 => wire__crate__api__vehicle__start_auto_vehicle_session_impl(
+        28 => wire__crate__api__vehicle__send_manual_diagnostic_message_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        30 => wire__crate__api__vehicle__start_demo_session_impl(port, ptr, rust_vec_len, data_len),
-        32 => {
+        30 => wire__crate__api__vehicle__start_auto_vehicle_session_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        31 => wire__crate__api__vehicle__start_demo_session_impl(port, ptr, rust_vec_len, data_len),
+        33 => {
             wire__crate__api__vehicle__start_vehicle_session_impl(port, ptr, rust_vec_len, data_len)
         }
-        36 => {
+        37 => {
             wire__crate__api__vehicle__stop_session_and_wait_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -1974,13 +2019,13 @@ fn pde_ffi_dispatcher_sync_impl(
         16 => wire__crate__api__vehicle__dme_capability_preflight_impl(ptr, rust_vec_len, data_len),
         18 => wire__crate__api__vehicle__empty_ecu_fingerprint_impl(ptr, rust_vec_len, data_len),
         22 => wire__crate__api__vehicle__ista_s55_read_profile_impl(ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__vehicle__set_live_sensor_ids_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__vehicle__start_monitoring_impl(ptr, rust_vec_len, data_len),
-        33 => {
+        29 => wire__crate__api__vehicle__set_live_sensor_ids_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__vehicle__start_monitoring_impl(ptr, rust_vec_len, data_len),
+        34 => {
             wire__crate__api__vehicle__stop_exhaust_flap_session_impl(ptr, rust_vec_len, data_len)
         }
-        34 => wire__crate__api__vehicle__stop_monitoring_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__vehicle__stop_session_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__vehicle__stop_monitoring_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__vehicle__stop_session_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

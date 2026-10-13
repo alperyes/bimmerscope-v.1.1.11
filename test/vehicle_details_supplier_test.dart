@@ -5,10 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('formats the captured seven-byte component record', () {
-    expect(
-      formatDmeComponentId('00001CA1029110000'),
-      '00001CA1-029.110.000',
-    );
+    expect(formatDmeComponentId('00001CA1029110000'), '00001CA1-029.110.000');
     expect(formatDmeComponentId('Not read'), 'Not read');
   });
 
@@ -26,15 +23,25 @@ void main() {
           mileageKm: null,
           engineEcuDetected: true,
           engineEcuIdentity: '0F1810',
+          engineEcuSerialNumber: '0170675684',
           engineSupplierCalibration: '00001CA1029110000',
         ),
       ),
     );
 
-    final detailsList = find.descendant(
-      of: find.byType(ListView),
-      matching: find.byType(Scrollable),
-    ).first;
+    final detailsList = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('0170675684'),
+      200,
+      scrollable: detailsList,
+    );
+    expect(find.text('ECU serial number (F18C)'), findsOneWidget);
+    expect(find.text('0170675684'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Supplier software'),
       300,

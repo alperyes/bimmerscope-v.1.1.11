@@ -549,6 +549,70 @@ pub fn read_dme_memory(address: u32, length: u16, expected_vin: String) -> Resul
     Ok(parse_ista_memory_read_response(&response, length as usize)?.to_vec())
 }
 
+/// Send one physical UDS request. The caller supplies UDS bytes only; ENET
+/// framing and the tester address are added here. Return the ECU's raw UDS
+/// payload, including a final 7F negative response.
+pub fn send_manual_diagnostic_message(
+    target: u8,
+    request: Vec<u8>,
+    expected_vin: String,
+) -> Result<Vec<u8>, String> {
+    if target == BROADCAST_ECU_ADDRESS || target == TESTER {
+        return Err("Choose a physical ECU address, not broadcast or tester".into());
+    }
+    if request.is_empty() || request.len() > 4096 {
+        return Err("UDS request must contain 1–4096 bytes".into());
+    }
+    if expected_vin.len() != 17 || !expected_vin.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("A valid connected vehicle VIN is required".into());
+    }
+    let _access = crate::vehicle_access::vehicle_access().diagnostic()?;
+    let host = last_vehicle_host().ok_or_else(|| "No active vehicle endpoint".to_string())?;
+    let mut stream = fresh_diagnostic_stream(&host)?;
+    let vin = read_ascii_data_identifier(&mut stream, ENGINE_ECU_ADDRESS, "vehicle_vin")?;
+    if vin != expected_vin {
+        return Err("DME VIN does not match the connected vehicle".into());
+    }
+    send_uds(&mut stream, target, &request)?;
+    read_manual_uds_response(&mut stream, target, request[0], Duration::from_secs(5))
+}
+
+fn read_manual_uds_response(
+    stream: &mut TcpStream,
+    source: u8,
+    service: u8,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    let deadline = Instant::now() + timeout;
+    let mut buffer = Vec::with_capacity(4096);
+    let mut scratch = [0u8; 4096];
+    while Instant::now() < deadline {
+        match stream.read(&mut scratch) {
+            Ok(0) => return Err("Vehicle closed the diagnostic connection".into()),
+            Ok(count) => buffer.extend_from_slice(&scratch[..count]),
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                continue
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+        for frame in drain_hsfz(&mut buffer)? {
+            if !is_application_response(&frame) || frame.source != source {
+                continue;
+            }
+            if frame.uds.first() == Some(&service.wrapping_add(0x40)) {
+                return Ok(frame.uds);
+            }
+            if frame.uds.starts_with(&[0x7F, service]) {
+                if frame.uds.get(2) == Some(&0x78) {
+                    continue;
+                }
+                return Ok(frame.uds);
+            }
+        }
+    }
+    Err("ECU response timeout".into())
+}
+
 /// Read the capture-derived S55 calibration region using ISTA's conservative
 /// 256-byte transaction pattern. This is read-only and deliberately limited
 /// to the exact software token observed in the ISTA capture.
@@ -742,6 +806,14 @@ pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefi
             Some(17),
         ),
         data_identifier(
+            "ecu_serial_number",
+            "ECU serial number",
+            0xF18C,
+            0x62,
+            "ascii",
+            None,
+        ),
+        data_identifier(
             "s55_dme_identity_bundle",
             "S55 DME identity bundle",
             0xF101,
@@ -774,8 +846,8 @@ pub fn default_diagnostic_data_identifiers() -> Vec<DiagnosticDataIdentifierDefi
             Some(4),
         ),
         data_identifier(
-            "n20_bench_battery_voltage",
-            "N20 bench DME battery voltage",
+            "vehicle_dme_battery_voltage",
+            "DME battery voltage",
             0x586A,
             0x62,
             "unsigned_u16_be",
@@ -1615,12 +1687,17 @@ pub fn start_auto_vehicle_session(sink: StreamSink<VehicleEvent>) -> Result<(), 
     let access = crate::vehicle_access::vehicle_access().diagnostic()?;
     begin_session(move |stop| {
         let _access = access;
-        // Perform one bounded discovery attempt. Further attempts are
-        // user-initiated so an error does not cause an endless retry loop.
-        if !stop.load(Ordering::Acquire) {
+        const DISCOVERY_ATTEMPTS: u8 = 4;
+        const DISCOVERY_RETRY_DELAY: Duration = Duration::from_millis(350);
+
+        let mut discovered_host = None;
+        for attempt in 1..=DISCOVERY_ATTEMPTS {
+            if stop.load(Ordering::Acquire) {
+                break;
+            }
             let _ = sink.add(VehicleEvent::status(
                 "discovering",
-                "Vehicle not found yet; retrying discovery",
+                format!("Searching for vehicle ({attempt}/{DISCOVERY_ATTEMPTS})"),
             ));
             let cached_host = last_vehicle_host();
             let host = cached_host
@@ -1633,14 +1710,25 @@ pub fn start_auto_vehicle_session(sink: StreamSink<VehicleEvent>) -> Result<(), 
                     discover_vehicle(&stop)
                 });
             if let Some(host) = host {
-                remember_vehicle_host(&host);
-                run_vehicle_session(host, 6801, sink.clone(), stop.clone());
-            } else {
-                let _ = sink.add(VehicleEvent::status(
-                    "warning",
-                    "No vehicle found. Check the cable and ignition, then tap Retry.",
-                ));
+                discovered_host = Some(host);
+                break;
             }
+            if attempt < DISCOVERY_ATTEMPTS {
+                let retry_at = Instant::now() + DISCOVERY_RETRY_DELAY;
+                while Instant::now() < retry_at && !stop.load(Ordering::Acquire) {
+                    thread::sleep(Duration::from_millis(50));
+                }
+            }
+        }
+
+        if let Some(host) = discovered_host {
+            remember_vehicle_host(&host);
+            run_vehicle_session(host, 6801, sink.clone(), stop.clone());
+        } else if !stop.load(Ordering::Acquire) {
+            let _ = sink.add(VehicleEvent::status(
+                "warning",
+                "No vehicle found after 4 searches. Check the cable and ignition, then tap Retry.",
+            ));
         }
         if stop.load(Ordering::Acquire) {
             let _ = sink.add(VehicleEvent::status("disconnected", "Session stopped"));
@@ -2086,6 +2174,7 @@ fn identify_engine(
             Err(_) => read_legacy_optional_fingerprint(stream, ENGINE_ECU_ADDRESS),
         };
     let factory = read_factory_identity(stream);
+    values.serial_number = read_optional_identifier(stream, ENGINE_ECU_ADDRESS, 0xF18C);
     values.manufacturing_date =
         read_s55_ecu_manufacturing_date(stream, ENGINE_ECU_ADDRESS).unwrap_or_default();
     values.diagnostic_session =
@@ -2616,8 +2705,8 @@ fn read_data_identifier(
     Ok(value.to_vec())
 }
 
-fn read_n20_bench_vehicle_voltage(stream: &mut TcpStream) -> Result<u16, String> {
-    let value = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "n20_bench_battery_voltage")?;
+fn read_vehicle_dme_voltage(stream: &mut TcpStream) -> Result<u16, String> {
+    let value = read_data_identifier(stream, ENGINE_ECU_ADDRESS, "vehicle_dme_battery_voltage")?;
     let raw = u16::from_be_bytes([value[0], value[1]]);
     let voltage = f64::from(raw) * 0.00025 + 6.0;
     if !(6.0..=22.0).contains(&voltage) {
@@ -3517,7 +3606,6 @@ fn poll_connection(
             "Live DME responding at 0x{ENGINE_ECU_ADDRESS:02X}; full ECU inventory deferred to an explicit diagnostics scan"
         ),
     ));
-    let n20_bench_voltage_supported = vin == N20_BENCH_VIN;
     let _ = sink.add(VehicleEvent::vin(vin));
     let _ = sink.add(VehicleEvent::status(
         "connected",
@@ -3594,21 +3682,17 @@ fn poll_connection(
         }
         // A separate read for the Vehicle page. Keep it on this socket and
         // outside the F300 polling transaction so replies cannot be mixed.
-        if n20_bench_voltage_supported
-            && !monitoring
+        if !monitoring
             && pending.is_none()
             && flap_ack_deadline.is_none()
             && Instant::now() >= next_vehicle_voltage_read
         {
-            match read_n20_bench_vehicle_voltage(stream) {
+            match read_vehicle_dme_voltage(stream) {
                 Ok(raw) => {
                     let _ = sink.add(VehicleEvent::vehicle_voltage(raw));
                 }
                 Err(error) => {
-                    let _ = sink.add(VehicleEvent::status(
-                        "vehicle_voltage_unavailable",
-                        error,
-                    ));
+                    let _ = sink.add(VehicleEvent::status("vehicle_voltage_unavailable", error));
                 }
             }
             next_vehicle_voltage_read = Instant::now() + Duration::from_secs(10);
@@ -4769,6 +4853,13 @@ mod tests {
             .unwrap();
         assert_eq!(ecu.did, 0xF150);
         assert_eq!(ecu.exact_length, None);
+
+        let serial = identifiers
+            .iter()
+            .find(|item| item.id == "ecu_serial_number")
+            .unwrap();
+        assert_eq!(serial.did, 0xF18C);
+        assert_eq!(serial.encoding, "ascii");
 
         let s55_bundle = identifiers
             .iter()
