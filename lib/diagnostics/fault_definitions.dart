@@ -43,6 +43,12 @@ const _definitions = <String, FaultDefinition>{
     explanation:
         'The DME considers its coding data internally inconsistent or outside an expected range; the fault does not identify a specific bad parameter.',
   ),
+  '024000': FaultDefinition(
+    title: 'Energy saving mode active',
+    system: 'Body electronics / FEM',
+    explanation:
+        'The FEM reports that the vehicle is in an energy-saving mode, which can be used for transport, production, or programming. This describes an active vehicle mode; it does not by itself indicate a failed FEM or explain why the mode is active.',
+  ),
   '100001': FaultDefinition(
     title: 'Throttle valve briefly sticking',
     system: 'Engine throttle control / DME',
@@ -395,6 +401,12 @@ const _definitions = <String, FaultDefinition>{
     explanation:
         'The FEM is missing the vehicle-speed update normally sent by the ICM.',
   ),
+  'D915B9': FaultDefinition(
+    title: 'Engine heat-management message missing',
+    system: 'Body electronics / DME communication',
+    explanation:
+        'The FEM did not receive the engine heat-management CAN message (0x1B9) from the DME/DDE. This records a communication timeout; it does not by itself prove a cooling-system or FEM failure. If it is intermittent or no longer active, check whether it returns and review related engine or network faults.',
+  ),
   'D91654': FaultDefinition(
     title: 'Actual wheel-speed message missing',
     system: 'Body electronics / stability-control network',
@@ -472,6 +484,12 @@ const _definitions = <String, FaultDefinition>{
     system: 'Body electronics / driving-mode controls',
     explanation:
         'The FEM did not receive the driving-dynamics switch configuration message.',
+  ),
+  'D917B3': FaultDefinition(
+    title: 'Power-management load-control message missing',
+    system: 'Body electronics / DME communication',
+    explanation:
+        'The FEM did not receive the power-management electric-load-control CAN message (0x3B3) from the DME/DDE. This records a communication timeout; it does not by itself prove a FEM, DME/DDE, or battery fault. If the code is intermittent or inactive, check whether it returns and review related power-management and network faults.',
   ),
   'D917F9': FaultDefinition(
     title: 'Drivetrain data 2 message missing',

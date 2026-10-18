@@ -2902,32 +2902,27 @@ fn discover_vehicle(stop: &AtomicBool) -> Option<String> {
     // Ethernet-only discovery: restrict automatic subnet probing to the
     // link-local range used by direct BMW ENET connections. Wi-Fi adapter
     // networks are intentionally deferred until a later transport milestone.
-    let local_subnets = get_if_addrs()
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|interface| match interface.addr {
-            IfAddr::V4(address) if address.ip.is_link_local() => {
-                let mask = u32::from(address.netmask);
-                (mask.count_ones() >= 16).then_some((
-                    u32::from(address.ip) & mask,
-                    mask,
-                    u32::from(address.ip),
-                ))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut local_subnets = discovery_subnets();
+    // Keep distinct interface addresses; Windows may need to route probes
+    // through its ENET adapter even when other link-local adapters exist.
+    local_subnets.sort_unstable();
+    local_subnets.dedup();
+    if local_subnets.is_empty() {
+        return None;
+    }
     let (sender, receiver) = mpsc::channel();
+    let found = AtomicBool::new(false);
+    let mut discovered = None;
     thread::scope(|scope| {
         for worker in 0..64u32 {
             let sender = sender.clone();
             let subnets = local_subnets.clone();
+            let found = &found;
             scope.spawn(move || {
                 for (network, mask, local_ip) in subnets {
                     let broadcast = network | !mask;
                     for value in (network + worker + 1..broadcast).step_by(64) {
-                        if stop.load(Ordering::Acquire) {
+                        if stop.load(Ordering::Acquire) || found.load(Ordering::Acquire) {
                             return;
                         }
                         if value == local_ip {
@@ -2936,6 +2931,7 @@ fn discover_vehicle(stop: &AtomicBool) -> Option<String> {
                         let host = IpAddr::V4(value.into()).to_string();
                         if probe_enet(&host, Duration::from_millis(150)) {
                             let _ = sender.send(host);
+                            found.store(true, Ordering::Release);
                             return;
                         }
                     }
@@ -2943,8 +2939,137 @@ fn discover_vehicle(stop: &AtomicBool) -> Option<String> {
             });
         }
         drop(sender);
+        while !stop.load(Ordering::Acquire) {
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(host) => {
+                    discovered = Some(host);
+                    found.store(true, Ordering::Release);
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
     });
-    receiver.try_recv().ok()
+    discovered
+}
+
+fn discovery_subnets() -> Vec<(u32, u32, u32)> {
+    #[cfg(windows)]
+    {
+        return windows_link_local_subnets();
+    }
+
+    #[cfg(not(windows))]
+    {
+        get_if_addrs()
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|interface| match interface.addr {
+                IfAddr::V4(address) if address.ip.is_link_local() => {
+                    let mask = u32::from(address.netmask);
+                    (mask.count_ones() >= 16).then_some((
+                        u32::from(address.ip) & mask,
+                        mask,
+                        u32::from(address.ip),
+                    ))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[cfg(windows)]
+fn windows_link_local_subnets() -> Vec<(u32, u32, u32)> {
+    use std::mem::size_of;
+    use std::net::Ipv4Addr;
+    use std::ptr::{null, null_mut};
+    use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_SUCCESS};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GetAdaptersAddresses, IP_ADAPTER_ADDRESSES_LH, GAA_FLAG_INCLUDE_PREFIX,
+        GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+    };
+    use windows_sys::Win32::Networking::WinSock::{
+        AF_INET, IpDadStatePreferred, SOCKADDR_IN,
+    };
+
+    let flags = GAA_FLAG_SKIP_ANYCAST
+        | GAA_FLAG_SKIP_MULTICAST
+        | GAA_FLAG_SKIP_DNS_SERVER
+        | GAA_FLAG_INCLUDE_PREFIX;
+    let mut required_size = 0u32;
+    // SAFETY: The initial call supplies a null buffer as required to retrieve
+    // the allocation size. No pointers are retained by Windows.
+    let status = unsafe {
+        GetAdaptersAddresses(
+            AF_INET as u32,
+            flags,
+            null(),
+            null_mut(),
+            &mut required_size,
+        )
+    };
+    if status != ERROR_BUFFER_OVERFLOW || required_size == 0 {
+        return Vec::new();
+    }
+
+    let mut storage = vec![0u64; (required_size as usize).div_ceil(size_of::<u64>())];
+    loop {
+        let mut buffer_size = (storage.len() * size_of::<u64>()) as u32;
+        // SAFETY: `storage` is aligned, sized using the API's required-size
+        // result, and remains alive while the linked adapter records are read.
+        let status = unsafe {
+            GetAdaptersAddresses(
+                AF_INET as u32,
+                flags,
+                null(),
+                storage.as_mut_ptr().cast(),
+                &mut buffer_size,
+            )
+        };
+        if status == ERROR_BUFFER_OVERFLOW {
+            storage.resize((buffer_size as usize).div_ceil(size_of::<u64>()), 0);
+            continue;
+        }
+        if status != ERROR_SUCCESS {
+            return Vec::new();
+        }
+        break;
+    }
+
+    let mut subnets = Vec::new();
+    let mut adapter = storage.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+    // SAFETY: The API returned a valid linked list inside `storage`; each
+    // pointer is checked before it is dereferenced.
+    unsafe {
+        while !adapter.is_null() {
+            let mut unicast = (*adapter).FirstUnicastAddress;
+            while !unicast.is_null() {
+                let address = &*unicast;
+                if address.DadState == IpDadStatePreferred && address.OnLinkPrefixLength >= 16 {
+                    let socket_address = address.Address.lpSockaddr.cast::<SOCKADDR_IN>();
+                    if !socket_address.is_null() && (*socket_address).sin_family == AF_INET {
+                        let ip = Ipv4Addr::from(
+                            (*socket_address).sin_addr.S_un.S_addr.to_ne_bytes(),
+                        );
+                        let prefix = address.OnLinkPrefixLength;
+                        if ip.is_link_local() && prefix <= 30 {
+                            let mask = u32::MAX << (32 - u32::from(prefix));
+                            let ip_value = u32::from(ip);
+                            subnets.push((ip_value & mask, mask, ip_value));
+                        }
+                    }
+                }
+                unicast = (*unicast).Next;
+            }
+            adapter = (*adapter).Next;
+        }
+    }
+    subnets.sort_unstable();
+    subnets.dedup();
+    subnets
 }
 
 fn is_private_ipv4(ip: std::net::Ipv4Addr) -> bool {
@@ -2984,17 +3109,12 @@ fn local_interface_summary() -> String {
 fn discover_zgw_udp(stop: &AtomicBool) -> Option<String> {
     const DISCOVERY_PORT: u16 = 6811;
     const HELLO: [u8; 6] = [0, 0, 0, 0, 0, 0x11];
-    let broadcasts = get_if_addrs()
-        .ok()?
+    // On Windows, if-addrs can omit the direct ENET adapter while it is
+    // configured with a 169.254/16 address. Use the same native adapter
+    // enumeration as the TCP fallback so the ZGW broadcast reaches Ethernet.
+    let broadcasts = discovery_subnets()
         .into_iter()
-        .filter_map(|interface| match interface.addr {
-            IfAddr::V4(address) if !address.ip.is_loopback() => {
-                let ip = u32::from(address.ip);
-                let mask = u32::from(address.netmask);
-                Some(IpAddr::V4((ip | !mask).into()))
-            }
-            _ => None,
-        })
+        .map(|(network, mask, _)| IpAddr::V4((network | !mask).into()))
         .collect::<Vec<_>>();
     if broadcasts.is_empty() {
         return None;
@@ -3049,7 +3169,10 @@ fn probe_enet(host: &str, timeout: Duration) -> bool {
         .and_then(|address| TcpStream::connect_timeout(&address, timeout).ok())
         .map(|mut stream| {
             let _ = stream.set_read_timeout(Some(timeout));
-            let _ = stream.write_all(&build_hsfz(TESTER, ENGINE_ECU_ADDRESS, &[0x22, 0xF1, 0x50]));
+            // The bootmod3 F82 capture confirms an F101 response from the DME.
+            // Some supported DME software does not expose the generic F150
+            // identifier consistently, so do not reject a live gateway for it.
+            let _ = stream.write_all(&build_hsfz(TESTER, ENGINE_ECU_ADDRESS, &[0x22, 0xF1, 0x01]));
             let deadline = Instant::now() + timeout.max(Duration::from_secs(2));
             let mut buffer = Vec::with_capacity(256);
             let mut scratch = [0u8; 128];
@@ -3171,7 +3294,8 @@ fn is_engine_probe_reply(frame: &HsfzFrame) -> bool {
     frame.message_type == 0x0001
         && frame.source == ENGINE_ECU_ADDRESS
         && frame.destination == TESTER
-        && frame.uds.starts_with(&[0x62, 0xF1, 0x50])
+        && (frame.uds.starts_with(&[0x62, 0xF1, 0x01])
+            || frame.uds.starts_with(&[0x62, 0xF1, 0x50]))
 }
 
 fn run_vehicle_session(
