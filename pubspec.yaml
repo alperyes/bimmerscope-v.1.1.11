@@ -83,6 +83,19 @@ flutter:
     - assets/branding/f82_silhouette.png
     - assets/branding/wireframes/connection_guide.svg
     - assets/animations/
+    - SK Python/basic_crypto.py
+    - SK Python/crypto_main.py
+    - SK Python/native_resource.py
+    - SK Python/pdx_key.py
+    - SK Python/sec_file_parser.py
+    - SK Python/security.py
+    - SK Python/security_impl.py
+    - SK Python/seed_response.py
+    - SK Python/sgbm_id.py
+    - SK Python/image3.xml
+    - SK Python/resources/image1.png
+    - SK Python/resources/image2.png
+    - SK Python/resources/key_reference.json
 
   fonts:
     - family: Instrument Sans

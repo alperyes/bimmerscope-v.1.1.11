@@ -4050,7 +4050,15 @@ fn start_poll(
 
 fn send_uds(stream: &mut TcpStream, destination: u8, uds: &[u8]) -> Result<(), String> {
     debug_transport("TX", destination, uds);
-    raw_transport_log("TX", 0x0001, TESTER, destination, uds);
+    // The calculated SecurityAccess response is secret key material. Keep the
+    // service/subfunction metadata for correlation, but never write key bytes
+    // to the optional raw transport capture.
+    let logged_uds = if uds.starts_with(&[0x27, 0x12]) {
+        &uds[..2]
+    } else {
+        uds
+    };
+    raw_transport_log("TX", 0x0001, TESTER, destination, logged_uds);
     stream
         .write_all(&build_hsfz(TESTER, destination, uds))
         .map_err(|error| {

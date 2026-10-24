@@ -3,6 +3,7 @@ import java.util.Base64
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("com.chaquo.python")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -34,10 +35,13 @@ android {
         applicationId = "com.bmwenet.bmw_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        minSdk = maxOf(flutter.minSdkVersion, 24)
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     flavorDimensions += "edition"
@@ -58,6 +62,24 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+}
+
+// Run the existing SK Python seed-response implementation in the Android
+// app process using versions with Chaquopy Android wheels.
+chaquopy {
+    defaultConfig {
+        version = "3.11"
+        pip {
+            install("pycryptodome==3.21.0")
+            install("cryptography==42.0.8")
+            install("Pillow==11.0.0")
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            srcDir("../../SK Python")
         }
     }
 }

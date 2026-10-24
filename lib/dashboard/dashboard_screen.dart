@@ -1025,6 +1025,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           ? 'Starting simulated vehicle'
           : 'Searching for your vehicle';
     });
+    connectionStatus.value = connectionStageLabel;
     await previousDiagnostics;
     await _startDiagnosticsSession(
       id: newSessionId,
@@ -1267,6 +1268,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     logUserAction('Paused live session for diagnostic scan');
     _sessionGeneration++;
     if (mounted) setState(() => diagnosticSessionTransition = true);
+    connectionStatus.value = 'Scanning';
     try {
       _stopVehicleSession();
       await subscription?.cancel();
@@ -1280,6 +1282,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           phase = 'error';
         });
       }
+      connectionStatus.value = 'Error';
       rethrow;
     }
   }
@@ -2099,10 +2102,12 @@ class _DashboardScreenState extends State<DashboardScreen>
                   2 => DiagnosticsScreen(
                     isDark: widget.isDark,
                     connectionLabel: connectionStageLabel,
+                    connectionStatus: connectionStatus,
                     demoMode: demoActive || simulatorActive,
                     onToggleTheme: widget.onToggleTheme,
                     onShowGuide: showConnectionGuide,
                     vin: vin,
+                    bootloaderId: engineEcuBootloader ?? '',
                     onBeforeVehicleScan: pauseLiveSessionForScan,
                     onAfterVehicleScan: resumeLiveSessionAfterScan,
                     onScanEvent: logUserAction,

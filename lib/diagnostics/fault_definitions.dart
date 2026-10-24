@@ -563,6 +563,12 @@ const _definitions = <String, FaultDefinition>{
     explanation:
         'The ZGM rejected or flagged the system-time message sent by the instrument cluster (KOMBI).',
   ),
+  'CD1412': FaultDefinition(
+    title: 'Power-supply shutdown timing signal missing or invalid',
+    system: 'Central gateway / power management',
+    explanation:
+        'The central gateway did not receive a valid power-supply run-on-time signal in CAN message 0x3BE. This is a communication or signal-validity fault; it does not by itself identify a failed gateway or power-supply component.',
+  ),
   '03000E': FaultDefinition(
     title: 'Driver window circuit: electrical path interrupted',
     system: 'Body electronics / FEM',

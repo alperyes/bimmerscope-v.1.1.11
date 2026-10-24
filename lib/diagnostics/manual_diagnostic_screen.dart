@@ -1,4 +1,5 @@
 import 'package:bmw_app/src/rust/api/vehicle.dart';
+import 'package:bmw_app/diagnostics/security_response_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,11 +7,13 @@ class ManualDiagnosticScreen extends StatefulWidget {
   const ManualDiagnosticScreen({
     super.key,
     required this.vin,
+    required this.currentBootloader,
     required this.onBeforeSend,
     required this.onAfterSend,
   });
 
   final String vin;
+  final String currentBootloader;
   final Future<void> Function() onBeforeSend;
   final Future<void> Function() onAfterSend;
 
@@ -113,7 +116,38 @@ class _ManualDiagnosticScreenState extends State<ManualDiagnosticScreen> {
         request: bytes,
         expectedVin: widget.vin,
       );
-      if (mounted) setState(() => _response = _hex(result));
+      final key = await SecurityResponseProvider.calculateForChallenge(
+        target: target,
+        request: bytes,
+        response: result,
+        currentBootloader: widget.currentBootloader,
+      );
+      if (!mounted) return;
+      if (key == null) {
+        if (mounted) setState(() => _response = _hex(result));
+      } else {
+        if (key.length > 4094) {
+          throw StateError('The generated key is too long for one request.');
+        }
+        final keyResponse = await sendManualDiagnosticMessage(
+          target: target,
+          request: [0x27, 0x12, ...key],
+          expectedVin: widget.vin,
+        );
+        if (keyResponse.length < 2 ||
+            keyResponse[0] != 0x67 ||
+            keyResponse[1] != 0x12) {
+          throw StateError(
+            'The DME did not accept the calculated security response.',
+          );
+        }
+        if (mounted) {
+          setState(
+            () => _response =
+                '${_hex(result)}\n\n27 12 <redacted key> → ${_hex(keyResponse)}',
+          );
+        }
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -208,16 +242,46 @@ class _ManualDiagnosticScreenState extends State<ManualDiagnosticScreen> {
             expectedVin: widget.vin,
           );
           if (!mounted) return;
+          final key = await SecurityResponseProvider.calculateForChallenge(
+            target: target,
+            request: request,
+            response: result,
+            currentBootloader: widget.currentBootloader,
+          );
+          if (!mounted) return;
+          List<int>? keyResponse;
+          if (key != null) {
+            if (key.length > 4094) {
+              throw StateError(
+                'The generated key is too long for one request.',
+              );
+            }
+            keyResponse = await sendManualDiagnosticMessage(
+              target: target,
+              request: [0x27, 0x12, ...key],
+              expectedVin: widget.vin,
+            );
+            if (keyResponse.length < 2 ||
+                keyResponse[0] != 0x67 ||
+                keyResponse[1] != 0x12) {
+              throw StateError(
+                'The DME did not accept the calculated security response.',
+              );
+            }
+          }
+          final responseText = keyResponse == null
+              ? _hex(result)
+              : '${_hex(result)}\n   Auto 27 12: <redacted key>\n   Response: ${_hex(keyResponse)}';
           setState(
             () => _sequenceResults.add(
-              '${index + 1}. Request: $requestHex\n   Response: ${_hex(result)}',
+              '${index + 1}. Request: $requestHex\n   Response: $responseText',
             ),
           );
         } catch (error) {
           if (mounted)
             setState(
               () => _sequenceResults.add(
-                '${index + 1}. Request: $requestHex\n   Transport error: $error',
+                '${index + 1}. Request: $requestHex\n   Request/response failed: $error',
               ),
             );
           break;
@@ -244,7 +308,7 @@ class _ManualDiagnosticScreenState extends State<ManualDiagnosticScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         const Text(
-          'Enter UDS payload bytes in hex. The app adds ENET framing and sends one request to the chosen ECU. Default DME address: 12.',
+          'Enter UDS payload bytes in hex. The app adds ENET framing and sends one request to the chosen ECU. The exact 27 11 FF FF FF FF challenge is automatically answered from the current BTLD. Default DME address: 12.',
         ),
         const SizedBox(height: 20),
         TextField(

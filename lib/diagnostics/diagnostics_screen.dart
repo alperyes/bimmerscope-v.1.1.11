@@ -7,6 +7,8 @@ import 'package:bmw_app/diagnostics/fault_definitions.dart';
 import 'package:bmw_app/vehicle/vehicle_identity.dart';
 import 'package:bmw_app/diagnostics/memory_read_screen.dart';
 import 'package:bmw_app/diagnostics/manual_diagnostic_screen.dart';
+import 'package:bmw_app/diagnostics/prep_screen.dart';
+import 'package:bmw_app/diagnostics/dme_preparation_2_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
@@ -16,6 +18,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bmw_app/design/connection_status_chip.dart';
 import 'package:bmw_app/vehicle/simulator_transport.dart';
+import 'package:flutter/foundation.dart';
 
 class DiagnosticsScreen extends StatefulWidget {
   const DiagnosticsScreen({
@@ -24,7 +27,9 @@ class DiagnosticsScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.onShowGuide,
     required this.connectionLabel,
+    required this.connectionStatus,
     required this.vin,
+    this.bootloaderId = '',
     this.onBeforeVehicleScan,
     this.onAfterVehicleScan,
     this.onScanEvent,
@@ -42,7 +47,9 @@ class DiagnosticsScreen extends StatefulWidget {
   final bool simulatorMode;
   final bool demoMode;
   final String connectionLabel;
+  final ValueListenable<String> connectionStatus;
   final String vin;
+  final String bootloaderId;
   final Future<void> Function()? onBeforeVehicleScan;
   final Future<void> Function()? onAfterVehicleScan;
   final void Function(String message)? onScanEvent;
@@ -374,6 +381,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                         MaterialPageRoute<void>(
                           builder: (_) => ManualDiagnosticScreen(
                             vin: widget.vin,
+                            currentBootloader: widget.bootloaderId,
                             onBeforeSend: widget.onBeforeVehicleScan!,
                             onAfterSend: widget.onAfterVehicleScan!,
                           ),
@@ -382,6 +390,74 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     : null,
                 icon: const Icon(Icons.terminal_rounded),
                 label: const Text('Manual diagnostic message'),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: OutlinedButton.icon(
+                key: const Key('diagnostics-dme-prep-button'),
+                onPressed:
+                    _vehicleAvailable &&
+                        !widget.previewMode &&
+                        !widget.demoMode &&
+                        !widget.simulatorMode &&
+                        !scanning &&
+                        !clearing &&
+                        !resettingDme &&
+                        widget.vin.length == 17 &&
+                        widget.onBeforeVehicleScan != null &&
+                        widget.onAfterVehicleScan != null
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => PrepScreen(
+                            vin: widget.vin,
+                            currentBootloader: widget.bootloaderId,
+                            connectionStatus: widget.connectionStatus,
+                            isDark: widget.isDark,
+                            onBeforeSend: widget.onBeforeVehicleScan!,
+                            onAfterSend: widget.onAfterVehicleScan!,
+                          ),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.playlist_add_check_rounded),
+                label: const Text('DME preparation prototype'),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: OutlinedButton.icon(
+                key: const Key('diagnostics-dme-preparation-2-button'),
+                onPressed:
+                    _vehicleAvailable &&
+                        !widget.previewMode &&
+                        !widget.demoMode &&
+                        !widget.simulatorMode &&
+                        !scanning &&
+                        !clearing &&
+                        !resettingDme &&
+                        widget.vin.length == 17 &&
+                        widget.onBeforeVehicleScan != null &&
+                        widget.onAfterVehicleScan != null
+                    ? () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => DmePreparation2Screen(
+                            vin: widget.vin,
+                            currentBootloader: widget.bootloaderId,
+                            connectionStatus: widget.connectionStatus,
+                            isDark: widget.isDark,
+                            onBeforeSend: widget.onBeforeVehicleScan!,
+                            onAfterSend: widget.onAfterVehicleScan!,
+                          ),
+                        ),
+                      )
+                    : null,
+                icon: const Icon(Icons.playlist_add_check_rounded),
+                label: const Text('DME Preparation 2'),
               ),
             ),
           ),

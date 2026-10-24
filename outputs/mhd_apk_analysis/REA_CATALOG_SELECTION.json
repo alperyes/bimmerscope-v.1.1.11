@@ -1,0 +1,90 @@
+{
+  "evidence_id": "ev_ccf2314d51ad3a4c4d8c3dc4a77aeb105878d3c8860d6c4a4b32cac14cf63c7c",
+  "assembly": {
+    "name": "C:\\Users\\alper\\Desktop\\MHD\\tools\\dlls-5.30\\MHD_App.dll",
+    "digest": {
+      "sha256": "81f29b38c7785810f9ca9a3dccb13f2747e55345775852abf60e5d877a923501"
+    },
+    "format": "pe",
+    "architecture": "x86",
+    "local_path": "C:\\Users\\alper\\Desktop\\MHD\\tools\\dlls-5.30\\MHD_App.dll"
+  },
+  "source": {
+    "path": "C:/Users/alper/Desktop/MHD/tools/decompiled-5.30/z5.cs",
+    "sha256": "58edc1a122011b97195c9dd80aa34944f5bd30d6e4b12364c3b2e75d86762e7f"
+  },
+  "records": [
+    {
+      "signature": "public List<XWE> b(XWE A_0)",
+      "literals": [
+        {
+          "line": 361,
+          "decoded": "select CAL.SGBM_NR, CAL.MAJOR, CAL.MINOR, CAL.PATCH, PRG.SGBM_NR,PRG.MAJOR, PRG.MINOR, PRG.PATCH from CAL INNER JOIN PRG ON CAL.PRG_ID = PRG.ID where CAL.SGBM_NR = '{0}' AND CAL.MAJOR = {1} AND CAL.MINOR = {2} AND CAL.PATCH = {3}  "
+        },
+        {
+          "line": 363,
+          "decoded": "X8"
+        }
+      ]
+    },
+    {
+      "signature": "public List<XWE> b(XWE A_0, int A_1)",
+      "literals": [
+        {
+          "line": 534,
+          "decoded": "select CAL.SGBM_NR, CAL.MAJOR, CAL.MINOR, CAL.PATCH, PRG.SGBM_NR,PRG.MAJOR, PRG.MINOR, PRG.PATCH from CAL INNER JOIN PRG ON CAL.PRG_ID = PRG.ID where PRG.SGBM_NR = '{0}' AND PRG.MAJOR = {1} AND PRG.MINOR = {2} AND PRG.PATCH = {3} AND CAL.SGBM_NR = '{4}' "
+        },
+        {
+          "line": 536,
+          "decoded": "X8"
+        },
+        {
+          "line": 540,
+          "decoded": "X8"
+        }
+      ]
+    }
+  ],
+  "methods": [
+    {
+      "token": "0x0600058f",
+      "signature": {
+        "raw_length": 13,
+        "raw_sha256": "3389861d23550e8740bcba84878b2f6baed44e6c6ca57a0a3b6f574d189a39cf",
+        "kind": "unknown",
+        "parse_status": "unsupported",
+        "calling_convention": null,
+        "generic_parameter_count": null,
+        "parameter_count": null,
+        "return_type": null,
+        "parameter_types": [],
+        "field_type": null,
+        "issue": "unsupported element type 0x15"
+      },
+      "body_sha256": "8bb1dd34a6167d5e75dc43813bf6b123dbceaf4d9c457dbefb391ee28fd7b28f",
+      "instruction_count": 321
+    },
+    {
+      "token": "0x06000590",
+      "signature": {
+        "raw_length": 14,
+        "raw_sha256": "811d8f2285893191929d00df5adbe848d39e408345de8edd1a19ee1985d9a05b",
+        "kind": "unknown",
+        "parse_status": "unsupported",
+        "calling_convention": null,
+        "generic_parameter_count": null,
+        "parameter_count": null,
+        "return_type": null,
+        "parameter_types": [],
+        "field_type": null,
+        "issue": "unsupported element type 0x15"
+      },
+      "body_sha256": "2891d1e7a175ff6a193e7bd219a28d839cfb944426099c6d83a78138721b598f",
+      "instruction_count": 335
+    }
+  ],
+  "limitations": [
+    "Static decoder reconstruction only; no MHD execution or database query.",
+    "Catalog contents and target-car identifiers have not been established."
+  ]
+}
